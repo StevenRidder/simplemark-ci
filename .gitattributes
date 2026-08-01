@@ -1,0 +1,18 @@
+* text=auto
+
+# The fidelity fixtures are byte-exact evidence for the D7 contract. Fixture 09
+# deliberately carries CRLF endings, hard tabs, trailing whitespace, and no
+# final newline. Git's own EOL normalisation would rewrite exactly the bytes
+# the corpus exists to defend, so it is switched off for the whole corpus —
+# not just the one file that needs it today.
+#
+# `-whitespace` is the other half of the same problem. `git diff --check` is a
+# required hygiene signal here — the CI gate runs it and the code_strict
+# completion policy demands it clean — but fixture 09's trailing spaces, hard
+# tabs, and CRLF are payload, not defects. Without this the corpus would report
+# six permanent false positives, and the usual way that gets "fixed" is by
+# stripping the very bytes the fidelity gate exists to defend.
+tests/fixtures/*.md -text -whitespace
+
+# Shell scripts must keep LF endings on every platform or they will not run.
+*.sh text eol=lf

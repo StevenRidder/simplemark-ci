@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    // Node types are available to the whole package because the test harness
+    // and the filesystem adapter genuinely need them. The boundary that keeps
+    // `domain` and `application` pure is enforced executably by
+    // .dependency-cruiser.cjs (`pure-modules-avoid-node-builtins`), not by
+    // withholding type declarations — a lint rule that says why it failed beats
+    // a compiler error that says a global is missing.
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src", "tests", "vitest.config.ts"]
+}

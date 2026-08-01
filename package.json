@@ -1,0 +1,23 @@
+{
+  "name": "simplemark",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A lightweight, beautiful, local-first Markdown notebook that turns raw technical material into editable documents.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:boundaries": "depcruise src tests --config .dependency-cruiser.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "dependency-cruiser": "^16.10.4",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,10 @@
+/**
+ * Public entry point for `domain` — pure document, source, transaction, and
+ * fence rules. Imports no SimpleMark module and no framework, DOM, Tauri,
+ * CRDT, MCP, or filesystem API.
+ *
+ * Transactions and fences join this surface with the live-agent deliverable;
+ * source baselines and dirty-block serialization with FIDELITY-1.
+ */
+export { firstByteDifference } from './source/byte-diff.js'
+export type { ByteDifference } from './source/byte-diff.js'

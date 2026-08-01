@@ -283,11 +283,26 @@ wait_for_runs() {
     fi
 
     if [ "$pending" = "0" ]; then
-      failed="$(printf '%s' "$matching" | jq '[.[] | select(.conclusion != "success" and .conclusion != "skipped")] | length')"
+      # `cancelled` is not a failure. verify.yml sets concurrency with
+      # cancel-in-progress, so dispatching on a ref that also received a push
+      # deliberately kills the older run — counting that as red reports a
+      # failure for a commit that is green, and a tool that cries wolf gets
+      # ignored. A cancelled run is absent evidence, so it cannot make the
+      # branch green either: at least one genuine success is still required.
+      local failed superseded succeeded
+      failed="$(printf '%s' "$matching" | jq '[.[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "cancelled")] | length')"
+      superseded="$(printf '%s' "$matching" | jq '[.[] | select(.conclusion == "cancelled")] | length')"
+      succeeded="$(printf '%s' "$matching" | jq '[.[] | select(.conclusion == "success")] | length')"
       echo ""
       summarize_runs "$branch" || true
       if [ "$failed" != "0" ]; then
-        die "CI sandbox failed ($failed run(s) not success/skipped) — see $(actions_url "$branch")"
+        die "CI sandbox failed ($failed run(s) not success/skipped/cancelled) — see $(actions_url "$branch")"
+      fi
+      if [ "$succeeded" = "0" ]; then
+        die "no successful run for ${head_sha:0:12} ($superseded cancelled) — see $(actions_url "$branch")"
+      fi
+      if [ "$superseded" != "0" ]; then
+        echo "ci-sandbox: $superseded run(s) superseded by a newer run for the same ref (concurrency), not counted as failures"
       fi
       echo "ci-sandbox: all Actions green for ${head_sha:0:12} on $CI_REPO"
       return 0

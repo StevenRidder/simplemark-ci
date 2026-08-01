@@ -1,6 +1,6 @@
 # SimpleMark — Design Document
 
-- **Status:** Draft for review
+- **Status:** Draft, revision 2 (design review incorporated)
 - **Date:** 2026-08-01
 - **Working title:** SimpleMark
 - **One line:** An open-source Bear clone with world-class typography that renders raw Markdown, Mermaid, SVG, and code the instant you paste it.
@@ -21,42 +21,61 @@ SimpleMark is Bear's feel with a renderer that never says no.
 
 ## 2. Architectural decisions
 
-These were settled during brainstorming and are the load-bearing choices.
+These are the load-bearing choices. D3 is the only one gated on a spike; see §12.
 
 ### D1 — Files are the truth
 
 Notes are plain `.md` files in a folder the user picks. SQLite is a rebuildable cache (search index, link graph, thumbnails) and never authoritative.
 
-**Consequence:** zero lock-in is literally true, not a promise. Every feature must round-trip to Markdown or it does not ship.
+**Consequence:** zero lock-in is literally true, not a promise. Every feature must round-trip to Markdown or it does not ship — subject to the fidelity contract in D7 and the portability tiers in §5.
 
 ### D2 — Sync is delegated to the cloud drive
 
 No CRDT, no relay server, no accounts, no hosting bill. The notes folder lives in iCloud Drive (or Dropbox, or any synced folder) and the OS handles propagation.
 
 **Accepted costs:**
-- Simultaneous offline edits on two devices produce a `(conflicted copy)` file. Mitigated by save-on-blur with short debounce, plus a conflict-detection UI offering a side-by-side diff.
+- Simultaneous offline edits on two devices produce a `(conflicted copy)` file. Handled per §8.
 - No real-time collaboration. Not wanted.
 - iOS is the weak spot: iCloud Drive works via the file provider; Dropbox and Google Drive on iOS are apps rather than filesystems and background folder sync is unreliable. **iCloud Drive is the supported iOS path.**
 
-### D3 — Milkdown as the editor core
+### D3 — Milkdown as the editor core *(gated on the §12 spike)*
 
-Milkdown (MIT) sits on ProseMirror + remark. Its premise is Markdown-AST-as-truth with the editor as a view over it — which is D1 expressed as a library. Tiptap was the alternative; it would require writing and maintaining a Markdown serializer forever.
+Milkdown (MIT) sits on ProseMirror + remark. Its premise is Markdown-AST-as-truth with the editor as a view over it — which is D1 expressed as a library.
 
-Both are ProseMirror underneath, so the schema and NodeViews port if this proves wrong.
+**This decision is not final.** D7 imposes a fidelity requirement that no off-the-shelf Markdown editor satisfies out of the box. The spike in §12 determines whether Milkdown can be extended to meet it or whether the document model has to be built on raw ProseMirror + a source-mapping layer.
+
+Tiptap was the alternative and fails the same test for the same reason; the choice is really "Milkdown vs. hand-rolled source-preserving model," and both are ProseMirror underneath, so schema and NodeViews port either way.
 
 ### D4 — A single unified canvas
 
 No source pane, no preview pane, no mode toggle. Editing and rendering happen in the same view. Click a rendered diagram to reveal its source inline.
 
-### D5 — Everything is a plugin, including the built-ins
+### D5 — Internal extension points in v1; public plugin API deferred
 
-Mermaid, SVG, code highlighting, tables, and wikilinks are written against the same public plugin API that third parties use. If a built-in needs a private hook, the API is wrong.
+Mermaid, SVG, code highlighting, tables, and wikilinks are written against one internal extension interface, and that interface is designed to become the public API. If a built-in needs a hook the interface doesn't expose, the interface is wrong.
 
-This is what makes handwriting + OCR possible later without a rewrite.
+**What is deliberately not in v1:** third-party plugin loading. A real public plugin runtime needs execution isolation, a versioned and migratable schema contract, defined behavior when a note references an unavailable plugin, and enforcement of declared capabilities at the native boundary — not merely their declaration. That is a subsystem, and shipping it before the document model is proven risks freezing the wrong API forever.
+
+Opening the API later is then a decision, not a rewrite. Handwriting + OCR is the first intended external plugin and lands after the API opens.
 
 ### D6 — Typography is a document-level setting
 
-Per-selection font/size/colour cannot be expressed in Markdown, so it does not exist. Bear works the same way: font family, size, line height, line width, and theme are preferences. The toolbar handles structure and emphasis only.
+Per-selection font, size, and colour cannot be expressed in Markdown, so they do not exist. Bear works the same way: font family, size, line height, line width, and theme are preferences. The toolbar handles structure and emphasis only.
+
+### D7 — Fidelity contract: source preservation, not re-serialization
+
+**Untouched content is never rewritten.** Opening a note and saving it must produce a byte-identical file. Editing one paragraph must not renumber lists, restyle fences, repad tables, or normalize bullets elsewhere in the document.
+
+Byte-identical round-trip through a general Markdown serializer is not achievable — remark normalizes bullet markers, table padding, fence style, setext headings, entity escaping, and blank-line runs. So fidelity is defined in two tiers:
+
+| Tier | Scope | Guarantee |
+|---|---|---|
+| **Preserved** | Blocks the user did not edit this session | Original source text is retained and re-emitted verbatim |
+| **Normalized** | Blocks the user edited | Serialized by remark; semantic equivalence only, house style applied |
+
+**Implementation:** every top-level block node carries the byte range of its original source. Clean blocks re-emit that slice. Dirty blocks serialize. Front matter, arbitrary embedded HTML, and unknown constructs are always preserved as opaque source, never round-tripped through the AST.
+
+This is the hardest requirement in the project and the reason §12 exists.
 
 ---
 
@@ -72,23 +91,24 @@ Per-selection font/size/colour cannot be expressed in Markdown, so it does not e
                    │  NativeBridge (one narrow interface)
 ┌──────────────────▼───────────────────────────────────┐
 │  simplemark-core  (TypeScript, no DOM)               │
-│   ├─ Vault        folder scan, file watch, read/write│
+│   ├─ Vault        scan · watch · atomic write         │
+│   ├─ SourceMap    block ↔ byte-range preservation (D7)│
 │   ├─ NoteIndex    SQLite FTS5 cache (rebuildable)    │
-│   ├─ LinkGraph    [[wikilink]] resolution + backlinks│
-│   ├─ Attachments  content-addressed sidecar files    │
-│   └─ PluginHost   registry + capability gating       │
+│   ├─ LinkGraph    [[wikilink]] resolution + backlinks │
+│   ├─ Attachments  content-addressed sidecar files     │
+│   └─ Extensions   internal registry (D5)              │
 └──────────────────┬───────────────────────────────────┘
 ┌──────────────────▼───────────────────────────────────┐
 │  simplemark-editor  (Milkdown / ProseMirror)         │
-│   paste pipeline · node registry · NodeView host     │
-│   bubble toolbar · slash menu · input rules          │
+│   paste pipeline · node registry · NodeView host      │
+│   bubble toolbar · slash menu · input rules           │
 └──────────────────┬───────────────────────────────────┘
 ┌──────────────────▼───────────────────────────────────┐
 │  simplemark-ui  (three-pane shell, theming)          │
 └──────────────────────────────────────────────────────┘
 ```
 
-Each package has one job, a typed interface, and can be tested without the others. `simplemark-core` has no DOM dependency so it runs under Node in tests.
+Each package has one job, a typed interface, and can be tested without the others. `simplemark-core` has no DOM dependency, so vault, source-mapping, and conflict tests run under Node.
 
 ---
 
@@ -102,91 +122,85 @@ Cmd+V
  ├─ 1. Clipboard triage
  │      collect {text, html, files, mimeTypes}
  │
- ├─ 2. Sniffer chain          ← plugins register here
- │      mermaid · svg · image · (third-party)
- │      first sniffer to both MATCH and VALIDATE wins
- │      → returns a typed AST node
+ ├─ 2. Sniffer chain          ← extensions register here
+ │      svg-in-html · svg · mermaid · image · (built-ins only in v1)
+ │      first sniffer to MATCH, VALIDATE and pass the
+ │      standalone-block test wins
  │
  ├─ 3. No sniffer hit → remark parses as Markdown
- │      headings · tables · fences · lists · wikilinks
+ │      per-fence conversion for ```mermaid / ```svg blocks
  │
  └─ 4. Insert into the document → NodeViews render
         one Cmd+Z restores the raw pasted text
 ```
 
-### Sniffer contract
+### 4.1 Sniffer contract
 
 ```ts
 interface PasteSniffer {
   id: string
   priority: number
-  sniff(input: ClipboardInput): AstNode | null   // must validate, must not throw
+  sniff(input: ClipboardInput, ctx: PasteContext): AstNode | null
+  // must validate; must not throw
 }
 ```
 
-**Validation is mandatory.** A sniffer may only claim content it has proven it can render:
+### 4.2 Conversion rules — deterministic, in order
 
-- **Mermaid** — first non-blank line matches
-  `/^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(-v2)?|erDiagram|journey|gantt|pie|gitGraph|mindmap|timeline|quadrantChart)\b/`
-  **and** `mermaid.parse()` succeeds.
-- **SVG** — parses as XML with an `<svg>` root element, and passes sanitisation (§7).
+A sniffer may convert **only** when all four hold:
 
-Text that looks like Mermaid but does not parse stays text. A sniffer that throws is skipped; a bad plugin can never break paste.
+1. **Standalone block.** The caret is at a block boundary and the pasted text is the entire clipboard payload. Pasting into the middle of a sentence never converts — it inserts text.
+2. **Signature match.** Mermaid: first non-blank line matches
+   `/^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(-v2)?|erDiagram|journey|gantt|pie|gitGraph|mindmap|timeline|quadrantChart)\b/`.
+   SVG: parses as XML with an `<svg>` root.
+3. **Validation succeeds.** `mermaid.parse()` returns without throwing; SVG survives sanitisation (§7).
+4. **No higher-priority sniffer claimed it.** Priority order is fixed: `svg-in-html (30) → svg (20) → mermaid (10) → image (5)`.
 
-### Three rules that make it feel like magic rather than a trick
+**Named ambiguous cases and their rulings:**
+
+| Case | Ruling |
+|---|---|
+| Clipboard has `text/html` wrapping an `<svg>` | `svg-in-html` claims it. HTML path is not consulted. |
+| Clipboard has both `text/html` and `text/plain`, no SVG | Markdown path on `text/plain` — pasted-from-browser HTML is not treated as a document. |
+| Multi-block paste (prose + a ```mermaid fence + a table) | Markdown path. Fences convert per-block after parsing. Bare unfenced diagram source inside a larger paste stays text. |
+| Prose beginning with the word "graph" | `mermaid.parse()` rejects it; stays text. |
+| Valid Mermaid quoted inside a paragraph | Fails the standalone-block test; stays text. |
+| User wants literal source | `⌘⇧V` pastes as plain text, always, with no sniffing. Permanent, not transient. |
+
+### 4.3 Reversibility, in both directions
+
+- `⌘Z` immediately after conversion restores the raw pasted text.
+- A "keep as plain text" affordance appears in the block corner for a few seconds after insertion.
+- **"Convert to diagram" is always available** as a slash command and context-menu action on any code block or paragraph — so a missed conversion is one command away, not a re-paste.
+
+### 4.4 Three rules that make it feel like magic rather than a trick
 
 1. **Never guess silently wrong** — conversion requires successful parse.
-2. **Never lose the source** — the block stores the original text and writes a normal fenced code block to disk. The `.md` file stays portable to GitHub and back.
+2. **Never lose the source** — the block stores the original text and writes a normal fenced code block to disk.
 3. **Fail visibly** — broken diagram source renders an inline error card with the parser message, never a blank rectangle.
-
-Each converted block shows a small "keep as plain text" affordance for a few seconds after insertion.
 
 ---
 
-## 5. Plugin API
+## 5. Document format and portability tiers
 
-A plugin declares any of five contributions. Nothing is special-cased.
+"Everything round-trips to Markdown" is true, but not everything round-trips to *someone else's* Markdown. The format is tiered explicitly.
 
-| Contribution | Purpose | Mermaid | SVG | Code | Handwriting (later) |
-|---|---|---|---|---|---|
-| `node` | schema + markdown parse/serialize | ✓ | ✓ | ✓ | ✓ |
-| `nodeView` | owns a rectangle: DOM, canvas, events | ✓ | ✓ | ✓ | ✓ |
-| `sniffer` | claim a paste | ✓ | ✓ | — | ✓ (image → OCR) |
-| `command` | slash menu / shortcut entry | ✓ | ✓ | ✓ | ✓ |
-| `capability` | fs, network, pen input, compute | — | — | — | ✓ |
-
-```ts
-interface Plugin {
-  id: string
-  nodes?: NodeSpec[]
-  nodeViews?: Record<string, NodeViewFactory>
-  sniffers?: PasteSniffer[]
-  commands?: Command[]
-  capabilities?: Capability[]
-}
-```
-
-### The serialization rule
-
-**Every node must round-trip to Markdown.** A block with no textual representation writes a sidecar file under `attachments/` and embeds a reference:
-
-```
-![[ink:9f3a2b.strokes.json]]
-```
-
-This is what keeps "just files" honest even for binary plugins, and it means plugin data syncs through the cloud drive for free — no plugin needs to know sync exists.
-
-### Reference implementations shipped in v1
-
-| Plugin | ~Size | Notes |
+| Tier | Constructs | Portability |
 |---|---|---|
-| `mermaid` | 60 lines + NodeView | debounced render, click-to-edit source, error card |
-| `svg` | 50 lines | sanitised, click-to-edit markup |
-| `code` | 40 lines | Shiki highlighting, copy button, language label |
-| `wikilink` | 80 lines | `[[Note]]` resolution, autocomplete, create-on-click |
-| `table` | from GFM preset | interactive grid editing |
+| **1 — CommonMark / GFM** | headings, lists, tables, links, emphasis, task lists, fenced code, ` ```mermaid ` blocks | Renders correctly in GitHub, Obsidian, Bear, any editor. Mermaid renders as a diagram on GitHub and as a labelled code block elsewhere. |
+| **2 — SimpleMark extensions** | `[[wikilink]]`, `![[attachment]]` embeds, `#tag/subtag` | Valid Markdown text; degrades to visible literal text elsewhere. Documented as extensions, not presented as standard. |
+| **3 — Sidecar-backed** | ink strokes, future plugin binary data | Reference plus a rendered fallback |
 
-Writing four built-ins against the public API is the proof the API is real.
+**Degradation rules:**
+
+- A wikilink is written `[[Note Title]]` and remains legible as text in any reader. An option emits `[Note Title](note-title.md)` instead for users who prioritise portability over Bear-style syntax.
+- Any sidecar-backed block **must also write a rendered raster fallback** and reference it with standard Markdown image syntax, so another app shows the drawing rather than a broken embed:
+  ```markdown
+  ![ink sketch](attachments/9f3a2b.png)
+  <!-- simplemark:ink source=attachments/9f3a2b.strokes.json -->
+  ```
+  The HTML comment carries the editable source and is invisible everywhere else.
+- Front matter is preserved verbatim and never reordered.
 
 ---
 
@@ -198,55 +212,80 @@ bold · italic · strikethrough · highlight · inline code · H1–H3 · bullet
 
 Built from `@milkdown/preset-commonmark` + `@milkdown/preset-gfm`, `@milkdown/kit/plugin/tooltip` (Floating UI positioned), `@milkdown/kit/plugin/slash`, `prosemirror-keymap`, `prosemirror-inputrules`. Icons from Lucide (MIT).
 
-**Typography preferences** (D6): font family, size, line height, line width, theme (light/dark/auto). Ships with a curated set of genuinely good text faces rather than a system font dump.
+**Typography preferences** (D6): font family, size, line height, line width, theme (light/dark/auto), with a curated set of text faces rather than a system font dump.
 
-**Layout:** three panes — tags sidebar, note list, editor. Collapsible to two or one. Bear's proportions and calm.
+**Layout:** three panes — tags sidebar, note list, editor. Collapsible to two or one.
 
 ---
 
 ## 7. Security
 
-SVG and Markdown-embedded HTML are untrusted input. A pasted `<svg>` can carry `<script>`, `onload=`, and external references.
+SVG and embedded HTML are untrusted input. A pasted `<svg>` can carry `<script>`, `onload=`, `<foreignObject>`, and external references.
 
-- All SVG passes **DOMPurify** with SVG profile before rendering; scripts, event handlers, and external references are stripped.
-- Rendered content runs with a strict CSP; no remote fetches from note content.
+- All SVG passes **DOMPurify** with the SVG profile before rendering; scripts, event handlers, `foreignObject`, and external references are stripped. Sanitisation runs before validation, so an SVG that only survives by being neutered still renders — neutered.
+- Rendered content runs under a strict CSP; note content never issues network requests.
 - Mermaid runs with `securityLevel: 'strict'` (HTML labels disabled).
-- Plugins declare capabilities; filesystem and network access are gated and disclosed at install.
+- Extensions declare capabilities today; **enforcement at the native boundary is a prerequisite for opening the API to third parties** (D5), not something declared capabilities provide on their own.
 
 ---
 
-## 8. Error handling
+## 8. Files, writes, and conflicts
+
+D2 buys simplicity by putting a cloud daemon and the app in the same directory. That has to be handled deliberately.
+
+**Write discipline**
+
+- **Atomic writes only:** serialize to `<name>.md.tmp` in the same directory, `fsync`, then `rename()` over the target. A partially-written note is never observable.
+- **Write-loop suppression:** the vault records the hash and mtime of every file it writes and ignores watcher events matching them, so the app never reacts to its own save.
+- **Debounced save on pause and on blur**, not per keystroke — fewer versions for the cloud daemon to fight over.
+
+**Identity**
+
+- A note's identity is a stable id in front matter (`id: 01J…`), not its path. Renaming a file on another device is a rename, not a delete-plus-create, and wikilinks and backlinks survive it.
+- Title-based `[[wikilinks]]` resolve through the link graph to ids; a title change rewrites referring notes and records the old title as an alias.
+
+**External change and conflict**
+
+| Situation | Behavior |
+|---|---|
+| File changed on disk, editor clean, note not focused | Reload silently |
+| File changed on disk, editor clean, note **focused** | Do not yank the view. Show an unobtrusive "Updated on another device — Reload" bar. |
+| File changed on disk, editor dirty | Keep local state; offer a side-by-side diff |
+| File appears mid-write (size 0, truncated, or hash unstable across two reads 250 ms apart) | Ignore and re-check; never parse a file the daemon is still writing |
+| `(conflicted copy)` file appears | Surface in the note list with a diff view: keep mine / keep theirs / merge |
+| Attachment orphaned by a merge | Retained, swept by a background job after 30 days, never deleted inline |
+
+---
+
+## 9. Error handling and testing
+
+### 9.1 Failure behavior
 
 | Failure | Behavior |
 |---|---|
-| Diagram source does not parse | Inline error card with parser message; source stays editable |
+| Diagram source does not parse | Inline error card with the parser message; source stays editable |
 | Sniffer throws | Skipped, logged; paste falls through to Markdown |
-| Plugin NodeView throws | Block renders as a fenced code block; plugin marked unhealthy |
-| File changed on disk while open | Reload if the editor is clean; conflict diff UI if dirty |
-| Cloud drive produces a conflicted copy | Detected on scan; surfaced as a diff with keep-mine / keep-theirs / merge |
+| NodeView throws | Block renders as a fenced code block; extension marked unhealthy |
 | Index corrupt or missing | Silently rebuilt from the folder |
+| Unknown `simplemark:` construct in a file | Preserved verbatim, rendered as its fallback |
 
 The governing rule: **failures are visible and local.** No silent fallbacks, no blank rectangles, no crash on bad input.
 
----
+### 9.2 Tests
 
-## 9. Testing
-
-- **Round-trip property tests** — for a corpus of real documents, `parse → serialize` must be byte-identical. This is the single most important test in the project; it is what makes files-as-truth safe. Corpus seeded with the Switchboard borrowing-map document that motivated this project.
-- **Sniffer tests** — table-driven: fenced Mermaid, bare Mermaid, near-miss text that must *not* convert, malformed SVG, XSS payloads.
-- **Vault tests** — scan, watch, external edit, conflicted copy, rename, delete. `simplemark-core` is DOM-free so these run fast under Node.
-- **Plugin API conformance** — the four built-ins run against the public API only; a lint rule forbids private imports.
-- **Visual regression** on the editor chrome and the three renderers.
+- **Fidelity suite (the important one).** For each fixture: open → save untouched → assert byte-identical. Then: edit one block → assert every other block is byte-identical and the edited block is semantically equivalent. Fixtures listed in §12.
+- **Sniffer table tests** — every row of the §4.2 ruling table, plus XSS payloads and malformed SVG.
+- **Vault tests** — scan, watch, atomic write, write-loop suppression, external edit, mid-write file, rename, conflicted copy, orphan sweep. DOM-free, fast.
+- **Extension conformance** — built-ins compile against the internal interface only; a lint rule forbids private imports.
+- **Visual regression** on editor chrome and the three renderers.
 
 ---
 
 ## 10. Wireframe
 
-Interactive version: [`docs/wireframe.html`](wireframe.html) — open it in a browser. It renders live Mermaid inside the mock editor pane, follows the system light/dark theme, and shows the paste sequence and failure states.
+Interactive version: [`wireframe.html`](wireframe.html) — open in a browser. Renders live Mermaid inside the mock editor pane, follows the system light/dark theme, and shows the paste sequence and failure states.
 
 ### 10.1 Main window
-
-Three panes, Bear's proportions. Collapsible to two or one.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -284,82 +323,107 @@ Three panes, Bear's proportions. Collapsible to two or one.
 
 ### 10.2 Rendered block anatomy
 
-Every plugin-rendered block shares one frame, so a third-party block is indistinguishable from a built-in:
+Every extension-rendered block shares one frame, so a future third-party block is indistinguishable from a built-in:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ ⟨type⟩ · ⟨provenance⟩              [Edit source] [⧉] │  ← block bar, appears on hover
+│ ⟨type⟩ · ⟨provenance⟩              [Edit source] [⧉] │  ← block bar, on hover
 ├─────────────────────────────────────────────────────┤
-│                                                     │
-│              rendered output (NodeView)             │  ← plugin owns this rectangle
-│                                                     │
+│              rendered output (NodeView)             │  ← extension owns this rect
 └─────────────────────────────────────────────────────┘
 ```
 
-**Open question for build time:** the frame above is legible but heavier than Bear would use. The alternative is bare blocks in the prose with controls fading in on hover. Decide during the first UI pass with real content on screen.
+**Open question for build time:** the frame is legible but heavier than Bear would use. The alternative is bare blocks in the prose with controls fading in on hover. Decide during the first UI pass with real content on screen.
 
 ### 10.3 Paste sequence
 
 ```mermaid
 flowchart TB
   V(["⌘V"]) --> TRIAGE["Clipboard triage<br/>text · html · files · mimeTypes"]
-  TRIAGE --> SNIFF{"Sniffer chain<br/>match AND validate"}
+  TRIAGE --> STANDALONE{"Standalone block?"}
+  STANDALONE -->|no| MD
+  STANDALONE -->|yes| SNIFF{"Sniffer chain<br/>match AND validate"}
+  SNIFF -->|"svg root ✓ · sanitised"| SVG["SVG block"]
   SNIFF -->|"mermaid.parse() ✓"| MER["Mermaid block"]
-  SNIFF -->|"&lt;svg&gt; root ✓ · sanitised"| SVG["SVG block"]
-  SNIFF -->|"image + OCR plugin"| INK["Recognised text"]
-  SNIFF -->|"no sniffer claims"| MD["remark parse<br/>headings · tables · fences · wikilinks"]
+  SNIFF -->|"no sniffer claims"| MD["remark parse<br/>per-fence conversion"]
   MER --> DOC["Insert into document"]
   SVG --> DOC
-  INK --> DOC
   MD --> DOC
   DOC --> VIEW["NodeViews render on the canvas"]
-  DOC --> DISK["Serialize to .md<br/>portable fence on disk"]
+  DOC --> DISK["Serialize dirty blocks only<br/>portable fence on disk"]
   VIEW --> UNDO(["⌘Z restores the raw pasted text"])
 ```
 
-A sniffer that throws is skipped, never crashes the paste. Content that matches but fails validation stays plain text.
-
-### 10.4 Failure and preference states
-
-| State | Treatment |
-|---|---|
-| Diagram source does not parse | Inline error card, red-tinted, showing the parser's own message (`Parse error on line 4: expected node id, got '-->'`). Source stays editable in place. Never a blank rectangle. |
-| Near-miss text | Prose that resembles Mermaid but fails `parse()` renders as ordinary paragraph text. No conversion, no prompt. |
-| Just converted | A transient "keep as plain text" affordance in the block corner for a few seconds. |
-| Typography preferences | Editor font · size · line height · line width · theme. Document-level only, per §D6. |
-
-### 10.5 Visual identity
+### 10.4 Visual identity
 
 Teal accent (`#0d6f80` light, `#4fc3d4` dark) rather than Bear's red — the clone should not impersonate the original, and teal reads as an engineering tool rather than a writing app. Neutrals carry a slight cool bias toward the accent. Serif body face (Iowan Old Style / Palatino / Georgia) for note content, system sans for chrome, monospace for code and provenance labels. One accent token; trivially re-themed.
 
 ---
 
-## 11. v1 scope
+## 11. Sequencing and v1 scope
 
-**In:**
-- Milkdown canvas, files-as-truth, iCloud Drive folder, macOS via Tauri
-- Paste magic: raw Mermaid, raw SVG, raw Markdown, tables, wikilinks
-- Shiki syntax highlighting for pasted code
-- Bear-style formatting bubble, slash menu, shortcuts, typography preferences
-- Three-pane layout, tags, SQLite FTS search
-- Plugin API, with the built-ins as its proof
+Proof of the hard promise comes before the pretty part.
 
-**Deferred (API designed for them now, not built):**
-- iOS/iPad shell · handwriting + OCR plugin · graph view · plugin manifests and store · Windows/Linux · encryption · themes gallery
+### Phase 0 — Source-preservation spike (go/no-go, days)
+
+Detailed in §12. Nothing else starts until it resolves D3.
+
+### Phase 1 — Vertical slice (weeks)
+
+One thin path, end to end, ugly on purpose:
+
+> pick a folder → open a note → paste raw Mermaid → it renders → save → reopen → edit externally → handle the conflict
+
+This exercises the vault, source map, sniffer, a NodeView, atomic writes, and the watcher. If this slice is solid, the rest is surface work.
+
+### Phase 2 — Bear-parity shell
+
+Three panes, tags, search, formatting bubble, slash menu, typography preferences, SVG and Shiki blocks, wikilinks and backlinks.
+
+### Deferred (designed for, not built)
+
+Public plugin API and sandbox · handwriting + OCR · iOS/iPad shell · graph view · Windows/Linux · encryption · theme gallery.
 
 ---
 
-## 12. Open questions
+## 12. The go/no-go spike
 
-None blocking. Two to revisit after the first spike:
+**D3 is the project's strongest technical dependency and it is unresolved.** This is a blocking gate, not a curiosity.
 
-1. Whether Milkdown's serializer is faithful enough for the round-trip property test, or whether the remark-stringify layer needs replacing. **This is the first thing to spike** — it validates or kills D3 in a day.
-2. Whether Dropbox and Google Drive can be supported on iOS at all, or whether iCloud Drive is the only viable mobile path.
+**Question:** can Milkdown be extended to satisfy D7 — preserve untouched source byte-for-byte while normalizing only edited blocks — or does the document model have to be built directly on ProseMirror with a source-mapping layer?
+
+**Method:** load each fixture, save without editing, diff. Then edit exactly one block and diff everything else.
+
+**Acceptance fixtures:**
+
+| # | Fixture | Tests |
+|---|---|---|
+| 1 | The Switchboard borrowing-map document | Real hostile input: nested tables, inline links in cells, anchors, mixed lists |
+| 2 | YAML front matter with comments and unusual ordering | Preservation without reordering |
+| 3 | Arbitrary embedded HTML (`<details>`, `<img>`, raw `<svg>`) | Opaque preservation |
+| 4 | Deeply nested and mixed-marker lists (`-`, `*`, `1.`, `1)`) | No marker normalization |
+| 5 | Tables with ragged padding and alignment rows | No repadding |
+| 6 | Reference-style links and footnotes | Definitions stay where the author put them |
+| 7 | Fenced code with `~~~`, backtick counts > 3, and nested fences | Fence style preserved |
+| 8 | A ```mermaid block plus a bare pasted diagram | Conversion and serialization agree |
+| 9 | Hard tabs, CRLF, trailing whitespace, no trailing newline | Byte-level faithfulness |
+| 10 | Externally edited file re-opened mid-session | Source map rebuilds correctly |
+
+**Pass:** fixtures 1–10 are byte-identical on untouched save, and a single-block edit leaves all other blocks byte-identical.
+
+**Fail:** rebuild the document model on ProseMirror with an explicit source map. Cost is weeks, not months, and the spike's fixtures carry over unchanged.
+
+### Other open questions (non-blocking)
+
+1. Whether Dropbox and Google Drive can be supported on iOS at all, or whether iCloud Drive is the only viable mobile path.
+2. Whether rendered blocks are framed or bare (§10.2).
 
 ---
 
 ## 13. Licensing
 
-**Apache-2.0** or **MIT** — permissive, so the plugin ecosystem and any future hosted service stay possible. Explicitly not GPL/AGPL, which is what makes Zettlr and Logseq unforkable for this purpose.
+**Apache-2.0 or MIT.** Permissive licensing keeps a future hosted service, a proprietary extension, or commercial redistribution possible without relicensing the project.
 
-Milkdown (MIT), ProseMirror (MIT), remark (MIT), Shiki (MIT), Lucide (MIT), DOMPurify (Apache-2.0/MPL), Tauri (MIT/Apache-2.0) are all compatible.
+This is the honest reason the copyleft alternatives were not used as a starting point. Zettlr (GPL-3.0) and Logseq (AGPL) are freely forkable — copyleft permits forks; it imposes obligations on distribution. Building on them would bind SimpleMark and anything shipped with it to the same terms. That is a legitimate choice, just not this project's.
+
+Milkdown (MIT), ProseMirror (MIT), remark (MIT), Shiki (MIT), Lucide (MIT), DOMPurify (Apache-2.0/MPL), and Tauri (MIT/Apache-2.0) are all compatible.

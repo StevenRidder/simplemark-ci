@@ -19,14 +19,19 @@ SimpleMark keeps files as the truth but treats the editor as a real document can
 
 | Decision | Choice |
 |---|---|
-| Editor core | Milkdown (MIT) — Markdown-AST-as-truth on ProseMirror |
+| Editor core | Milkdown / ProseMirror — **gated on the fidelity spike below** |
 | Truth | Plain `.md` files in a folder; SQLite is a rebuildable cache |
+| Fidelity | Untouched blocks are preserved byte-for-byte; only edited blocks re-serialize |
 | Sync | Delegated to iCloud Drive / any synced folder — no server, no accounts |
 | Canvas | Single unified view, no source/preview split |
 | Typography | Bear-style: font, size, line height, theme in preferences |
-| Extensibility | Real plugin API; Mermaid, SVG, code, wikilinks are built *on* it |
-| License | Apache-2.0 or MIT — deliberately not GPL |
+| Extensibility | Internal extension points in v1, shaped to become the public plugin API |
+| License | Apache-2.0 or MIT — permissive, so a hosted or proprietary layer stays possible |
 
-## First task
+## First task — a go/no-go spike
 
-A round-trip spike: load a real, hostile document into a bare Milkdown instance, `parse → serialize`, and diff against the original. The entire files-as-truth architecture rests on that being lossless. One day of work that validates or kills the core decision before any app code exists.
+Open a hostile real-world document, save it without editing, and diff. Then edit one block and diff everything else.
+
+The entire files-as-truth promise rests on untouched content never being rewritten — no renumbered lists, no repadded tables, no restyled fences. No off-the-shelf Markdown editor does this, because serializers normalize. So the spike answers one question: can Milkdown be extended to preserve source, or does the document model need to be built on ProseMirror with an explicit source map?
+
+Ten acceptance fixtures are listed in [`docs/DESIGN.md` §12](docs/DESIGN.md). Nothing else starts until it resolves.

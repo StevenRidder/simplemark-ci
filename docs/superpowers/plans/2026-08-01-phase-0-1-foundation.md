@@ -781,20 +781,24 @@ git commit -m "feat(vault): atomic writes and write-loop suppression"
 - Consumes: `atomicWrite`, `hashContent`, `WriteLedger` (Task 5)
 - Produces:
   ```ts
-  export interface NoteRef { id: string; path: string; title: string; mtimeMs: number }
+  export interface NoteRef { id: string; path: string; title: string; rev: string; mtimeMs: number }
   export type VaultEvent =
-    | { type: 'external-change'; path: string }
+    | { type: 'external-change'; path: string; rev: string }
     | { type: 'added'; path: string }
     | { type: 'removed'; path: string }
   export class Vault {
     constructor(root: string)
     scan(): Promise<NoteRef[]>
-    read(path: string): Promise<string>
-    write(path: string, text: string): Promise<void>
+    read(path: string): Promise<{ content: string; rev: string }>
+    write(path: string, text: string, expectedRev?: string): Promise<{ rev: string }>
     watch(onEvent: (e: VaultEvent) => void): () => void
     close(): Promise<void>
   }
   ```
+
+**Why `rev` and stable ids exist now** ([`AGENT-WORKSPACE.md`](../../AGENT-WORKSPACE.md) §7): the MCP server in Phase 6 needs compare-and-swap writes so an agent can never clobber an edit you just made, and `[[wikilinks]]` need ids that survive a rename (`DESIGN.md` §8). Both are a few lines here and would touch every call site if retrofitted. `rev` is `hashContent(content)` — already written in Task 5.
+
+A note's `id` is a ULID stored in front matter, **not** a hash of its path. `scan()` assigns one to any note lacking it and writes it back.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -804,6 +808,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { hashContent } from './atomic'
 import { Vault } from './vault'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'sm-vault-'))
@@ -824,6 +829,45 @@ describe('Vault', () => {
     writeFileSync(join(dir, 'untitled-note.md'), 'no heading here\n')
     const [note] = await new Vault(dir).scan()
     expect(note!.title).toBe('untitled-note')
+  })
+
+  it('assigns a stable id in front matter and preserves it across scans', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'a.md'), '# Alpha\n')
+    const vault = new Vault(dir)
+    const [first] = await vault.scan()
+    const [second] = await vault.scan()
+    expect(first!.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/)   // ULID
+    expect(second!.id).toBe(first!.id)
+  })
+
+  it('read returns content and its revision hash', async () => {
+    const dir = tmp()
+    const p = join(dir, 'a.md')
+    writeFileSync(p, '# Alpha\n')
+    const vault = new Vault(dir)
+    await vault.scan()
+    const { content, rev } = await vault.read(p)
+    expect(rev).toBe(hashContent(content))
+  })
+
+  it('refuses a write whose expectedRev is stale', async () => {
+    const dir = tmp()
+    const p = join(dir, 'a.md')
+    writeFileSync(p, '# Alpha\n')
+    const vault = new Vault(dir)
+    await expect(vault.write(p, '# Beta\n', 'deadbeef')).rejects.toThrow(/stale/)
+    expect((await vault.read(p)).content).toBe('# Alpha\n')
+  })
+
+  it('accepts a write with the current rev and returns the new one', async () => {
+    const dir = tmp()
+    const p = join(dir, 'a.md')
+    writeFileSync(p, '# Alpha\n')
+    const vault = new Vault(dir)
+    const { rev } = await vault.read(p)
+    const result = await vault.write(p, '# Beta\n', rev)
+    expect(result.rev).toBe(hashContent('# Beta\n'))
   })
 
   it('does not emit an event for its own write', async () => {
@@ -848,7 +892,7 @@ describe('Vault', () => {
     await settle()
     writeFileSync(p, '# two\n')
     await settle()
-    expect(onEvent).toHaveBeenCalledWith({ type: 'external-change', path: p })
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-change', path: p }))
     stop(); await vault.close()
   })
 })
@@ -861,23 +905,28 @@ Expected: FAIL — cannot resolve `./vault`.
 
 - [ ] **Step 3: Implement**
 
-Install the watcher: `pnpm add chokidar --filter @simplemark/core`
+Install: `pnpm add chokidar ulid --filter @simplemark/core`
+
+Note the three additions over a naive vault: `scan()` back-fills a ULID into front matter so ids survive renames, `read()` returns `{ content, rev }`, and `write()` takes an optional `expectedRev` and throws on mismatch. That last one is the compare-and-swap the MCP server depends on.
 
 ```ts
 // packages/core/src/vault/vault.ts
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import chokidar, { type FSWatcher } from 'chokidar'
+import { ulid } from 'ulid'
 import { WriteLedger, atomicWrite, hashContent } from './atomic'
 
-export interface NoteRef { id: string; path: string; title: string; mtimeMs: number }
+export interface NoteRef { id: string; path: string; title: string; rev: string; mtimeMs: number }
 
 export type VaultEvent =
-  | { type: 'external-change'; path: string }
+  | { type: 'external-change'; path: string; rev: string }
   | { type: 'added'; path: string }
   | { type: 'removed'; path: string }
 
 const TITLE = /^#\s+(.+)$/m
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/
+const ID_LINE = /^id:\s*([0-9A-HJKMNP-TV-Z]{26})\s*$/m
 
 export class Vault {
   private readonly ledger = new WriteLedger()
@@ -891,24 +940,49 @@ export class Vault {
     for (const e of entries) {
       if (!e.isFile() || !e.name.endsWith('.md')) continue
       const path = join(this.root, e.name)
-      const [text, st] = await Promise.all([readFile(path, 'utf8'), stat(path)])
+      let text = await readFile(path, 'utf8')
+
+      let id = readId(text)
+      if (!id) {
+        id = ulid()
+        text = withId(text, id)
+        await this.write(path, text)      // back-fill, suppressed by the ledger
+      }
+
+      const st = await stat(path)
       notes.push({
-        id: hashContent(path),
+        id,
         path,
         title: TITLE.exec(text)?.[1]?.trim() ?? basename(e.name, '.md'),
+        rev: hashContent(text),
         mtimeMs: st.mtimeMs,
       })
     }
     return notes
   }
 
-  read(path: string): Promise<string> {
-    return readFile(path, 'utf8')
+  async read(path: string): Promise<{ content: string; rev: string }> {
+    const content = await readFile(path, 'utf8')
+    return { content, rev: hashContent(content) }
   }
 
-  async write(path: string, text: string): Promise<void> {
-    this.ledger.record(path, hashContent(text))
+  /**
+   * Compare-and-swap write. Omit `expectedRev` for a blind write (the app's
+   * own save path); pass it for agent writes so a stale patch is refused
+   * rather than clobbering a concurrent edit (AGENT-WORKSPACE.md §3).
+   */
+  async write(path: string, text: string, expectedRev?: string): Promise<{ rev: string }> {
+    if (expectedRev !== undefined) {
+      const current = await readFile(path, 'utf8').catch(() => null)
+      const currentRev = current === null ? null : hashContent(current)
+      if (currentRev !== expectedRev) {
+        throw new Error(`stale write: expected ${expectedRev}, found ${currentRev ?? 'missing'}`)
+      }
+    }
+    const rev = hashContent(text)
+    this.ledger.record(path, rev)
     await atomicWrite(path, text)
+    return { rev }
   }
 
   watch(onEvent: (e: VaultEvent) => void): () => void {
@@ -920,8 +994,9 @@ export class Vault {
     this.watcher.on('change', async (path) => {
       const text = await readFile(path, 'utf8').catch(() => null)
       if (text === null) return
-      if (this.ledger.isOwnWrite(path, hashContent(text))) return
-      onEvent({ type: 'external-change', path })
+      const rev = hashContent(text)
+      if (this.ledger.isOwnWrite(path, rev)) return
+      onEvent({ type: 'external-change', path, rev })
     })
     this.watcher.on('add', (path) => onEvent({ type: 'added', path }))
     this.watcher.on('unlink', (path) => onEvent({ type: 'removed', path }))
@@ -934,14 +1009,30 @@ export class Vault {
     this.watcher = null
   }
 }
+
+function readId(text: string): string | null {
+  const fm = FRONTMATTER.exec(text)
+  if (!fm) return null
+  return ID_LINE.exec(fm[1]!)?.[1] ?? null
+}
+
+/** Insert `id:` into existing front matter, or create front matter holding it. */
+function withId(text: string, id: string): string {
+  const fm = FRONTMATTER.exec(text)
+  if (!fm) return `---\nid: ${id}\n---\n\n${text}`
+  const body = fm[1]!
+  return text.replace(FRONTMATTER, `---\n${body}\nid: ${id}\n---\n`)
+}
 ```
 
 `awaitWriteFinish` is what implements the "file appears mid-write" rule from `DESIGN.md` §8 — chokidar waits for the size to stabilise before reporting.
 
+**Note on front matter and D7:** `withId` inserts a line into existing front matter rather than re-serializing it, so key order and comments survive. Back-filling an id is the one write SimpleMark makes without the user asking; it happens once per note, on first scan.
+
 - [ ] **Step 4: Run the tests**
 
 Run: `pnpm vitest run packages/core/src/vault/vault.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 8 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1296,16 +1387,16 @@ describe('paste into a note', () => {
     const stop = vault.watch(onEvent)
     await settle()
 
-    const updated = pasteIntoNote(await vault.read(path), payload, ctx)
+    const updated = pasteIntoNote((await vault.read(path)).content, payload, ctx)
     await vault.write(path, updated)
     await settle()
 
-    expect(await vault.read(path)).toBe(updated)
+    expect((await vault.read(path)).content).toBe(updated)
     expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'external-change' }))
 
     writeFileSync(path, updated + '\nadded elsewhere\n')
     await settle()
-    expect(onEvent).toHaveBeenCalledWith({ type: 'external-change', path })
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'external-change', path }))
 
     stop(); await vault.close()
   })

@@ -8,8 +8,24 @@ An open-source Bear clone with world-class typography that renders raw Markdown,
 
 Design stage. No code yet.
 
-- [`docs/DESIGN.md`](docs/DESIGN.md) — architecture, plugin API, paste pipeline, wireframe
+- [`docs/DESIGN.md`](docs/DESIGN.md) — product architecture, fidelity contract, paste rules, wireframe
+- [`docs/TECH-SPEC.md`](docs/TECH-SPEC.md) — universal paste: recognition ladder, renderer catalog, sandbox
+- [`docs/RENDERERS.md`](docs/RENDERERS.md) — renderers vs embedded editors, and the v1 set
+- [`docs/AGENT-WORKSPACE.md`](docs/AGENT-WORKSPACE.md) — MCP co-editing: you and an agent in one folder
 - [`docs/wireframe.html`](docs/wireframe.html) — interactive interface wireframe (open in a browser)
+- [`docs/superpowers/plans/`](docs/superpowers/plans/) — the Phase 0–1 implementation plan
+
+## The second act
+
+Because the truth is a folder of Markdown, a coding agent can work in the same workspace over MCP with no protocol in between:
+
+```
+   You edit in SimpleMark ─┐
+                           ├─→  Markdown files + attachments  ─→  renderers
+   Agent edits over MCP  ──┘         (the canonical truth)
+```
+
+The agent writes a ` ```mermaid ` block; the file watcher fires; you see the diagram. Agents modify the canonical Markdown and never operate the editor UI. Every write is compare-and-swap on a revision hash, journaled, and one click from undo.
 
 ## The bet
 

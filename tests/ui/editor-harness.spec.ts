@@ -66,10 +66,19 @@ test('typing flows through the application API and advances the document revisio
     .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().revision))
     .toBeGreaterThan(before.revision)
 
-  const after = await page.evaluate(() => window.simplemark!.session.snapshot())
-  expect(after.markdown).toContain('Typed by the acceptance test.')
-  expect(after.dirty).toBe(true)
-  await expect(page.locator('.status')).toHaveAttribute('data-state', 'dirty')
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('Typed by the acceptance test.')
+
+  // Assert the settled state, not a moment mid-flight. The edit marks the
+  // document dirty and the 900ms debounced save then clears it, so asserting
+  // dirty===true here raced the autosave and failed intermittently under load.
+  // "Saved" is the durable end state and proves the whole path: keystroke ->
+  // transaction -> revision -> save through the port.
+  await expect(page.locator('.status')).toHaveAttribute('data-state', 'saved')
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().dirty))
+    .toBe(false)
 })
 
 test('a formatting command reaches the document as Markdown', async ({ page }) => {
@@ -225,4 +234,92 @@ test('pasted Markdown is parsed, not inserted as escaped literal text', async ({
   expect(markdown).not.toContain('\\#')
   expect(markdown).not.toContain('\\*')
   expect(markdown).not.toContain('\\[')
+})
+
+// BUG-2, defect 1. Editors and viewers put a syntax-highlighted <pre> on the
+// clipboard next to the plain text. Milkdown's clipboard plugin prefers
+// text/html, so copying a .md file out of an editor produced one giant
+// ```markdown code block — the whole document rendered as source.
+// DESIGN.md §4.2 rules that text/plain wins when there is no SVG.
+test('a clipboard carrying both HTML and plain text takes the Markdown path', async ({ page }) => {
+  const markdown = '## From an editor\n\nSome **bold** prose.\n'
+  // What VS Code and most viewers actually put on the clipboard.
+  const html = '<pre style="font-family: monospace"><span>## From an editor</span>\n<span>Some **bold** prose.</span></pre>'
+
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.bringToFront()
+  await page.locator(`${editor} p`).last().click()
+
+  // A real clipboard carrying both flavours, the way an editor writes it.
+  // A synthetic ClipboardEvent is untrusted and ProseMirror ignores it.
+  await page.evaluate(
+    async ({ md, htm }) => {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/plain': new Blob([md], { type: 'text/plain' }),
+          'text/html': new Blob([htm], { type: 'text/html' }),
+        }),
+      ])
+    },
+    { md: markdown, htm: html },
+  )
+
+  await page.keyboard.press('End')
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+v')
+
+  await expect(page.locator(`${editor} h2`, { hasText: 'From an editor' })).toBeVisible()
+  await expect(page.locator(`${editor} strong`, { hasText: 'bold' })).toBeVisible()
+
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('## From an editor')
+
+  const doc = await page.evaluate(() => window.simplemark!.session.snapshot().markdown)
+  // The killer symptom: the paste must not become a fenced code block.
+  expect(doc).not.toContain('```markdown')
+})
+
+// BUG-2, defect 2. DESIGN.md §6 specifies commonmark + gfm and §5 puts tables
+// and task lists in portability tier 1. Only commonmark was loaded, so these
+// constructs had no schema and rendered as plain paragraphs.
+test('GFM constructs render: tables, task lists, strikethrough', async ({ page }) => {
+  const markdown = [
+    '| Take | From |',
+    '| --- | --- |',
+    '| The fence | execution_liveness |',
+    '',
+    '- [ ] unchecked task',
+    '- [x] checked task',
+    '',
+    'Some ~~struck~~ text.',
+  ].join('\n')
+
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.bringToFront()
+  await page.locator(`${editor} p`).last().click()
+  await page.evaluate((md) => navigator.clipboard.writeText(md), markdown)
+
+  await page.keyboard.press('End')
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+v')
+
+  await expect(page.locator(`${editor} table`)).toBeVisible()
+  await expect(page.locator(`${editor} th`, { hasText: 'Take' })).toBeVisible()
+  await expect(page.locator(`${editor} td`, { hasText: 'The fence' })).toBeVisible()
+  await expect(page.locator(`${editor} li[data-item-type="task"]`)).toHaveCount(2)
+  await expect(page.locator(`${editor} li[data-checked="true"]`)).toHaveCount(1)
+  await expect(page.locator(`${editor} del, ${editor} s`)).toBeVisible()
+
+  // Structure, not spacing. remark re-pads table cells, escapes underscores, and
+  // rewrites `-` bullets to `*` on serialise — the normalisation D7 forbids and
+  // fixtures 4 and 5 exist to catch. FIDELITY-1 owns fixing it; asserting exact
+  // bytes here would just duplicate that gate and fail for the wrong reason.
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toMatch(/\|\s*Take\s*\|\s*From\s*\|/)
+
+  const doc = await page.evaluate(() => window.simplemark!.session.snapshot().markdown)
+  expect(doc).toMatch(/\[[ x]\]\s+unchecked task/)
+  expect(doc).toContain('~~struck~~')
 })

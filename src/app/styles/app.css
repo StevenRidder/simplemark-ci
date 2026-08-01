@@ -386,6 +386,86 @@ button[disabled] {
   color: var(--accent);
 }
 
+/* GFM constructs (DESIGN.md §6). Tables and task lists are portability tier 1
+   (§5), so they have to look native rather than like an afterthought. */
+.milkdown .ProseMirror table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 15px/1.5 var(--sans);
+  margin: 26px 0;
+  overflow: hidden;
+}
+
+.milkdown .ProseMirror th,
+.milkdown .ProseMirror td {
+  border: 1px solid var(--line);
+  padding: 9px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.milkdown .ProseMirror th {
+  background: var(--soft);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.milkdown .ProseMirror tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--soft) 42%, transparent);
+}
+
+/* Wide tables scroll inside their own box; the page never scrolls sideways. */
+.milkdown .ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+
+.milkdown .ProseMirror del,
+.milkdown .ProseMirror s {
+  color: var(--ink-3);
+}
+
+.milkdown .ProseMirror li[data-item-type='task'] {
+  list-style: none;
+  margin-left: -22px;
+  padding-left: 26px;
+  position: relative;
+}
+
+/* Milkdown's GFM task item carries its state on the node as data-checked and
+   emits no <input>, so the box is drawn here rather than assumed. */
+.milkdown .ProseMirror li[data-item-type='task']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--ink-3);
+  border-radius: 4px;
+  background: var(--paper);
+}
+
+.milkdown .ProseMirror li[data-checked='true']::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.milkdown .ProseMirror li[data-checked='true']::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 11px;
+  width: 6px;
+  height: 3px;
+  border-left: 1.8px solid var(--paper);
+  border-bottom: 1.8px solid var(--paper);
+  transform: rotate(-45deg);
+}
+
+.milkdown .ProseMirror li[data-checked='true'] {
+  color: var(--ink-3);
+}
+
 /* Rendered block frame (DESIGN.md §10.2). Every extension-rendered block shares
    this shell so a future third-party block is indistinguishable from a built-in.
    The frame is quiet by default and its controls only surface on hover or focus

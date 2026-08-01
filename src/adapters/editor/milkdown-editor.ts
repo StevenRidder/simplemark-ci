@@ -8,12 +8,14 @@ import {
   wrapInBulletListCommand,
   wrapInHeadingCommand,
 } from '@milkdown/kit/preset/commonmark'
+import { gfm } from '@milkdown/kit/preset/gfm'
 import { $view, callCommand } from '@milkdown/kit/utils'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 
 import type { DiagramRenderer } from '../../application/index.js'
 import { DiagramNodeView } from './diagram-node-view.js'
+import { plainTextPaste } from './plain-text-paste.js'
 
 /**
  * The candidate editor: Milkdown on ProseMirror and remark.
@@ -67,10 +69,18 @@ export class MilkdownEditor {
         })
       })
       .use(commonmark)
+      // Tables, task lists, strikethrough, autolinks. DESIGN.md §6 specifies
+      // commonmark + gfm, and §5 puts tables and task lists in portability
+      // tier 1 — without this preset they have no schema at all (BUG-2).
+      .use(gfm)
       // Parses text/plain clipboard content as Markdown. Without it
       // ProseMirror inserts the payload verbatim and remark then escapes the
       // syntax on the way out, so a pasted document comes back as hundreds of
       // paragraphs full of \\# and \\*\\* (BUG-1).
+      // Registered BEFORE clipboard. ProseMirror runs handlePaste in plugin
+      // order and the first handler to return true wins, so this must precede
+      // the clipboard plugin to take the text/plain branch §4.2 requires.
+      .use(plainTextPaste)
       .use(clipboard)
       .use(listener)
       .use(diagramView)

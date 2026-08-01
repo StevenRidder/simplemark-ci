@@ -27,8 +27,11 @@ Every MCP call must pass `project="simplemark"`; the local server config is in
   overrides anything written here about workflow and provenance.
 - The canonical repo `StevenRidder/simplemark` is the only `done` / `merge_provenance`
   / `code_truth` authority. `simplemark-ci` is `verification_only` and can never prove Done.
-- Agents do not self-declare Done. Use `complete_claim(evidence=...)` with branch,
-  head SHA, and PR URL; Done comes from merge provenance on the default branch.
+- Agents own their work end to end: open the PR, and once the required status is
+  green, merge it. There is no human review step in this loop.
+- `complete_claim(evidence=...)` with branch, head SHA, and PR URL moves the task to
+  In Review; Done is then stamped from merge provenance on the default branch. That
+  is a bookkeeping distinction, not a gate — merging is what produces the provenance.
 - Code tasks on this board carry `policy_profile:code_strict` — a bound, clean work
   session with pushed branch and executed tests is required before completion.
 

@@ -1,0 +1,71 @@
+# The SimpleMark gate.
+#
+# Runs `scripts/simplemark_ci.sh` — the same script contributors run locally, so
+# "green on my machine" and "green in CI" mean the same thing.
+#
+# `workflow_dispatch` is required: scripts/ci-sandbox.sh dispatches this workflow
+# by name on the public CI sandbox and gates on the resulting run for the exact
+# canonical SHA. Removing it breaks the sandbox proof path.
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # setup-node hard-fails when `cache: npm` finds no lockfile. Before
+      # FOUNDATION-1 lands there is no package.json, and the gate must fail with
+      # its own honest message rather than an unrelated infra error.
+      - name: Detect lockfile
+        id: lock
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v5
+        if: steps.lock.outputs.present == 'true'
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: actions/setup-node@v5
+        if: steps.lock.outputs.present != 'true'
+        with:
+          node-version: '22'
+
+      - name: Run the SimpleMark gate
+        env:
+          SIMPLEMARK_CI_STRICT: '1'
+          SIMPLEMARK_CI_SCOPE: full
+          CI_RESULT_REPORT: .artifacts/ci-result.json
+        run: bash scripts/simplemark_ci.sh
+
+      - name: Upload CI result
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-result-${{ github.sha }}
+          path: .artifacts/ci-result.json
+          if-no-files-found: warn

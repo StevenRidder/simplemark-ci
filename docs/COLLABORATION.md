@@ -2,7 +2,7 @@
 
 **Collaboration is a capability of a note, not the shape of the product.**
 
-- **Status:** Draft 2 — collaboration reframed as opt-in; `DESIGN.md` D1/D2 amended only for live sessions
+- **Status:** Draft 3 — local `DocumentSession` POC first; distributed collaboration deferred
 - **Date:** 2026-08-01
 - **Companion to:** [`DESIGN.md`](DESIGN.md), [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md), [`RENDERERS.md`](RENDERERS.md)
 
@@ -34,11 +34,15 @@ Where that puts us against the category:
 
 ### 1.0 What this section specifies
 
-Everything below describes what happens **when a session is running.** When one isn't — the normal case — none of it exists: no CRDT, no relay, no service, no cost, no mental overhead. The note is a file, the app is a notebook.
+Everything below describes what happens **when a session is running.** When one isn't—the normal
+case—none of it exists: no coordinator, relay, service, cost, or mental overhead. The note is a
+file; the app is a notebook.
 
 The useful idea borrowed from Google Wave is the living shared artifact. Not the inbox, the chat, the tasks, or the social layer.
 
-> **When a session *is* running:** N humans and N agents are in the same room, editing the same document and each other's work. Every cursor is visible, every change attributed, and the result still lands as ordinary Markdown you own.
+> **The first session:** one human and one local agent share an application `DocumentSession`.
+> **The later room:** N humans and N agents may share an authority-backed document only after the
+> authority-decision gates in §8 pass. Both land as ordinary Markdown you own.
 
 ```text
 Document:
@@ -60,7 +64,7 @@ Agent (Architecture):
 
 Every participant — human or agent — has identity, cursor, selection, presence, a live inbox for redirects and stops, a visible scope, and transactions that can be reviewed and reverted. **There is no second class of participant.** A human may rewrite an agent's paragraph; an agent may improve a human's diagram; an agent may critique and edit another agent's table. The room does not care which kind of thing you are.
 
-That symmetry is the point, and §5.7 is the machinery that keeps it from turning into a brawl.
+That eventual symmetry is the point. The POC first tests whether one scoped agent is useful.
 
 ### 1.1 The design rule that keeps it from becoming Slack
 
@@ -68,65 +72,109 @@ That symmetry is the point, and §5.7 is the machinery that keeps it from turnin
 
 Conversations exist to steer work and resolve decisions. Once resolved, the conclusion belongs in the document and the thread collapses. A note that accumulates a thousand un-resolved comment threads has failed.
 
+One passage-anchored conversation serves humans and agents, but it has two explicit modes:
+
+- **Live** is immediate coordination. When addressed to a running agent as a redirect, sending it
+  stops and replaces that run.
+- **Leave note** is asynchronous communication. It persists for a participant to answer later and
+  changes no one's authority or execution state.
+
+The distinction is visible at the composer. A chat message that says “stop” is still only a
+message; the **Stop** control is what fences an agent generation. Humans can be asked, replied to,
+or handed work, but are not mechanically “redirected.”
+
 ---
 
-## 2. What this changes — and only while live
+## 2. The architecture correction
+
+[`ADR-0002`](decisions/0002-local-document-session-before-crdt.md) removes Yjs from the first POC.
+One process already provides ordering and authority, so the editor and local MCP adapter share one
+application `DocumentSession`. Distributed merge is introduced only when a second client exists.
+
+```mermaid
+flowchart LR
+  H["Human editor"] --> D["DocumentSession<br/>structured document + revision"]
+  A["Local agent via MCP"] --> D
+  D --> R["ProseMirror canvas + Mermaid"]
+  D --> S["Source-preserving serializer"]
+  S --> F["Atomic Markdown file"]
+```
+
+### 2.0 Research that changed the plan
+
+- [Peritext](https://www.inkandswitch.com/peritext/) shows why Markdown delimiter characters are
+  the wrong unit for rich-text collaboration: a text CRDT can merge to valid Markdown while losing
+  both authors' formatting intent. Any later CRDT stores a structured document, never Markdown
+  source punctuation.
+- [ProseMirror's collaboration design](https://marijnhaverbeke.nl/blog/collaborative-editing.html)
+  shows the simpler centralized alternative: one authority orders changes and clients rebase
+  transactions. The local POC is simpler still because every participant is in one process.
+- [Pitter Patter Collab](https://pitter-patter.dev/docs/collab/overview/) packages that model around
+  `prosemirror-collab-commit`: native ProseMirror steps remain inspectable and are rebased at the
+  authority. This is now the first candidate for the multi-client spike.
+- The [Pitter Patter announcement](https://discuss.prosemirror.net/t/a-new-rich-text-framework-built-with-prosemirror/9036)
+  also exposed an unfinished contention-retry path. The project is new and must be spiked at pinned
+  versions; it is not yet an assumed production dependency.
+- Yjs integration changes the practical ownership of positions, undo, decorations, persistence,
+  and document history. Its [relative positions](https://github.com/yjs/yjs),
+  [UndoManager](https://docs.yjs.dev/api/undo-manager), and
+  [IndexedDB provider](https://docs.yjs.dev/ecosystem/database-provider/y-indexeddb) are explicit
+  mechanisms to evaluate, not invisible library details.
+- Reports about `y-prosemirror` incompatibilities identify important tests, but are version-sensitive.
+  The later spike pins exact versions and judges observed behavior rather than repeating blanket
+  claims from older issues.
+
+## 2.1 What changes—and only while live
 
 Two decisions gain an exception. Neither is replaced, and neither applies to a note with no session attached.
 
 | Decision | Was | Now |
 |---|---|---|
-| **D1** Files are the truth | Files are the only truth | Unchanged when cold. **While live**, files are the durable truth and the CRDT is the coordination truth |
-| **D2** Sync delegated to the cloud drive | iCloud propagates everything | Unchanged when cold. **While live**, iCloud is per-vault durable storage written once by a save leader (§3.4); real-time runs peer-to-peer or over an optional relay |
-| **D7** Fidelity contract | Untouched blocks re-emit verbatim | **Unchanged** — see §6.3. Original source per block lives in the CRDT. |
+| **D1** Files are the truth | Files are the only truth | Unchanged when cold. **During the POC session**, the local `DocumentSession` coordinates and the file is the durable projection. A future multi-client authority may take that role only after the spike. |
+| **D2** Sync delegated to the cloud drive | iCloud propagates everything | Unchanged when cold. The POC is in-process; peer transport and save leadership are later decisions. |
+| **D7** Fidelity contract | Untouched blocks re-emit verbatim | **Unchanged.** Original source is an immutable save baseline, never collaboratively edited text. |
 
-### 2.1 D8 — Collaboration is a capability, not the storage model
+### 2.2 D8 — Collaboration is a capability, not the storage model
 
 Five statements, in order of importance:
 
 1. A note **opens locally and works perfectly alone.** No service starts.
-2. **Collaborate** starts or joins a live CRDT room for *that note*.
-3. **Invite agent** gives an agent scoped, live access to that room.
+2. **Invite agent** starts a local `DocumentSession` for *that note* when needed.
+3. The agent receives only the explicit scope and capabilities the human grants.
 4. On close, the durable Markdown saves to your folder as usual.
 5. **No active session means no collaboration service, no cost, no overhead.**
 
 Within a live session, the ownership rule below holds.
 
-```mermaid
-flowchart LR
-  H["You — Mac or iPad"] --> C["Shared document session<br/>Yjs CRDT"]
-  A["Agent via MCP"] --> C
-  C --> R["Renderer<br/>live cursors, live blocks"]
-  C --> S["Debounced atomic save"]
-  S --> V["Markdown folder<br/>iCloud Drive"]
-  V --> I["Search index + attachments"]
-```
-
 **Ownership rule, stated once and obeyed everywhere:**
 
 | Document state | Coordination truth | On external file change |
 |---|---|---|
-| **Live** (a session is attached) | The Yjs doc | Import as a **named external transaction**, visible in Activity, revertible |
+| **Live POC** (a session is attached) | The local `DocumentSession` | Import as a **named external transaction**, visible in Activity, revertible |
 | **Cold** (no session) | The file | Load on open; nothing to reconcile |
 
 A live document is **never** blindly replaced by a file read. If the session has unsaved local edits and the file changed underneath, the user sees a choice — the same diff UI `DESIGN.md` §8 already specifies, now with a third option: *merge the external change as a transaction*.
 
-### 2.2 What honestly gets weaker
+### 2.3 What honestly gets weaker later
 
 Say it out loud rather than discovering it later:
 
-- **Two truths exist.** They can drift — a crash between the last CRDT op and the debounced save loses seconds of work. Mitigated by persisting the Yjs update log to `.simplemark/sessions/<id>.yupdate` on every transaction, so a crash replays rather than loses.
+- A future multi-client system has **two truths** that can drift: CRDT state and the Markdown
+  projection. Persistence and recovery must be proven before that system ships.
 - **The folder is no longer sufficient on its own** while a session is live. It is still sufficient the moment the session ends, which is the property that matters for lock-in.
 - **iCloud is now the wrong path for real-time.** It was never going to work for that anyway; this makes the split explicit instead of implicit.
-- **A relay exists.** It is zero-knowledge and self-hostable, but it is infrastructure the single-machine design would not have needed. Running one is now part of the project.
+- A future remote room may require a relay. Its existence, encryption, and operation are separate
+  product decisions, not POC commitments.
 
 ---
 
-## 3. Scope: multi-human, multi-device, from v1
+## 3. Future scope: multi-human and multi-device
 
-Real multiplayer is in scope. You, your teammates, your iPad, and N agents can be in one document at once.
+Real multiplayer is the expansion path after the local POC, not the first executable target.
+`POC.md` proves one human plus one local agent before this system gains remote humans, a second
+device, a relay, encryption, or multi-agent governance.
 
-| In v1 | Deferred |
+| After the POC | Deferred further |
 |---|---|
 | Multiple humans in one document, live | Public/anonymous sessions |
 | Multiple devices per human (Mac, iPad) | Org accounts, SSO, billing |
@@ -136,7 +184,10 @@ Real multiplayer is in scope. You, your teammates, your iPad, and N agents can b
 | Per-participant undo, transaction revert | Server-side conflict analytics |
 | Region leases, loop breaker, scoped agent roles | Agent-to-agent negotiation protocols |
 
-This costs four subsystems the single-machine version avoided. Each is specified below, and none of them requires an account system.
+This costs four subsystems the single-machine version avoided. They are intentionally absent from
+the POC and should be implemented only after its day-of-use result is positive. Sections 3.1–3.4
+are a **candidate architecture, not accepted scope**; ADR-0002's authority-decision gate owns the
+choice between ProseMirror step authority, Yjs, or no multiplayer expansion.
 
 ### 3.1 Transport: local first, relay only if you need one
 
@@ -156,17 +207,24 @@ flowchart LR
   I["Your iPad"] --> R
   T["Teammate"] --> R
   A["Agent via MCP"] --> R
-  R["Relay — Hocuspocus<br/>stores ciphertext only"] --> P[("Encrypted<br/>update log")]
+  R["Optional authority/relay<br/>stores ciphertext only"] --> P[("Encrypted<br/>commit log")]
   M --> V1[".md in iCloud Drive"]
   T --> V2[".md in their folder"]
 ```
 
-**The relay never sees your content.** Yjs updates are encrypted client-side with a per-document key before transmission; the relay stores and fans out opaque blobs. It knows document ids, participant public keys, and timing — nothing else. That keeps "local-first, your data" honest even with a server in the path.
+**Encryption is a later requirement, not a selected protocol.** If a remote authority/relay stores
+content or commits, the threat model must decide what it can validate while content remains opaque.
+Schema, permissions, agent scopes, and generation fences are easiest when a trusted authority can
+inspect native ProseMirror steps; zero-knowledge transport may require client-side validation or a
+different trust boundary.
 
-- **Protocol:** Hocuspocus (the reference Yjs WebSocket server) over TLS, with an encryption extension on the client side.
-- **Self-hostable in one command.** A single container, ~50 MB of RAM per active room. Anyone can run their own; the project ships one for convenience, never as a requirement. **The app is fully functional having never contacted it.**
+- **First protocol candidate:** Pitter Patter Collab / `prosemirror-collab-commit`, with the Mac or
+  optional service acting as authority. Yjs/Hocuspocus is the comparison only for masterless use.
+- **Self-hostable and optional.** The app remains fully functional without a remote service.
 - **LAN fast path:** peers on the same network discover each other via mDNS and sync directly, using the relay only for presence. Two people at one table do not round-trip through the internet.
-- **Offline:** every client persists its own update log. Reconnect replays. Yjs merges. No conflict dialog, ever, for the collaborative path.
+- **Offline hypothesis:** clients retain pending steps and reconnect/rebase through the authority.
+  The spike must test long disconnection, contention retry, authority restart, and when a conflict
+  still needs human review.
 
 ### 3.2 Identity: keys, not accounts
 
@@ -206,8 +264,10 @@ Every client holds the same document, and every client wants to write `note.md` 
 **Rule: exactly one client per storage location is the save leader.**
 
 - Each *vault* (a folder on a device) elects a leader among the clients attached to it — normally the only one.
-- The leader alone performs the debounced Markdown write. Others render, edit, and sync through the CRDT but never touch that folder.
-- Leadership is a lease in the CRDT's awareness channel: it expires in 10 seconds and is reclaimed if the leader disappears, so closing a laptop hands off automatically.
+- The leader alone performs the debounced Markdown write. Others render, edit, and synchronize
+  through the chosen authority protocol but never touch that folder.
+- Leadership uses an explicit renewable lease owned by the authority. A CRDT-awareness lease is
+  only a candidate if Yjs wins the spike; timeout values must be measured rather than assumed.
 - Your teammate's Mac is a *different* vault and has its own leader. Everyone ends up with their own portable copy, written once each.
 
 Without this rule, multi-device and files-on-disk actively fight. With it, they compose.
@@ -219,14 +279,16 @@ Without this rule, multi-device and files-on-disk actively fight. With it, they 
 | Layer | Contains | Persisted as |
 |---|---|---|
 | **Canvas** | The polished Markdown document and rendered blocks | The `.md` file |
-| **Conversation** | Threads anchored to a range, block, or diagram node — including work requests and interruptions | `.simplemark/threads/<noteId>.json` |
+| **Conversation** | Live chat and asynchronous notes anchored to a range, block, or diagram node; agent control events may be shown here but are issued separately | `.simplemark/threads/<noteId>.json` |
 | **Activity** | Who changed what, agent status, reversible transactions, snapshots | `.simplemark/activity/<noteId>.jsonl` |
 
 Only the Canvas is portable Markdown. Conversation and Activity are sidecars — losing them loses history and discussion, never content. That asymmetry is deliberate: **the thing you own must survive the thing you don't need.**
 
 ### 4.1 Anchors
 
-Comments, agent work requests, and pending edits all attach to **CRDT-relative positions** (Yjs `RelativePosition`), not line numbers or byte offsets. If you type three paragraphs above an agent's intended insertion point while it is thinking, it still inserts in the right place, and your comment still points at the right sentence.
+In the POC, comments, agent requests, and pending edits use session-local block/range anchors owned
+by `DocumentSession`, not line numbers or raw byte offsets. If a later Yjs adapter is accepted, it
+may implement the same application anchor contract with `RelativePosition`.
 
 This replaces the content-hash anchors in [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) §3.1 **while a session is live**. Those remain correct for cold-file patching — both mechanisms exist, and the MCP tool surface picks by document state.
 
@@ -273,6 +335,21 @@ type ControlMessage =
 ```
 
 **Contract:** an agent must drain its inbox between every step of a multi-step edit, and must abandon in-flight work on `stop`. An agent that ignores its inbox is disconnected by the host after one warning. This is enforced, not requested.
+
+#### The redirect interaction
+
+Choosing **Redirect** beside an active agent passage opens that passage's conversation instead of a
+global chatbot. The current exchange remains visible, with two composer modes:
+
+| Composer mode | Send does | Control effect |
+|---|---|---|
+| **Redirect now** | Adds the instruction to the thread, fences the current generation, and starts a replacement run in the same visible scope | Yes |
+| **Leave note** | Adds an anchored note for a human or agent to answer later | None |
+
+The UI may present the control event in the thread so the sequence is understandable, but the
+thread is not the transport or authority. `redirect` still travels through `AgentControl`, bumps the
+generation, and refuses late edits. A human recipient sees the same conversation and can reply live
+or later; the app does not pretend it can abort a person.
 
 ### 5.7 Governing the room — focus-aware, and small
 
@@ -321,7 +398,9 @@ Explicitly **not** in v1: multi-agent debate loops, an elaborate lease protocol,
 
 A stop is not a message. Every agent operation carries a run id and a generation; interrupting or redirecting bumps the generation, and an edit arriving from a superseded generation is **refused, not merged**. See [`SWITCHBOARD-KERNEL.md`](SWITCHBOARD-KERNEL.md) §2 — this is the one piece of machinery worth building before the first agent edit lands.
 
-Humans never need a lease to type. CRDT merge handles concurrent human editing; fences and scopes constrain only an agent's right to commit an automated transaction.
+Humans never need a lease to type. In the POC there is only one human; in a later room, the chosen
+collaboration algorithm handles concurrent humans. Fences and scopes constrain only an agent's
+right to commit an automated transaction.
 
 #### Attribution with mixed authorship
 
@@ -357,29 +436,39 @@ The agent receives exactly that scope as context, writes its work into that loca
 
 `Cmd+Z` undoes **your** last action. Never an agent's, never another participant's.
 
-Yjs's `UndoManager` supports exactly this via tracked origins: each participant's operations carry an origin tag, and each client's undo stack filters to its own. Agent transactions are reverted deliberately from the Activity timeline, not accidentally by a keystroke.
+In the POC, the editor owns the human undo stack and `DocumentSession` journals named agent
+transactions for deliberate revert from Activity. A later Yjs adapter must prove equivalent
+separation with tracked origins; it cannot redefine the POC contract.
 
 ### 6.2 Save
 
 ```text
-edit → Yjs → live canvas → debounce 800 ms and on blur → serialize → atomicWrite
+editor or agent transaction → DocumentSession → structured document
+                            → debounce/on blur → serialize → atomicWrite
 ```
 
-Every transaction also appends to `.simplemark/sessions/<id>.yupdate` immediately, so a crash costs nothing. The debounce governs the *Markdown* write, not durability.
+The POC has one process and one file projection. Crash recovery may journal named transactions, but
+there is no Yjs update log. A later multi-client design must specify durable update persistence and
+checkpoint/compaction before claiming crash-safe offline collaboration.
 
 ### 6.3 Fidelity survives — D7 stands
 
-The claim that byte-identical preservation must soften is **not** the tradeoff being made here. Each block in the Yjs document carries:
+The claim that byte-identical preservation must soften is **not** the tradeoff being made here. Each
+block begins a save epoch with:
 
 ```ts
 interface BlockState {
-  content: Y.XmlFragment      // the live, editable representation
-  originalSource: string      // exact bytes as loaded from disk
-  dirty: boolean              // set by the first op that touches this block
+  content: ProseMirrorNode    // the current structured representation
+  sourceRevision: string      // checkpoint that established this baseline
+  originalSource: string      // immutable exact bytes loaded/checkpointed
+  dirty: boolean              // monotonic until successful save
 }
 ```
 
-On save, clean blocks emit `originalSource` verbatim; dirty blocks serialize. Identical to the design in `DESIGN.md` D7 — the source spans simply live in the CRDT instead of a plain array. The ten acceptance fixtures apply unchanged, and the Phase 0 spike is still the gate.
+On save, clean blocks emit `originalSource` verbatim. Once dirty, a block ignores that baseline and
+serializes the current structured node. Only a successful atomic save creates the next baseline.
+`originalSource` is neither CRDT content nor a last-writer-wins register. The ten acceptance
+fixtures apply unchanged, and the Phase 0 spike is still the gate.
 
 What actually softens is the *ownership* claim, not the *fidelity* claim: while a document is live, the file is a projection rather than the master. §2.1 states it precisely.
 
@@ -403,12 +492,15 @@ What actually softens is the *ownership* claim, not the *fidelity* claim: while 
 |---|---|
 | `read_note` → `{content, rev}` | `open_live_note(path)` → `{docId, content, participants}` |
 | `patch_note(id, expected_rev, edits)` | `apply_transaction(docId, name, ops[])` |
-| anchors by content hash | anchors as `RelativePosition` |
+| anchors by content hash | session-local block/range anchors |
 | — | `subscribe(docId)` → change + presence stream |
 | — | `set_presence(docId, cursor, selection, status)` |
 | — | `insert_at_anchor(docId, anchor, markdown)` |
 | — | `apply_structured_block(docId, anchor, kind, source)` |
 | — | `poll_control(docId)` → `ControlMessage[]` |
+
+All live commands delegate to `DocumentSession`. If a later Yjs adapter is accepted, it may encode
+those anchors as relative positions behind this application contract; MCP does not learn Yjs.
 
 **Routing rule:** if a session exists for the note, live tools apply and cold writes are refused with `{ error: 'note_is_live', docId }`. If not, cold tools apply. One rule, no ambiguity, no split brain.
 
@@ -425,27 +517,28 @@ The gate moved. It is no longer "the file watcher caught an agent write."
 | Phase | Deliverable | Proof |
 |---|---|---|
 | **0** | **Fidelity spike** (`DESIGN.md` §12) | The 10 fixtures survive parse → serialize untouched |
-| **1** | **The notebook** | Folder → paste raw Mermaid → renders → save → reopen → external edit. No session, no service. |
-| **2** | **Rich blocks** | SVG, code, math, tables, charts. Still single-player. |
-| **3** | **Bear-parity shell** | Three panes, tags, search, typography. **Shippable here** — a beautiful local notebook, complete. |
-| **4** | **Collaboration spike** | The §8.2 experiment, used for a full day on real work |
-| **5** | **Collaborate + Invite agent** | The buttons. Live sessions on real notes, MCP participant, control channel |
-| **6** | **Conversation + Activity layers** | Anchored threads, delegation menu, timeline and revert |
-| **7+** | **Remote peers** | iPad and remote humans; optional relay; offline and reconnect |
-| **8+** | Excalidraw, converters, public plugin API | |
+| **1** | **Local live POC, no CRDT** | One `DocumentSession`; `POC.md` passes and is used for one real day |
+| **2** | **The notebook** | Folder → Mermaid → save → reopen → external edit |
+| **3** | **Bear-parity shell** | Three panes, tags, search, typography; shippable alone |
+| **4** | **Multi-client authority decision** | Step authority first; compare Yjs only for masterless need; all correctness gates pass |
+| **5** | **Collaboration expansion** | A second human client, Conversation + Activity, then multi-agent tests |
+| **6+** | **Remote peers** | iPad and remote humans; optional relay; offline and reconnect |
+| **7+** | Excalidraw, converters, public plugin API | |
 
-**Phase 3 is a real ship.** If everything after it were abandoned, SimpleMark would still be the thing that doesn't exist today: a beautiful local Markdown notebook that renders anything you paste.
+**Phase 3 is a real ship.** If everything after it were abandoned, SimpleMark would still be a
+beautiful local Markdown notebook that renders its supported technical source without a plugin
+or mode switch. Broader formats expand only after their renderer or converter is proven.
 
-### 8.2 The Phase 4 experiment — build only this
+### 8.1 The Phase 1 POC — build only this
 
 ```text
-- Two human cursors in one Markdown document.
-- One agent cursor.
+- One human cursor in one local Markdown document.
+- One visible agent scope and status; a decorative cursor is optional.
 - Human selects a section: "turn this into a Mermaid diagram."
 - Agent works in that scope and inserts the block live.
 - Human interrupts midway: "make it simpler."
 - Agent revises in place; the superseded run cannot land a late edit.
-- Human hits undo: the agent's transaction reverts cleanly.
+- Human `Cmd+Z` leaves the agent transaction intact; Activity reverts it deliberately.
 - The document saves as normal Markdown.
 ```
 
@@ -458,21 +551,36 @@ The gate moved. It is no longer "the file watcher caught an agent write."
 
 **If it feels like a useful co-worker, keep live-edit mode.** If you repeatedly pause it, make suggest mode the default and keep live mode for the moments where it is magical. Either outcome is a result; only building both without measuring is a failure.
 
-### 8.1 Two definitions of done
+### 8.2 Two definitions of done
 
 **Phase 3 — the notebook:**
 
-> You paste a bare Mermaid diagram into a note and it becomes a picture. You paste a `.pptx` and see slides. Typography is beautiful, search is instant, and the file on disk is clean Markdown that opens correctly in Bear. Nothing is running but the app.
+> You paste a bare Mermaid diagram into a note and it becomes a picture. Typography is beautiful,
+> search is instant, and the file on disk is clean Markdown that opens correctly in Bear. Nothing
+> is running but the app. PPTX and other document previews arrive only after their converter is
+> separately proven.
 
-**Phase 5+ — the room:**
+**Phase 5+ — the room expansion:**
 
-> You and a colleague are typing in one document. Codex adds a diagram next to the paragraph it is explaining; a Critic agent comments on your colleague's claim and proposes an edit to Codex's table. Every cursor is visible and named. You interrupt Codex mid-table and it changes course. `Cmd+Z` undoes your sentence and nobody else's. The two agents do not thrash, because the second round trips the loop breaker. Your colleague's Mac and your iPad both hold clean, portable Markdown that opens correctly in Bear.
+> You and a colleague are typing in one document. Codex adds a diagram inside the section you
+> selected; its cursor and transaction are visible. You interrupt it mid-table and its old
+> generation cannot land. `Cmd+Z` undoes your sentence and nobody else's. Agents only act when
+> manually invoked, stay out of active human cursors, and surface document-wide work as review.
+> Remote peers and iPad support arrive only after this local room is proven.
 
 ---
 
 ## 9. Open questions
 
-1. **Does the app own the collaboration service, or is it a sidecar process?** In-process is simpler and dies with the app; a sidecar survives app restarts and is the path to the iPad. Probably in-process for v1, extracted at Phase 6.
-2. **Block-level CRDT granularity.** A whole-document `Y.XmlFragment` is what ProseMirror bindings expect, but §6.3 needs per-block original source. Likely a `Y.Map` of block states beside the fragment, kept in sync by the same transaction. **This is the first thing the Phase 0 spike should test.**
-3. **Suggest mode representation.** Tracked suggestions as a separate CRDT layer, or as marks in the main document? Marks are simpler and survive save as nothing; a separate layer is cleaner but doubles the merge surface.
-4. **What happens to a live session when iCloud delivers a `(conflicted copy)`.** The import-as-transaction rule covers external edits to the same file, but a conflicted copy is a new file. Probably surfaces as a diff against the live doc.
+1. **Does the one-day trial justify a second client at all?** If suggest-first wins, distributed live
+   editing may not be the next investment.
+2. **Step authority or masterless CRDT?** Pitter Patter / `prosemirror-collab-commit` is the first
+   candidate. Yjs needs a demonstrated masterless requirement, not merely intermittent connectivity.
+3. **Structured CRDT mapping.** If Yjs still wins, prove the exact `y-prosemirror` mapping rather
+   than storing Markdown or separately merging `originalSource` metadata.
+4. **Persistence and growth.** Select the local persistence provider and measure update/tombstone
+   growth; define checkpoint, compaction, and recovery before remote use.
+5. **Suggest representation.** Decide only after the POC establishes whether suggest-first is the
+   default; avoid adding a second collaborative layer preemptively.
+6. **Conflicted cloud-drive copies.** A conflicted copy is a new file, not a peer update, and should
+   surface as an explicit diff/import rather than silently entering a live session.

@@ -1,652 +1,268 @@
-<title>SimpleMark — Interface Wireframe</title>
-
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SimpleMark — Live document wireframe</title>
 <style>
   :root {
-    --paper:      #fbfbfc;
-    --surface:    #ffffff;
-    --sunk:       #f2f3f6;
-    --line:       #e0e2e9;
-    --line-soft:  #ebedf1;
-    --ink:        #14171d;
-    --ink-2:      #454b58;
-    --ink-3:      #7c8494;
-    --accent:     #0d6f80;
-    --accent-2:   #d9f0f2;
-    --accent-ink: #06515e;
-    --warn:       #9a6410;
-    --warn-bg:    #fdf3e0;
-    --bad:        #a33223;
-    --bad-bg:     #fdeeeb;
-    --ok:         #2f6b46;
-
-    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-
-    --r: 7px;
-    --shadow: 0 1px 2px rgba(16,20,28,.05), 0 12px 32px -8px rgba(16,20,28,.14);
+    color-scheme: light;
+    --canvas:#ebeae7;
+    --paper:#fffefa;
+    --chrome:#f7f6f2;
+    --ink:#242321;
+    --ink-2:#696660;
+    --ink-3:#a19d95;
+    --line:#e8e5df;
+    --soft:#f3f1ec;
+    --accent:#d08a32;
+    --accent-soft:#fff1d9;
+    --agent:#7356c9;
+    --agent-soft:#f0ebff;
+    --agent-line:#d9cdfb;
+    --danger:#c75a4a;
+    --success:#51805e;
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;
+    --serif:"Iowan Old Style","New York",Palatino,Georgia,serif;
+    --mono:"SFMono-Regular",Consolas,monospace;
+    --shadow:0 24px 75px rgba(42,39,33,.17),0 2px 9px rgba(42,39,33,.08);
   }
-
-  @media (prefers-color-scheme: dark) {
+  @media (prefers-color-scheme:dark) {
     :root {
-      --paper:      #101318;
-      --surface:    #171b21;
-      --sunk:       #1d222a;
-      --line:       #2b323c;
-      --line-soft:  #232932;
-      --ink:        #e8ebf0;
-      --ink-2:      #a7b0be;
-      --ink-3:      #6f7887;
-      --accent:     #4fc3d4;
-      --accent-2:   #123840;
-      --accent-ink: #8ee0ec;
-      --warn:       #e0aa5c;
-      --warn-bg:    #33280f;
-      --bad:        #e88b7c;
-      --bad-bg:     #341c18;
-      --ok:         #74c295;
-      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px -10px rgba(0,0,0,.6);
+      color-scheme:dark;
+      --canvas:#171716;--paper:#222220;--chrome:#1d1d1b;--ink:#efede7;
+      --ink-2:#aaa69e;--ink-3:#77736d;--line:#393733;--soft:#2b2a27;
+      --accent:#eca950;--accent-soft:#48361f;--agent:#b7a4f4;
+      --agent-soft:#332c4d;--agent-line:#5d4f86;--danger:#ef8c7d;--success:#83b18e;
+      --shadow:0 26px 80px rgba(0,0,0,.48);
     }
   }
-  :root[data-theme="dark"] {
-    --paper:#101318; --surface:#171b21; --sunk:#1d222a; --line:#2b323c; --line-soft:#232932;
-    --ink:#e8ebf0; --ink-2:#a7b0be; --ink-3:#6f7887;
-    --accent:#4fc3d4; --accent-2:#123840; --accent-ink:#8ee0ec;
-    --warn:#e0aa5c; --warn-bg:#33280f; --bad:#e88b7c; --bad-bg:#341c18; --ok:#74c295;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px -10px rgba(0,0,0,.6);
-  }
-  :root[data-theme="light"] {
-    --paper:#fbfbfc; --surface:#ffffff; --sunk:#f2f3f6; --line:#e0e2e9; --line-soft:#ebedf1;
-    --ink:#14171d; --ink-2:#454b58; --ink-3:#7c8494;
-    --accent:#0d6f80; --accent-2:#d9f0f2; --accent-ink:#06515e;
-    --warn:#9a6410; --warn-bg:#fdf3e0; --bad:#a33223; --bad-bg:#fdeeeb; --ok:#2f6b46;
-    --shadow: 0 1px 2px rgba(16,20,28,.05), 0 12px 32px -8px rgba(16,20,28,.14);
-  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--canvas);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
+  button,input{font:inherit;color:inherit}
+  button{cursor:pointer}
 
-  * { box-sizing: border-box; }
+  .stage{height:100%;padding:22px;display:grid;place-items:center}
+  .window{width:min(1180px,100%);height:min(800px,calc(100vh - 44px));min-height:620px;background:var(--paper);border:1px solid rgba(70,65,57,.14);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+  .titlebar{height:50px;flex:0 0 50px;display:flex;align-items:center;padding:0 12px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--chrome) 84%,transparent);backdrop-filter:blur(18px);position:relative;z-index:10}
+  .left,.right{display:flex;align-items:center;gap:8px}.right{justify-content:flex-end}
+  .lights{display:flex;gap:7px;margin-right:8px}.lights i{width:11px;height:11px;border-radius:50%;background:#d9d6d0}.lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+  .tool{width:30px;height:30px;border:0;border-radius:7px;background:transparent;color:var(--ink-2);display:grid;place-items:center;font-size:17px}
+  .tool:hover{background:var(--soft);color:var(--ink)}
+  .tool svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .filename{text-align:left;font-size:12px;font-weight:600;line-height:1.2;margin-left:10px;min-width:135px}.filename small{display:block;font-size:9px;font-weight:450;color:var(--ink-3);margin-top:2px}
+  .edit-tools{display:flex;align-items:center;gap:2px;margin-left:auto;padding:2px;background:color-mix(in srgb,var(--soft) 72%,transparent);border:1px solid color-mix(in srgb,var(--line) 74%,transparent);border-radius:10px;position:relative}
+  .edit-tool{width:31px;height:28px;border:0;border-radius:7px;background:transparent;color:var(--ink-2);display:grid;place-items:center;font-size:15px}
+  .edit-tool:hover,.edit-tool.active{background:var(--paper);color:var(--ink);box-shadow:0 1px 4px rgba(25,22,17,.08)}
+  .edit-tool svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+  .edit-tool.type{font:500 17px/1 var(--serif)}
+  .toolbar-divider{width:1px;height:18px;background:var(--line);margin:0 2px}
+  .format-popover{display:none;position:absolute;z-index:20;top:36px;left:0;width:218px;padding:7px;background:color-mix(in srgb,var(--paper) 96%,transparent);border:1px solid var(--line);border-radius:11px;box-shadow:0 14px 42px rgba(32,29,24,.18);backdrop-filter:blur(18px)}
+  .format-popover.open{display:block}.style-row{display:grid;grid-template-columns:1fr 1fr;gap:3px}.style-row button,.inline-row button{border:0;background:transparent;border-radius:6px;text-align:left;padding:7px 8px;font-size:11px}.style-row button:hover,.inline-row button:hover{background:var(--soft)}.style-row .selected{background:var(--accent-soft);color:#8b5b1f}.inline-row{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;border-top:1px solid var(--line);margin-top:6px;padding-top:6px}.inline-row button{text-align:center;font:600 12px var(--sans)}
+  .saved{color:var(--success);font-size:10.5px;white-space:nowrap}.saved::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:1px}
+  .faces{display:none;align-items:center;margin-left:2px}.face{width:25px;height:25px;border:2px solid var(--chrome);border-radius:50%;display:grid;place-items:center;font-size:9px;font-weight:750;background:var(--agent-soft);color:var(--agent)}
+  .join{border:0;border-radius:7px;background:transparent;color:var(--ink-2);padding:6px 8px;font-size:11.5px;font-weight:550}.join:hover{background:var(--soft);color:var(--ink)}
 
-  body {
-    margin: 0;
-    background: var(--paper);
-    color: var(--ink);
-    font-family: var(--sans);
-    font-size: 15px;
-    line-height: 1.55;
-    -webkit-font-smoothing: antialiased;
-  }
+  .editor{flex:1;overflow:auto;position:relative;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+  .page{width:min(680px,calc(100% - 64px));margin:0 auto;padding:68px 0 140px}
+  .note-title{font:700 36px/1.15 var(--sans);letter-spacing:-.035em;margin:0 0 8px;outline:none}
+  .date{font-size:12px;color:var(--ink-3);margin-bottom:38px}
+  .prose{font:18px/1.68 var(--serif);letter-spacing:-.003em;margin:0 0 21px;outline:none}
+  h2{font:700 23px/1.3 var(--sans);letter-spacing:-.022em;margin:40px 0 13px}
+  .muted-rule{height:1px;background:var(--line);margin:37px 0}
 
-  .wrap {
-    max-width: 1180px;
-    margin: 0 auto;
-    padding: 56px 28px 96px;
-    display: flex;
-    flex-direction: column;
-    gap: 56px;
-  }
+  .scope{position:relative;border-radius:5px;transition:background .2s,box-shadow .2s}
+  .agent-caret{display:none;position:absolute;width:2px;height:29px;background:var(--agent);right:-2px;bottom:1px;border-radius:2px}
+  .agent-caret::after{content:"Codex";position:absolute;left:0;bottom:28px;background:var(--agent);color:white;padding:2px 6px 3px;border-radius:5px 5px 5px 0;font:600 9.5px var(--sans);letter-spacing:.01em;white-space:nowrap}
 
-  /* ---------- page header ---------- */
-  .masthead { display: flex; flex-direction: column; gap: 14px; }
-  .eyebrow {
-    font-size: 11px; letter-spacing: .13em; text-transform: uppercase;
-    color: var(--ink-3); font-weight: 600;
-  }
-  .masthead h1 {
-    font-family: var(--serif);
-    font-size: clamp(30px, 4.5vw, 44px);
-    line-height: 1.12; margin: 0; font-weight: 400;
-    letter-spacing: -.012em; text-wrap: balance;
-  }
-  .masthead p {
-    margin: 0; max-width: 62ch; color: var(--ink-2); font-size: 16px;
-  }
-  .masthead .rule { height: 1px; background: var(--line); margin-top: 6px; }
+  .agent-card{display:none;position:relative;margin:12px -12px 25px;padding:10px 10px 9px;border:1px solid var(--agent-line);background:color-mix(in srgb,var(--agent-soft) 68%,var(--paper));border-radius:12px;box-shadow:0 10px 30px rgba(86,65,150,.10)}
+  .prompt-row{display:flex;align-items:center;gap:9px}.spark{width:25px;height:25px;flex:0 0 25px;border-radius:7px;background:var(--agent);color:white;display:grid;place-items:center;font-size:13px}
+  .prompt-row input{min-width:0;flex:1;border:0;background:transparent;outline:none;font-size:13px}
+  .prompt-row input::selection{background:var(--agent-line)}
+  .send{width:27px;height:27px;border:0;border-radius:7px;background:var(--agent);color:white;display:grid;place-items:center;font-size:15px}
+  .agent-status{display:none;align-items:center;padding:8px 2px 0 34px;font-size:11px;color:var(--agent);gap:7px}
+  .pulse{width:6px;height:6px;border-radius:50%;background:var(--agent);animation:pulse 1.35s infinite}.spacer{flex:1}
+  .text-button{border:0;background:transparent;padding:2px 5px;color:var(--agent);font-size:10.5px;font-weight:600}.text-button.stop{color:var(--danger)}
+  @keyframes pulse{50%{opacity:.25}}
+  .stopped{display:none;align-items:center;gap:8px;padding:3px 2px 0 34px;color:var(--ink-2);font-size:11px}.stopped strong{color:var(--danger)}
+  .redirect-thread{display:none;padding:2px 2px 1px}.thread-head{display:flex;align-items:center;color:var(--ink-3);font-size:9.5px;margin:0 3px 9px}.thread-head strong{color:var(--ink-2);font-size:10.5px}.thread-head span{margin-left:auto}.message{display:flex;gap:8px;align-items:flex-start;margin:7px 2px}.message.me{flex-direction:row-reverse}.mini-face{width:21px;height:21px;flex:0 0 21px;border-radius:6px;display:grid;place-items:center;background:var(--agent);color:white;font-size:8px;font-weight:700}.message.me .mini-face{background:var(--accent-soft);color:#8b5b1f}.bubble{max-width:78%;padding:7px 9px;border-radius:8px;background:var(--paper);border:1px solid var(--line);font-size:11px;line-height:1.35;color:var(--ink-2)}.message.me .bubble{background:var(--agent-soft);border-color:var(--agent-line);color:var(--ink)}
+  .thread-mode{display:flex;align-items:center;gap:2px;margin:11px 2px 5px;border-top:1px solid var(--agent-line);padding-top:8px}.thread-mode button{border:0;background:transparent;border-radius:5px;padding:3px 6px;color:var(--ink-3);font-size:9.5px}.thread-mode button.active{background:var(--paper);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.07)}.thread-mode span{margin-left:auto;color:var(--ink-3);font-size:9px}
+  .redirect-compose{display:flex;align-items:center;gap:7px;background:var(--paper);border:1px solid var(--agent-line);border-radius:8px;padding:6px 6px 6px 9px}.to{color:var(--agent);font-size:9.5px;font-weight:650;white-space:nowrap}.redirect-compose input{min-width:0;flex:1;border:0;background:transparent;outline:none;font-size:11.5px}.redirect-compose button{border:0;background:var(--agent);color:white;border-radius:6px;padding:5px 8px;font-size:9.5px;font-weight:650;white-space:nowrap}
 
-  /* ---------- section scaffolding ---------- */
-  .sec { display: flex; flex-direction: column; gap: 20px; }
-  .sec-head { display: flex; flex-direction: column; gap: 6px; }
-  .sec-head h2 {
-    font-family: var(--serif); font-weight: 400; font-size: 25px;
-    margin: 0; letter-spacing: -.008em;
-  }
-  .sec-head p { margin: 0; color: var(--ink-2); max-width: 66ch; }
+  .diagram{position:relative;margin:29px 0 25px;padding:34px 28px 29px;background:var(--soft);border-radius:13px;overflow:hidden}
+  .diagram-label{position:absolute;top:11px;left:14px;font:9.5px var(--mono);color:var(--ink-3)}
+  .edit-source{position:absolute;top:8px;right:9px;border:0;background:transparent;color:var(--ink-3);font-size:10px;padding:4px 6px;border-radius:5px}.edit-source:hover{background:var(--paper);color:var(--ink)}
+  .flow{display:flex;align-items:center;justify-content:center;gap:10px;min-height:76px}.node{padding:9px 13px;border-radius:8px;background:var(--paper);border:1px solid var(--line);font:11px var(--mono);color:var(--ink-2);box-shadow:0 1px 2px rgba(0,0,0,.03)}.node.ai{color:var(--agent);border-color:var(--agent-line);background:var(--agent-soft)}.arrow{font-size:17px;color:var(--ink-3)}
+  .change{display:none;align-items:center;gap:6px;margin:-15px 2px 27px;color:var(--ink-3);font-size:10.5px}.change i{width:6px;height:6px;border-radius:50%;background:var(--agent)}.undo{border:0;background:transparent;color:var(--agent);padding:2px 4px;margin-left:2px;font-size:10.5px;font-weight:600}
 
-  /* ---------- app window ---------- */
-  .app {
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--surface);
-    box-shadow: var(--shadow);
-    overflow: hidden;
-  }
-  .titlebar {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--line-soft);
-    background: var(--sunk);
-  }
-  .dots { display: flex; gap: 6px; }
-  .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); display: block; }
-  .titlebar .name {
-    font-size: 12px; color: var(--ink-3); font-weight: 500; margin-left: 6px;
-  }
-  .titlebar .vault {
-    margin-left: auto; font-size: 11.5px; color: var(--ink-3);
-    font-family: var(--mono); display: flex; align-items: center; gap: 6px;
-  }
-  .cloud { color: var(--ok); font-size: 13px; }
+  .command{display:none;position:fixed;left:50%;bottom:52px;transform:translateX(-50%);z-index:5;align-items:center;gap:8px;padding:7px 8px 7px 11px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--paper) 92%,transparent);box-shadow:0 12px 38px rgba(35,31,25,.16);backdrop-filter:blur(18px);font-size:11px;color:var(--ink-2)}
+  .command kbd{font:10px var(--sans);color:var(--ink-3);border:1px solid var(--line);border-radius:4px;padding:1px 4px;background:var(--soft)}
+  .command button{border:0;border-radius:7px;padding:5px 8px;background:var(--agent);color:white;font-size:10.5px;font-weight:650}
 
-  .panes { display: grid; grid-template-columns: 178px 246px minmax(0, 1fr); min-height: 620px; }
+  .preview{position:fixed;z-index:10;left:50%;bottom:11px;transform:translateX(-50%);display:flex;align-items:center;gap:3px;padding:3px;background:rgba(45,43,40,.87);box-shadow:0 7px 24px rgba(0,0,0,.18);border-radius:9px;backdrop-filter:blur(14px)}
+  .preview span{color:rgba(255,255,255,.52);font-size:9px;text-transform:uppercase;letter-spacing:.08em;padding:0 7px}
+  .preview button{border:0;background:transparent;color:rgba(255,255,255,.68);font-size:10.5px;padding:5px 9px;border-radius:6px}.preview button.on{background:rgba(255,255,255,.17);color:white}
 
-  /* pane 1 — tags */
-  .p-tags {
-    border-right: 1px solid var(--line-soft);
-    background: var(--sunk);
-    padding: 16px 10px;
-    display: flex; flex-direction: column; gap: 3px;
-  }
-  .p-label {
-    font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--ink-3); font-weight: 600; padding: 0 8px; margin-bottom: 8px;
-  }
-  .tag {
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 8px; border-radius: 6px;
-    font-size: 13px; color: var(--ink-2); cursor: default;
-  }
-  .tag .n { margin-left: auto; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .tag.on { background: var(--accent-2); color: var(--accent-ink); font-weight: 600; }
-  .tag.on .n { color: var(--accent-ink); }
-  .tag.sub { padding-left: 24px; font-size: 12.5px; }
+  body[data-state="working"] .faces,body[data-state="interrupted"] .faces,body[data-state="redirecting"] .faces{display:flex}
+  body[data-state="working"] .scope,body[data-state="interrupted"] .scope,body[data-state="redirecting"] .scope{background:linear-gradient(180deg,transparent 3%,var(--agent-soft) 3%,var(--agent-soft) 96%,transparent 96%);box-shadow:-5px 0 0 var(--agent-line);padding-left:3px;margin-left:-3px}
+  body[data-state="working"] .agent-caret{display:block}
+  body[data-state="working"] .agent-card,body[data-state="interrupted"] .agent-card,body[data-state="redirecting"] .agent-card{display:block}
+  body[data-state="working"] .agent-status{display:flex}
+  body[data-state="interrupted"] .stopped{display:flex}
+  body[data-state="redirecting"] .prompt-row{display:none}
+  body[data-state="redirecting"] .redirect-thread{display:block}
+  body:not([data-state="calm"]) .change{display:flex}
+  body[data-state="calm"] .command{display:flex}
 
-  /* pane 2 — note list */
-  .p-list { border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; }
-  .search {
-    margin: 12px; padding: 7px 10px; border-radius: 6px;
-    background: var(--sunk); border: 1px solid transparent;
-    color: var(--ink-3); font-size: 12.5px;
-  }
-  .item {
-    padding: 11px 14px; border-bottom: 1px solid var(--line-soft);
-    display: flex; flex-direction: column; gap: 3px; cursor: default;
-  }
-  .item .t { font-size: 13.5px; font-weight: 600; letter-spacing: -.005em; }
-  .item .x { font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item .m { font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .item.on { background: var(--accent-2); }
-  .item.on .t { color: var(--accent-ink); }
-  .item.on .x, .item.on .m { color: var(--accent-ink); opacity: .78; }
-
-  /* pane 3 — editor */
-  .p-edit {
-    padding: 30px 40px 44px;
-    overflow: hidden;
-    position: relative;
-    display: flex; flex-direction: column; gap: 15px;
-  }
-  .p-edit h1.doc {
-    font-family: var(--serif); font-weight: 400; font-size: 27px;
-    margin: 0; letter-spacing: -.01em; line-height: 1.2;
-  }
-  .doc-meta { display: flex; gap: 7px; flex-wrap: wrap; }
-  .chip {
-    font-size: 11px; padding: 2px 8px; border-radius: 20px;
-    background: var(--sunk); color: var(--ink-3);
-  }
-  .p-edit p.body, .p-edit li {
-    font-family: var(--serif); font-size: 15.5px; line-height: 1.65;
-    color: var(--ink); margin: 0; max-width: 64ch;
-  }
-  .p-edit ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
-  a.wl { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-2); }
-
-  /* formatting bubble */
-  .bubble {
-    position: absolute; top: 128px; left: 118px; z-index: 5;
-    display: flex; align-items: center; gap: 1px;
-    background: var(--ink); border-radius: 8px; padding: 4px;
-    box-shadow: 0 8px 24px -6px rgba(0,0,0,.45);
-  }
-  .bubble b, .bubble span {
-    color: var(--paper); font-size: 12.5px; font-weight: 500;
-    padding: 4px 8px; border-radius: 5px; line-height: 1;
-    display: flex; align-items: center;
-  }
-  .bubble b.act { background: rgba(255,255,255,.17); }
-  .bubble .div { width: 1px; height: 15px; background: rgba(255,255,255,.2); margin: 0 3px; padding: 0; }
-  .bubble .tail {
-    position: absolute; bottom: -4px; left: 26px; width: 9px; height: 9px;
-    background: var(--ink); transform: rotate(45deg);
-  }
-
-  /* rendered blocks inside the editor */
-  .block {
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    background: var(--surface);
-    overflow: hidden;
-  }
-  .block-bar {
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 10px; border-bottom: 1px solid var(--line-soft);
-    background: var(--sunk);
-    font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
-  }
-  .block-bar .grow { margin-left: auto; }
-  .btn-mini {
-    font-family: var(--sans); font-size: 10.5px; padding: 2px 7px;
-    border: 1px solid var(--line); border-radius: 4px; color: var(--ink-2);
-    background: var(--surface);
-  }
-  .diagram { padding: 14px; overflow-x: auto; }
-  .diagram pre.mermaid { margin: 0; background: none; }
-
-  table.md {
-    width: 100%; border-collapse: collapse; font-size: 13px;
-  }
-  table.md th, table.md td {
-    border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top;
-  }
-  table.md th { background: var(--sunk); font-weight: 600; font-size: 11.5px; letter-spacing: .02em; }
-  table.md td code { font-family: var(--mono); font-size: 11.5px; background: var(--sunk); padding: 1px 4px; border-radius: 3px; }
-  .table-scroll { overflow-x: auto; }
-
-  pre.code {
-    margin: 0; padding: 12px 14px; overflow-x: auto;
-    font-family: var(--mono); font-size: 12px; line-height: 1.6;
-    background: var(--surface); color: var(--ink);
-  }
-  .k { color: #a05fc0; } .s { color: #2f8a5a; } .f { color: #2f6fbf; } .c { color: var(--ink-3); font-style: italic; }
-  @media (prefers-color-scheme: dark) {
-    .k { color: #cf9de8; } .s { color: #7fd3a2; } .f { color: #7fb6f0; }
-  }
-  :root[data-theme="dark"] .k { color: #cf9de8; }
-  :root[data-theme="dark"] .s { color: #7fd3a2; }
-  :root[data-theme="dark"] .f { color: #7fb6f0; }
-  :root[data-theme="light"] .k { color: #a05fc0; }
-  :root[data-theme="light"] .s { color: #2f8a5a; }
-  :root[data-theme="light"] .f { color: #2f6fbf; }
-
-  .svg-frame { padding: 18px; display: flex; justify-content: center; background: var(--sunk); }
-
-  /* callout pins */
-  .pin {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 19px; height: 19px; border-radius: 50%;
-    background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
-    font-family: var(--sans); flex: none;
-  }
-  :root[data-theme="dark"] .pin { color: #06222a; }
-  @media (prefers-color-scheme: dark) { .pin { color: #06222a; } }
-
-  .keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
-  .key {
-    display: flex; gap: 10px; align-items: flex-start;
-    border: 1px solid var(--line); border-radius: var(--r);
-    padding: 12px 14px; background: var(--surface);
-  }
-  .key h4 { margin: 0 0 2px; font-size: 13px; font-weight: 600; }
-  .key p { margin: 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
-
-  /* ---------- paste sequence ---------- */
-  .seq { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: stretch; }
-  .step {
-    border: 1px solid var(--line); border-radius: var(--r);
-    background: var(--surface); display: flex; flex-direction: column; overflow: hidden;
-  }
-  .step-head {
-    padding: 9px 12px; border-bottom: 1px solid var(--line-soft); background: var(--sunk);
-    display: flex; align-items: center; gap: 9px;
-    font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); font-weight: 600;
-  }
-  .step-body { padding: 13px; flex: 1; display: flex; flex-direction: column; gap: 9px; }
-  .step-body p { margin: 0; font-size: 12.5px; color: var(--ink-2); }
-  .raw {
-    font-family: var(--mono); font-size: 11px; line-height: 1.55;
-    background: var(--sunk); border-radius: 5px; padding: 10px;
-    color: var(--ink-2); white-space: pre; overflow-x: auto;
-  }
-  .verdict {
-    display: flex; align-items: center; gap: 7px;
-    font-size: 11.5px; font-family: var(--mono);
-    padding: 6px 9px; border-radius: 5px;
-  }
-  .verdict.pass { background: var(--accent-2); color: var(--accent-ink); }
-  .verdict.hold { background: var(--warn-bg); color: var(--warn); }
-
-  /* ---------- detail cards ---------- */
-  .details { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
-  .card {
-    border: 1px solid var(--line); border-radius: var(--r);
-    background: var(--surface); overflow: hidden;
-    display: flex; flex-direction: column;
-  }
-  .card-head {
-    padding: 10px 13px; border-bottom: 1px solid var(--line-soft);
-    font-size: 12.5px; font-weight: 600;
-  }
-  .card-body { padding: 13px; display: flex; flex-direction: column; gap: 10px; }
-  .card-body p { margin: 0; font-size: 12.5px; color: var(--ink-2); }
-
-  .err {
-    border: 1px solid var(--bad); background: var(--bad-bg);
-    border-radius: 6px; padding: 10px 12px;
-    display: flex; flex-direction: column; gap: 5px;
-  }
-  .err .h { font-size: 12px; font-weight: 600; color: var(--bad); }
-  .err .m { font-family: var(--mono); font-size: 11px; color: var(--bad); }
-
-  .pref-row {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px;
-  }
-  .pref-row:last-child { border-bottom: 0; }
-  .pref-row .v {
-    font-size: 12px; color: var(--ink-2); border: 1px solid var(--line);
-    border-radius: 5px; padding: 3px 9px; background: var(--sunk);
-  }
-  .swatches { display: flex; gap: 6px; }
-  .swatches i { width: 20px; height: 20px; border-radius: 4px; border: 1px solid var(--line); display: block; }
-
-  .file-tree {
-    font-family: var(--mono); font-size: 11.5px; line-height: 1.75;
-    color: var(--ink-2); white-space: pre; overflow-x: auto; margin: 0;
-  }
-  .file-tree b { color: var(--ink); font-weight: 600; }
-
-  footer {
-    border-top: 1px solid var(--line); padding-top: 20px;
-    font-size: 12.5px; color: var(--ink-3); display: flex; flex-direction: column; gap: 5px;
-  }
-
-  @media (max-width: 900px) {
-    .panes { grid-template-columns: 1fr; }
-    .p-tags, .p-list { display: none; }
-    .bubble { display: none; }
-    .p-edit { padding: 22px; }
-  }
+  @media(max-width:720px){
+    .stage{padding:0}.window{width:100%;height:100%;min-height:0;border:0;border-radius:0}.titlebar{backdrop-filter:none}.filename{display:none}.path-hide,.saved{display:none}.left{margin-right:auto}.right{margin-left:auto}.right .tool{display:none}.join{font-size:10.5px}.edit-tools{position:fixed;z-index:15;left:10px;right:10px;bottom:47px;margin:0 auto;width:max-content;max-width:calc(100% - 20px);background:color-mix(in srgb,var(--paper) 94%,transparent);box-shadow:0 8px 28px rgba(28,25,21,.14);backdrop-filter:blur(18px)}.format-popover{top:auto;bottom:37px}.page{width:calc(100% - 42px);padding-top:44px;padding-bottom:210px}.note-title{font-size:31px}.prose{font-size:17px}.agent-caret::after{left:auto;right:0;border-radius:5px 5px 0 5px}.command{bottom:89px}.preview span{display:none}.diagram{padding-left:14px;padding-right:14px}.flow{gap:5px}.node{font-size:9px;padding:8px}.arrow{font-size:13px}}
 </style>
-
-<div class="wrap">
-
-  <header class="masthead">
-    <div class="eyebrow">Interface wireframe · 1 August 2026</div>
-    <h1>SimpleMark</h1>
-    <p>Bear’s calm, with a renderer that never says no. Paste raw Mermaid, a raw <code>&lt;svg&gt;</code> tag, a table, or a <code>.js</code> file — it becomes the thing it describes, on one canvas, with no mode switch.</p>
-    <div class="rule"></div>
-  </header>
-
-  <!-- =============== MAIN APP =============== -->
-  <section class="sec">
-    <div class="sec-head">
-      <h2>The main window</h2>
-      <p>Three panes: tags, notes, editor. The editor is a single canvas — what you see is what is in the file.</p>
-    </div>
-
-    <div class="app">
-      <div class="titlebar">
-        <div class="dots"><i></i><i></i><i></i></div>
-        <span class="name">SimpleMark</span>
-        <span class="vault"><span class="cloud">●</span> iCloud Drive / Notes</span>
+</head>
+<body data-state="working">
+<div class="stage">
+  <main class="window" aria-label="SimpleMark document">
+    <header class="titlebar">
+      <div class="left">
+        <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
+        <button class="tool" aria-label="Back">
+          <svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <button class="tool path-hide" aria-label="Document list">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        </button>
+        <button class="tool" aria-label="New note" title="New note">
+          <svg viewBox="0 0 24 24"><path d="M12 20H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9"/><path d="m14 14 6-6-4-4-6 6-1 5 5-1Z"/></svg>
+        </button>
       </div>
+      <div class="filename">architecture.md<small>~/Documents/Notes</small></div>
+      <div class="edit-tools" aria-label="Editing tools">
+        <button class="edit-tool type" id="formatButton" aria-label="Text formatting" title="Text formatting">Aa</button>
+        <button class="edit-tool" aria-label="Checklist" title="Checklist">
+          <svg viewBox="0 0 24 24"><path d="m4 6 1.5 1.5L8 5"/><path d="m4 12 1.5 1.5L8 11"/><path d="m4 18 1.5 1.5L8 17"/><path d="M11 6h9M11 12h9M11 18h9"/></svg>
+        </button>
+        <button class="edit-tool" aria-label="Table" title="Table">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16"/></svg>
+        </button>
+        <button class="edit-tool" aria-label="Attach file" title="Attach file">
+          <svg viewBox="0 0 24 24"><path d="m20.5 11.5-8.8 8.8a6 6 0 0 1-8.5-8.5l9.5-9.5a4 4 0 0 1 5.7 5.7l-9.6 9.5a2 2 0 1 1-2.8-2.8l8.8-8.8"/></svg>
+        </button>
+        <button class="edit-tool" aria-label="Insert diagram" title="Diagram or drawing">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="15" width="6" height="5" rx="1"/><path d="M9 6.5h5a3 3 0 0 1 3 3V15M12 12l5 3 4-3"/></svg>
+        </button>
+        <div class="format-popover" id="formatPopover">
+          <div class="style-row"><button>Title</button><button>Heading</button><button class="selected">Body</button><button>Monospaced</button></div>
+          <div class="inline-row"><button aria-label="Bold"><b>B</b></button><button aria-label="Italic"><i>I</i></button><button aria-label="Underline"><u>U</u></button><button aria-label="Strikethrough"><s>S</s></button></div>
+        </div>
+      </div>
+      <div class="right">
+        <span class="saved">Saved</span>
+        <div class="faces" aria-label="Codex is present"><span class="face">C</span></div>
+        <button class="join" id="invite">Work with AI</button>
+        <button class="tool" aria-label="Share" title="Share">
+          <svg viewBox="0 0 24 24"><path d="M12 16V3M8 7l4-4 4 4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>
+        </button>
+        <button class="tool" aria-label="Search" title="Search">
+          <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+        </button>
+        <button class="tool" aria-label="More" title="More">
+          <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
+        </button>
+      </div>
+    </header>
 
-      <div class="panes">
+    <section class="editor">
+      <article class="page">
+        <h1 class="note-title" contenteditable="true">The first useful proof</h1>
+        <div class="date">1 August 2026 at 10:42</div>
 
-        <!-- tags -->
-        <nav class="p-tags">
-          <div class="p-label">Library</div>
-          <div class="tag">All Notes <span class="n">412</span></div>
-          <div class="tag">Untagged <span class="n">9</span></div>
-          <div class="tag">Archive <span class="n">88</span></div>
-          <div class="p-label" style="margin-top:18px">Tags</div>
-          <div class="tag on">#architecture <span class="n">31</span></div>
-          <div class="tag sub">/adr <span class="n">12</span></div>
-          <div class="tag sub">/reviews <span class="n">7</span></div>
-          <div class="tag">#switchboard <span class="n">64</span></div>
-          <div class="tag">#taikun <span class="n">120</span></div>
-          <div class="tag">#reading <span class="n">18</span></div>
-        </nav>
+        <p class="prose" contenteditable="true">SimpleMark is a quiet local notebook for technical work. It opens ordinary Markdown and makes source-shaped ideas legible without turning the file into an application database.</p>
 
-        <!-- list -->
-        <div class="p-list">
-          <div class="search">Search notes</div>
-          <div class="item on">
-            <div class="t">Switchboard ↔ Agent Orchestrator</div>
-            <div class="x">Borrowing map &amp; thread digest</div>
-            <div class="m">Today · 14:22</div>
+        <h2 contenteditable="true">The live document boundary</h2>
+        <p class="prose scope" contenteditable="true">While this note is open, the human and agent share one local document session. The file remains the durable result; the session supplies presence, interruption, scoped edits, and separate undo.<i class="agent-caret" contenteditable="false"></i></p>
+
+        <div class="agent-card">
+          <div class="prompt-row">
+            <span class="spark">✦</span>
+            <input aria-label="Instruction to Codex" value="Turn this section into a simple diagram">
+            <button class="send" aria-label="Send">↑</button>
           </div>
-          <div class="item">
-            <div class="t">ADR-0027 — Open source line</div>
-            <div class="x">Anything about one machine is open…</div>
-            <div class="m">Today · 09:41</div>
-          </div>
-          <div class="item">
-            <div class="t">Warm pool invalidation</div>
-            <div class="x">MVCC-style catalog versioning notes</div>
-            <div class="m">Yesterday</div>
-          </div>
-          <div class="item">
-            <div class="t">Paste parser scratch</div>
-            <div class="x">flowchart TB · sniffer priorities</div>
-            <div class="m">Jul 30</div>
-          </div>
-          <div class="item">
-            <div class="t">Total pilot — methane</div>
-            <div class="x">Sensirion feed, 417 pads</div>
-            <div class="m">Jul 29</div>
+          <div class="agent-status"><i class="pulse"></i><span id="workingText">Codex is working in this passage</span><span class="spacer"></span><button class="text-button" id="redirect">Redirect</button><button class="text-button stop" id="stop">Stop</button></div>
+          <div class="stopped"><strong>Stopped.</strong><span>Late changes from that run cannot land.</span><span class="spacer"></span><button class="text-button" id="resume">Redirect</button></div>
+          <div class="redirect-thread">
+            <div class="thread-head"><strong>Passage conversation</strong><span>live · anchored here</span></div>
+            <div class="message"><span class="mini-face">C</span><div class="bubble">I’m turning this into a three-step system diagram.</div></div>
+            <div class="message me"><span class="mini-face">SR</span><div class="bubble">Keep Markdown at the center. Hide the sync machinery.</div></div>
+            <div class="thread-mode"><button class="active" data-mode="live">Redirect now</button><button data-mode="note">Leave note</button><span id="modeHelp">stops and replaces the AI run</span></div>
+            <div class="redirect-compose"><span class="to" id="recipient">To Codex</span><input id="redirectInput" aria-label="Redirect instruction" value="Make the document—not the session—the center"><button id="sendRedirect">Send redirect</button></div>
           </div>
         </div>
 
-        <!-- editor -->
-        <article class="p-edit">
-
-          <div class="bubble">
-            <b class="act">B</b>
-            <span style="font-style:italic">I</span>
-            <span style="text-decoration:line-through">S</span>
-            <span style="background:rgba(255,220,90,.32); border-radius:3px">H</span>
-            <span style="font-family:var(--mono)">&lt;/&gt;</span>
-            <i class="div"></i>
-            <span>H1</span><span>H2</span>
-            <i class="div"></i>
-            <span>•</span><span>☑</span><span>🔗</span>
-            <i class="tail"></i>
+        <figure class="diagram">
+          <span class="diagram-label">mermaid</span><button class="edit-source">Edit source</button>
+          <div class="flow">
+            <div class="node">Markdown file</div><div class="arrow">→</div>
+            <div class="node">Live session</div><div class="arrow">→</div>
+            <div class="node ai">You + Codex</div>
           </div>
+        </figure>
+        <div class="change"><i></i><span>Added by Codex just now</span><button class="undo">Undo this change</button></div>
 
-          <h1 class="doc">Switchboard ↔ Agent Orchestrator</h1>
-          <div class="doc-meta">
-            <span class="chip">#architecture/reviews</span>
-            <span class="chip">2,883 words</span>
-            <span class="chip">saved 2s ago</span>
-          </div>
-
-          <p class="body">Reviewed <a class="wl" href="#">[[ADR-0008 Three-plane separation]]</a> against their daemon. Their reducer is our own hydrate → reduce → act pattern running in the wrong plane; relocating it is the whole design.</p>
-
-          <div class="table-scroll">
-            <table class="md">
-              <thead><tr><th>Track</th><th>What</th><th>Verdict</th><th>Effort</th></tr></thead>
-              <tbody>
-                <tr><td>A</td><td>tmux runtime under our relay</td><td>Adopt the approach</td><td>S–M</td></tr>
-                <tr><td>B</td><td><code>ports.Agent</code> contract</td><td>Port knowledge, not Go</td><td>M</td></tr>
-                <tr><td>C</td><td>PR-reaction nudge loop</td><td>Lift 5 mechanics</td><td>S–M</td></tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- rendered mermaid -->
-          <div class="block">
-            <div class="block-bar">
-              <span class="pin">1</span> mermaid · rendered from pasted source
-              <span class="grow"></span>
-              <span class="btn-mini">Edit source</span>
-              <span class="btn-mini">Copy SVG</span>
-            </div>
-            <div class="diagram">
-<pre class="mermaid">
-flowchart LR
-  START(["Operator Start"]) --> ST["start_task"]
-  ST --> CLAIM{"Active claim?"}
-  CLAIM -->|owns it| BIND["Bind claim + fence"]
-  CLAIM -->|none| ATOM["Reserve + wake"]
-  CLAIM -->|someone else| REFUSE["Refuse"]
-  BIND --> HOST["Agent Host spawns runtime"]
-  ATOM --> HOST
-</pre>
-            </div>
-          </div>
-
-          <p class="body">The kill authority stays behind C2 in both paths — only the lease reaper may stop a process.</p>
-
-          <!-- rendered svg -->
-          <div class="block">
-            <div class="block-bar">
-              <span class="pin">2</span> svg · pasted markup, sanitised
-              <span class="grow"></span>
-              <span class="btn-mini">Edit markup</span>
-            </div>
-            <div class="svg-frame">
-              <svg width="290" height="62" viewBox="0 0 290 62" role="img" aria-label="Three plane diagram: capacity, communication, coordination">
-                <rect x="1" y="1" width="90" height="40" rx="5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
-                <rect x="100" y="1" width="90" height="40" rx="5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
-                <rect x="199" y="1" width="90" height="40" rx="5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
-                <text x="46" y="25" text-anchor="middle" font-size="11" font-family="ui-monospace, monospace" fill="currentColor">capacity</text>
-                <text x="145" y="25" text-anchor="middle" font-size="11" font-family="ui-monospace, monospace" fill="currentColor">comms</text>
-                <text x="244" y="25" text-anchor="middle" font-size="11" font-family="ui-monospace, monospace" fill="currentColor">coord</text>
-                <text x="145" y="56" text-anchor="middle" font-size="9.5" font-family="ui-monospace, monospace" fill="currentColor" opacity=".6">no row impersonates another plane’s authority</text>
-              </svg>
-            </div>
-          </div>
-
-          <!-- rendered code -->
-          <div class="block">
-            <div class="block-bar">
-              <span class="pin">3</span> javascript · Shiki
-              <span class="grow"></span>
-              <span class="btn-mini">Copy</span>
-            </div>
-<pre class="code"><span class="c">// sniffer: claim a paste only if it validates</span>
-<span class="k">export const</span> <span class="f">mermaidSniffer</span> = {
-  id: <span class="s">'mermaid'</span>, priority: <span class="s">10</span>,
-  <span class="f">sniff</span>(input) {
-    <span class="k">if</span> (!DIAGRAM_HEAD.<span class="f">test</span>(input.text)) <span class="k">return null</span>
-    <span class="k">try</span> { mermaid.<span class="f">parse</span>(input.text) }
-    <span class="k">catch</span> { <span class="k">return null</span> }        <span class="c">// stays plain text</span>
-    <span class="k">return</span> <span class="f">node</span>(<span class="s">'mermaid'</span>, input.text)
-  }
-}</pre>
-          </div>
-
-        </article>
-      </div>
-    </div>
-
-    <div class="keys">
-      <div class="key"><span class="pin">1</span><div><h4>Diagram, not code</h4><p>Pasted bare — no fence. Sniffer matched the header, Mermaid parsed it, so it converted. On disk it is a normal <code>```mermaid</code> block.</p></div></div>
-      <div class="key"><span class="pin">2</span><div><h4>SVG as an image</h4><p>Raw markup becomes a picture. DOMPurify strips scripts and event handlers first; click to get the markup back.</p></div></div>
-      <div class="key"><span class="pin">3</span><div><h4>Code stays code</h4><p>Shiki highlighting, language label, copy button. Never converted, never guessed at.</p></div></div>
-    </div>
-  </section>
-
-  <!-- =============== PASTE SEQUENCE =============== -->
-  <section class="sec">
-    <div class="sec-head">
-      <h2>The paste moment</h2>
-      <p>What happens between <code>⌘V</code> and the picture. The order matters: nothing converts until it has been proven renderable.</p>
-    </div>
-
-    <div class="seq">
-      <div class="step">
-        <div class="step-head"><span class="pin">A</span> Clipboard</div>
-        <div class="step-body">
-          <p>Bare diagram source, no fence — copied out of a PR thread.</p>
-          <div class="raw">flowchart TB
-  subgraph ADMIT["W1 — one door"]
-    START(["Operator Start"])
-    START --&gt; ST["start_task"]
-  end</div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-head"><span class="pin">B</span> Sniffer chain</div>
-        <div class="step-body">
-          <p>Each sniffer must match <em>and</em> validate. First to do both wins.</p>
-          <div class="verdict pass">mermaid → head ✓ parse ✓ &nbsp;claim</div>
-          <div class="verdict hold">svg → no &lt;svg&gt; root &nbsp;skip</div>
-          <div class="verdict hold">markdown → not reached</div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-head"><span class="pin">C</span> Canvas + disk</div>
-        <div class="step-body">
-          <p>Rendered inline. The file gets a portable fence, so GitHub renders it too.</p>
-          <div class="raw">```mermaid
-flowchart TB
-  subgraph ADMIT["W1 — one door"]
-  …
-```</div>
-          <div class="verdict pass">⌘Z restores the raw text</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- =============== DETAILS =============== -->
-  <section class="sec">
-    <div class="sec-head">
-      <h2>Details that decide whether it feels trustworthy</h2>
-      <p>Three behaviors separate “magic” from “a trick that occasionally eats my notes.”</p>
-    </div>
-
-    <div class="details">
-
-      <div class="card">
-        <div class="card-head">Failure is visible and local</div>
-        <div class="card-body">
-          <p>Broken diagram source never renders a blank rectangle. The block shows the parser’s own message and the source stays editable in place.</p>
-          <div class="err">
-            <div class="h">Diagram didn’t parse</div>
-            <div class="m">Parse error on line 4: expected node id, got '--&gt;'</div>
-          </div>
-          <p>Text that merely <em>looks</em> like Mermaid but fails to parse is left as plain text — no conversion, no surprise.</p>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">Typography lives in Preferences</div>
-        <div class="card-body">
-          <p>Bear-style: you choose the face for your notes, the toolbar handles structure and emphasis. Per-word fonts can’t exist in a <code>.md</code> file, and Bear doesn’t have them either.</p>
-          <div>
-            <div class="pref-row"><span>Editor font</span><span class="v">Iowan Old Style</span></div>
-            <div class="pref-row"><span>Size</span><span class="v">15.5 pt</span></div>
-            <div class="pref-row"><span>Line height</span><span class="v">1.65</span></div>
-            <div class="pref-row"><span>Line width</span><span class="v">64 ch</span></div>
-            <div class="pref-row"><span>Theme</span><span class="swatches"><i style="background:#fbfbfc"></i><i style="background:#101318"></i><i style="background:#0d6f80"></i></span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">It is still just a folder</div>
-        <div class="card-body">
-          <p>No database of record, no account, no server. Delete the app and your notes are unchanged. Sync is whatever your cloud drive already does.</p>
-          <pre class="file-tree"><b>Notes/</b>
-├── switchboard-borrowing-map.md
-├── adr-0027-open-source-line.md
-├── warm-pool-invalidation.md
-└── <b>attachments/</b>
-    ├── 9f3a2b.strokes.json
-    └── c41d70.png</pre>
-          <p>SQLite holds only the search index and link graph — deletable at any time, rebuilt by a scan.</p>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-  <footer>
-    <div>Wireframe for the SimpleMark design doc · Milkdown canvas · files-as-truth · folder sync · plugin API</div>
-    <div>Deferred, but designed for: iOS shell, handwriting + OCR plugin, graph view, plugin manifests.</div>
-  </footer>
-
+        <p class="prose" contenteditable="true">Stop is immediate control, not a message. It cancels the active request and rejects anything that arrives late. The rest should feel exactly like writing a note.</p>
+        <div class="muted-rule"></div>
+        <p class="prose" contenteditable="true">Nothing else is required for the proof: one file, one window, Mermaid, and one visible agent whose work can be interrupted and reversed.</p>
+      </article>
+    </section>
+  </main>
 </div>
+
+<div class="command"><span>Select text to work with AI</span><kbd>⌘</kbd><kbd>J</kbd><button id="commandInvite">Ask Codex</button></div>
+
+<nav class="preview" aria-label="Wireframe state">
+  <span>Preview</span>
+  <button data-view="calm">Writing alone</button>
+  <button class="on" data-view="working">AI working</button>
+  <button data-view="redirecting">Redirecting</button>
+  <button data-view="interrupted">Stopped</button>
+</nav>
+
+<script>
+  const stateButtons = [...document.querySelectorAll('[data-view]')]
+  function showState(state) {
+    document.body.dataset.state = state
+    stateButtons.forEach(button => button.classList.toggle('on', button.dataset.view === state))
+  }
+  stateButtons.forEach(button => button.addEventListener('click', () => showState(button.dataset.view)))
+  document.querySelector('#invite').addEventListener('click', () => showState('working'))
+  document.querySelector('#commandInvite').addEventListener('click', () => showState('working'))
+  document.querySelector('#stop').addEventListener('click', () => showState('interrupted'))
+  document.querySelector('#redirect').addEventListener('click', () => showState('redirecting'))
+  document.querySelector('#resume').addEventListener('click', () => showState('redirecting'))
+  const modeButtons = [...document.querySelectorAll('.thread-mode button')]
+  const sendRedirect = document.querySelector('#sendRedirect')
+  const recipient = document.querySelector('#recipient')
+  const modeHelp = document.querySelector('#modeHelp')
+  modeButtons.forEach(button => button.addEventListener('click', () => {
+    modeButtons.forEach(item => item.classList.toggle('active', item === button))
+    const noteMode = button.dataset.mode === 'note'
+    recipient.textContent = noteMode ? 'Note' : 'To Codex'
+    sendRedirect.textContent = noteMode ? 'Leave note' : 'Send redirect'
+    modeHelp.textContent = noteMode ? 'does not interrupt anyone' : 'stops and replaces the AI run'
+  }))
+  sendRedirect.addEventListener('click', () => {
+    if (document.querySelector('.thread-mode .active').dataset.mode === 'note') {
+      sendRedirect.textContent = 'Note added'
+      return
+    }
+    document.querySelector('#workingText').textContent = 'Codex restarted with your redirect'
+    showState('working')
+  })
+  const formatButton = document.querySelector('#formatButton')
+  const formatPopover = document.querySelector('#formatPopover')
+  formatButton.addEventListener('click', () => {
+    const open = formatPopover.classList.toggle('open')
+    formatButton.classList.toggle('active', open)
+  })
+</script>
+</body>
+</html>

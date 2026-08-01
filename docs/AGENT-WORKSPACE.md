@@ -1,8 +1,8 @@
 # SimpleMark — Agent Workspace
 
-**A shared Markdown workspace: you edit in the app, an agent edits over MCP, both see the same folder.**
+**The later cold-file MCP surface.** For the first live human-plus-agent proof, see [`POC.md`](POC.md).
 
-- **Status:** Draft 1 — designed for from day one, built in Phase 6
+- **Status:** Draft 1 — designed for from day one, built after the local live POC
 - **Date:** 2026-08-01
 - **Companion to:** [`DESIGN.md`](DESIGN.md), [`TECH-SPEC.md`](TECH-SPEC.md), [`RENDERERS.md`](RENDERERS.md)
 
@@ -26,21 +26,20 @@ The agent works with raw, portable source. You see rendered diagrams, charts, an
 
 No synthetic keystrokes, no clicking buttons, no driving the canvas. The app is the live visual surface for both parties; the agent's surface is a semantic tool API over the files. This keeps the app's state machine sane, makes every agent action reviewable and undoable, and means an agent bug can never put the editor into an impossible state.
 
-### 1.2 What makes it feel alive
+### 1.2 What this document does not cover
 
-The loop is already built by Phase 1:
-
-1. Agent writes a ` ```mermaid ` block into `architecture.md`.
-2. `chokidar` fires; the write ledger says it wasn't us; the note is clean.
-3. The open note updates in place — and the diagram renders.
-
-You watch an agent think in diagrams. That is the moment the product justifies itself.
+This document specifies agents working on notes that are **not live**. A live POC note uses the
+application `DocumentSession`, session-local anchors, named transactions, and the control channel
+specified in `COLLABORATION.md` and proved in `POC.md`. A future multi-client adapter first tests a
+ProseMirror step authority and may use Yjs only for a proven masterless requirement. A live note
+never falls back to a watcher-driven write.
 
 ---
 
 ## 2. Scope
 
-**In:** a local stdio MCP server, bound to one folder, no network listener, no accounts, single user. That is sufficient for a personal workspace and is the whole of v1.
+**In:** a local stdio MCP server, bound to one folder, no network listener, no accounts, and
+single-user cold-file work. It follows the POC rather than competing with it.
 
 **Out:** hosted servers, multi-user concurrency, agent identity federation, remote access. If those ever arrive they are a separate product decision, not an extension of this one.
 
@@ -197,7 +196,7 @@ Both additions are small and belong in Phase 1 regardless: stable ids are what k
 
 | Phase | Deliverable |
 |---|---|
-| **1** (now) | Stable ids + `rev` on read/write — the two prerequisites above |
+| **After the POC** | Stable ids + `rev` on read/write — the two prerequisites above |
 | **6a** | Read-only MCP server: `vault_info`, `find_notes`, `read_note`, `read_block`, `search`, `list_links`. Zero write risk, immediately useful — an agent that can read your whole knowledge base. |
 | **6b** | Writes: `create_note`, `append_block`, `patch_note` with rev checking and the journal |
 | **6c** | Attribution UI, undo-from-journal, proposal mode |

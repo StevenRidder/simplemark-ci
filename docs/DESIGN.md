@@ -1,6 +1,7 @@
 # SimpleMark — Design Document
 
-- **Status:** Draft, revision 3 — **D1/D2 superseded in part by [`COLLABORATION.md`](COLLABORATION.md)**
+- **Status:** Draft, revision 4 — local `DocumentSession` POC governed by
+  [`ADR-0002`](decisions/0002-local-document-session-before-crdt.md)
 - **Date:** 2026-08-01
 - **Working title:** SimpleMark
 - **One line:** A lightweight, beautiful, local-first Markdown notebook that turns raw technical material into editable documents — and becomes multiplayer only when you want it.
@@ -9,9 +10,10 @@
 
 > **This document specifies the notebook — the product when nothing else is running.** That is the
 > default and the majority case: a note is a file, and the app is a beautiful editor over it.
-> [`COLLABORATION.md`](COLLABORATION.md) specifies what changes when you explicitly start a live
-> session: a CRDT coordinates while the document is open, and files remain the durable artifact.
-> D1 and D2 below gain an exception *only* while live. D7 (fidelity) is unchanged either way.
+> [`COLLABORATION.md`](COLLABORATION.md) specifies live participation. The first local human-agent
+> session is coordinated by the application `DocumentSession`, not a CRDT. A later multi-client
+> spike chooses a ProseMirror step authority, a structured CRDT, or no expansion. Files remain
+> durable either way.
 
 ---
 
@@ -30,6 +32,9 @@ SimpleMark is Bear's feel with a renderer that never says no.
 ## 2. Architectural decisions
 
 These are the load-bearing choices. D3 is the only one gated on a spike; see §12.
+Repository structure and dependency direction are governed by
+[`ADR-0001`](decisions/0001-single-product-modular-architecture.md): one product repo and package,
+with enforced internal modules rather than either a monorepo or monolithic application code.
 
 ### D1 — Files are the truth
 
@@ -37,7 +42,9 @@ Notes are plain `.md` files in a folder the user picks. SQLite is a rebuildable 
 
 **Consequence:** zero lock-in is literally true, not a promise. Every feature must round-trip to Markdown or it does not ship — subject to the fidelity contract in D7 and the portability tiers in §5.
 
-**Amended by D8** ([`COLLABORATION.md`](COLLABORATION.md) §2.1): while a document has an active session, the Yjs CRDT is the *coordination* truth and the file is a projection of it. The moment the session ends, the folder is sufficient on its own again — which is the property lock-in actually depends on.
+**Amended by D8 and ADR-0002:** while a document has an active local POC session, the application
+`DocumentSession` is the coordination truth and the file is its durable projection. A future
+multi-client session may replace that coordinator only after the authority-decision spike passes.
 
 ### D2 — Sync is delegated to the cloud drive
 
@@ -48,7 +55,9 @@ No CRDT, no relay server, no accounts, no hosting bill. The notes folder lives i
 - No real-time collaboration. Not wanted.
 - iOS is the weak spot: iCloud Drive works via the file provider; Dropbox and Google Drive on iOS are apps rather than filesystems and background folder sync is unreliable. **iCloud Drive is the supported iOS path.**
 
-**Amended by D8:** the cloud drive is durable sync and offline fallback only. Real-time collaboration runs over a localhost WebSocket, never over file propagation — a file watcher has no presence, no cursors, no interruption channel, and cannot merge two edits to one paragraph.
+**Amended by D8 and ADR-0002:** cloud-drive propagation is not the live agent transport. The local
+POC is in-process. Real-time peer transport and offline merge are deferred with the multi-client
+authority decision.
 
 ### D3 — Milkdown as the editor core *(gated on the §12 spike)*
 
@@ -89,7 +98,10 @@ Byte-identical round-trip through a general Markdown serializer is not achievabl
 
 This is the hardest requirement in the project and the reason §12 exists.
 
-**Unchanged by D8.** Under live collaboration, `originalSource` and `dirty` live in the CRDT beside each block's content ([`COLLABORATION.md`](COLLABORATION.md) §6.3). Clean blocks still emit their original bytes. The ten acceptance fixtures apply unchanged.
+**Refined by ADR-0002.** `originalSource` is an immutable baseline, not collaborative text. Dirty is
+monotonic within a save epoch. Once touched, a block ignores its baseline and serializes current
+structured content; only a successful save creates a new baseline. The ten acceptance fixtures
+apply unchanged.
 
 ---
 
@@ -104,25 +116,32 @@ This is the hardest requirement in the project and the reason §12 exists.
 └──────────────────┬───────────────────────────────────┘
                    │  NativeBridge (one narrow interface)
 ┌──────────────────▼───────────────────────────────────┐
-│  simplemark-core  (TypeScript, no DOM)               │
-│   ├─ Vault        scan · watch · atomic write         │
-│   ├─ SourceMap    block ↔ byte-range preservation (D7)│
-│   ├─ NoteIndex    SQLite FTS5 cache (rebuildable)    │
-│   ├─ LinkGraph    [[wikilink]] resolution + backlinks │
-│   ├─ Attachments  content-addressed sidecar files     │
-│   └─ Extensions   internal registry (D5)              │
-└──────────────────┬───────────────────────────────────┘
-┌──────────────────▼───────────────────────────────────┐
-│  simplemark-editor  (Milkdown / ProseMirror)         │
-│   paste pipeline · node registry · NodeView host      │
-│   bubble toolbar · slash menu · input rules           │
-└──────────────────┬───────────────────────────────────┘
-┌──────────────────▼───────────────────────────────────┐
-│  simplemark-ui  (three-pane shell, theming)          │
+│  src/domain  (TypeScript, pure; no DOM/frameworks)   │
+│  source model · transactions · recognition contracts │
+│  generation fences · portable document rules         │
+└──────────────────▲───────────────────────────────────┘
+                   │
+┌──────────────────┴───────────────────────────────────┐
+│  src/application                                     │
+│  DocumentSession · open/save · invoke/stop/revert     │
+│  ports implemented by adapters                       │
+└──────────────────▲───────────────────────────────────┘
+                   │
+┌──────────────────┴───────────────────────────────────┐
+│  src/adapters                                        │
+│  editor · filesystem · renderers · MCP                │
+│  deferred collaboration adapter                       │
+└──────────────────▲───────────────────────────────────┘
+                   │
+┌──────────────────┴───────────────────────────────────┐
+│  src/app  UI shell + the single composition root     │
 └──────────────────────────────────────────────────────┘
 ```
 
-Each package has one job, a typed interface, and can be tested without the others. `simplemark-core` has no DOM dependency, so vault, source-mapping, and conflict tests run under Node.
+This is one root package and one application release. Each module has one job and a typed public
+entry point. Domain and application tests run under Node without DOM, Tauri, Yjs, or MCP; adapters
+are tested against the ports they implement. CI rejects dependency cycles and imports across module
+internals.
 
 ---
 
@@ -192,6 +211,28 @@ A sniffer may convert **only** when all four hold:
 1. **Never guess silently wrong** — conversion requires successful parse.
 2. **Never lose the source** — the block stores the original text and writes a normal fenced code block to disk.
 3. **Fail visibly** — broken diagram source renders an inline error card with the parser message, never a blank rectangle.
+
+### 4.5 Mermaid source editor acceptance matrix
+
+The first Mermaid NodeView uses a plain textarea as an explicit editable island. CodeMirror 6 is an
+optimization only after this behavior passes; it is not required for the POC.
+
+| Behavior | Required result |
+|---|---|
+| Enter source mode | Clicking the render focuses the source editor without moving the outer selection unexpectedly |
+| Exit source mode | Escape or click-away commits one outer-document transaction and returns focus predictably |
+| Selection boundary | A selection never silently spans from outer prose through the isolated source editor |
+| Arrow navigation | Left/right/up/down at the source edges enter or leave the block intentionally |
+| Paste and IME | Paste, composition, emoji, and dead-key input produce one valid block update |
+| Undo/redo | Inner typing participates in the block edit; outer undo restores content and a sensible focus position |
+| Delete boundary | Backspace/Delete at an empty or selected block cannot strand the cursor or corrupt adjacent blocks |
+| Remote/session update | `update` refreshes source without recreating the NodeView or stealing focus |
+| DOM observation | `stopEvent` and `ignoreMutation` prevent inner control activity from causing outer selection churn |
+| Reopen | Saved fenced source recreates the same render and editable source |
+
+Do not persist CodeMirror selection as Markdown or document content merely to repair undo. If richer
+selection restoration is needed, keep it as ephemeral session/UI state. The NodeView must explicitly
+bridge edits and focus; ProseMirror cannot infer selections inside an opaque nested editor.
 
 ---
 
@@ -297,43 +338,39 @@ The governing rule: **failures are visible and local.** No silent fallbacks, no 
 
 ## 10. Wireframe
 
-Interactive version: [`wireframe.html`](wireframe.html) — open in a browser. Renders live Mermaid inside the mock editor pane, follows the system light/dark theme, and shows the paste sequence and failure states.
+Interactive version: [`wireframe.html`](wireframe.html) — open it in a browser. It shows the
+local POC as a real note rather than a collaboration dashboard, with four selectable states:
+**Writing alone**, **AI working**, **Redirecting**, and **Stopped**. It is responsive down to a
+phone-sized canvas and follows the system light/dark theme.
 
 ### 10.1 Main window
 
+The POC is one document window. It has Bear/Apple Notes-level editing chrome without importing
+their information architecture: new note, text styles, checklist, table, attachment,
+diagram/drawing, share, search, and more. `Aa` opens a small formatting palette. On a phone the
+same editing tools move to a compact bottom bar.
+
+There is no permanent agent pane or activity sidebar. Alone, the canvas is only a note. Selecting
+a passage and choosing **Work with AI** adds a coloured scope, a named cursor, and one contextual
+control card beside that passage. The card contains the instruction, live status, **Redirect**, and
+**Stop**. Agent output remains ordinary document content with a quiet attribution and a deliberate
+**Undo this change** action.
+
+Redirect opens the passage conversation in place:
+
+```text
+Passage conversation                         live · anchored here
+  Codex  I'm turning this into a three-step system diagram.
+  You    Keep Markdown at the center. Hide the sync machinery.
+
+  [Redirect now] [Leave note]
+  To Codex  Make the document—not the session—the center  [Send redirect]
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ ● ● ●   SimpleMark                            ● iCloud Drive / Notes     │
-├───────────────┬──────────────────┬───────────────────────────────────────┤
-│ LIBRARY       │ ⌕ Search notes   │  Switchboard ↔ Agent Orchestrator     │
-│  All Notes 412│                  │  #architecture/reviews · 2,883 words  │
-│  Untagged   9 │ ▸ Switchboard ↔  │                                       │
-│  Archive   88 │   Agent Orch.    │  ┌─[ B I S H </> │ H1 H2 │ • ☑ 🔗 ]─┐ │
-│               │   Today · 14:22  │  Reviewed [[ADR-0008]] against their  │
-│ TAGS          │                  │  daemon. Their reducer is our own     │
-│ ▸#architecture│   ADR-0027 —     │  hydrate → reduce → act pattern…      │
-│    /adr    12 │   Open source    │                                       │
-│    /reviews  7│   Today · 09:41  │  ┌─────────────────────────────────┐  │
-│  #switchboard │                  │  │ Track │ What        │ Verdict   │  │
-│  #taikun      │   Warm pool      │  ├───────┼─────────────┼───────────┤  │
-│  #reading     │   invalidation   │  │ A     │ tmux runtime│ Adopt     │  │
-│               │   Yesterday      │  └─────────────────────────────────┘  │
-│               │                  │                                       │
-│               │   Paste parser   │  ┌ mermaid · rendered ── Edit source ┐ │
-│               │   scratch        │  │      ╭──────────╮                │ │
-│               │   Jul 30         │  │      │ START    │──▶ start_task   │ │
-│               │                  │  │      ╰──────────╯                │ │
-│               │                  │  └───────────────────────────────────┘ │
-│               │                  │                                       │
-│               │                  │  ┌ svg · sanitised ──── Edit markup ┐ │
-│               │                  │  │  [capacity] [comms] [coord]      │ │
-│               │                  │  └───────────────────────────────────┘ │
-│               │                  │                                       │
-│               │                  │  ┌ javascript · Shiki ─────── Copy ─┐ │
-│               │                  │  │ export const mermaidSniffer = {  │ │
-│               │                  │  └───────────────────────────────────┘ │
-└───────────────┴──────────────────┴───────────────────────────────────────┘
-```
+
+The two modes must never be conflated. **Redirect now** is control: it fences the old AI
+generation and starts a replacement. **Leave note** is communication: it appends an anchored,
+asynchronous message and interrupts nobody. Humans and AI use the same conversation surface, but
+only an explicit control changes an agent run.
 
 ### 10.2 Rendered block anatomy
 
@@ -370,7 +407,11 @@ flowchart TB
 
 ### 10.4 Visual identity
 
-Teal accent (`#0d6f80` light, `#4fc3d4` dark) rather than Bear's red — the clone should not impersonate the original, and teal reads as an engineering tool rather than a writing app. Neutrals carry a slight cool bias toward the accent. Serif body face (Iowan Old Style / Palatino / Georgia) for note content, system sans for chrome, monospace for code and provenance labels. One accent token; trivially re-themed.
+Warm paper and restrained amber keep the notebook familiar without impersonating Bear or Apple
+Notes. Agent presence has a separate violet token so scope and attribution are recognizable without
+recolouring the document. Serif body text (Iowan Old Style / New York / Palatino / Georgia) keeps
+long notes readable; system sans is reserved for titles and chrome, and monospace for source and
+provenance. Controls fade into the page until they are relevant.
 
 ---
 
@@ -382,17 +423,28 @@ Proof of the hard promise comes before the pretty part.
 
 Detailed in §12. Nothing else starts until it resolves D3.
 
-### Phase 1 — Vertical slice (weeks)
+### Phase 1 — Local live POC (weeks)
 
-One thin path, end to end, ugly on purpose:
+The only post-gate implementation target is [`POC.md`](POC.md). One thin path, end to end,
+ugly on purpose:
 
-> pick a folder → open a note → paste raw Mermaid → it renders → save → reopen → edit externally → handle the conflict
+> open one local note → paste raw Mermaid → render → save → invite one local agent into the
+> same `DocumentSession` → interrupt and redirect it → reopen clean Markdown
 
-This exercises the vault, source map, sniffer, a NodeView, atomic writes, and the watcher. If this slice is solid, the rest is surface work.
+This exercises the source map, a NodeView, the shared editor/MCP application contract, generation
+fences, atomic writes, human undo, and deliberate agent revert. It deliberately does **not**
+exercise Yjs, cloud sync, remote peers, or offline merge.
 
 ### Phase 2 — Bear-parity shell
 
 Three panes, tags, search, formatting bubble, slash menu, typography preferences, SVG and Shiki blocks, wikilinks and backlinks.
+
+### Phase 3 — Multi-client authority decision
+
+Connect two version-pinned ProseMirror clients. Test native step collaboration first using Pitter
+Patter Collab or `prosemirror-collab-commit`; compare Yjs only if masterless operation is required.
+Prove structural convergence, schema enforcement, anchors/decorations/NodeViews, separate undo,
+contention and reconnect, history bounds, and safe source-baseline/save leadership before remote work.
 
 ### Deferred (designed for, not built)
 
@@ -438,10 +490,11 @@ Public plugin API and sandbox · handwriting + OCR · iOS/iPad shell · graph vi
 
 | Document | Covers |
 |---|---|
-| [`COLLABORATION.md`](COLLABORATION.md) | **The optional live session** — CRDT room, agents as participants with cursors and interruption, governed multi-agent rules, and the build order that ships the notebook first |
+| [`COLLABORATION.md`](COLLABORATION.md) | **The optional live session** — local `DocumentSession` first, then a gated multi-client authority decision |
 | [`TECH-SPEC.md`](TECH-SPEC.md) | Universal paste — the five-level recognition ladder, the signed renderer catalog, sandboxed execution, and why pasted content may never choose what code runs |
 | [`RENDERERS.md`](RENDERERS.md) | Renderers vs embedded editors, the rule for choosing, and the v1 set: Mermaid, DOT, KaTeX, Shiki, Vega-Lite, Markmap |
-| [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) | MCP co-editing — the semantic tool surface, revision-hash concurrency, block anchors, and the two prerequisites this adds to Phase 1 |
+| [`POC.md`](POC.md) | The next executable target and its acceptance test |
+| [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) | MCP co-editing — the later cold-file semantic tool surface and revision-hash concurrency |
 
 ---
 

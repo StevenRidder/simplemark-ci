@@ -412,7 +412,7 @@ Three tiers, and the difference matters:
 ## 7. Interfaces (the contracts tasks are built against)
 
 ```ts
-// packages/core/src/recognition/types.ts
+// src/domain/recognition/types.ts
 export interface ClipboardPayload {
   text?: string
   html?: string
@@ -433,7 +433,7 @@ export interface PasteContext {
   preferences: RecognitionPrefs
 }
 
-// packages/core/src/renderers/types.ts
+// src/domain/renderers/types.ts
 export interface CatalogEntry {
   id: string; kinds: string[]
   tier: 'core' | 'verified' | 'community'

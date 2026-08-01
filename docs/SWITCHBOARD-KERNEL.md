@@ -61,7 +61,7 @@ Agent:  late response from run 17 arrives    → REJECTED, cannot touch the docu
 You:    new instruction                      → run 18, fence 4, fresh scope
 ```
 
-**This is what makes interruption real.** Without it, an agent that was three seconds into generating a table lands its edit *after* you told it to stop, and the stop looks broken. `AGENT-WORKSPACE.md` §5.4 gives the interrupt an out-of-band channel; the fence is what makes the interrupt binding.
+**This is what makes interruption real.** Without it, an agent that was three seconds into generating a table lands its edit *after* you told it to stop, and the stop looks broken. [`COLLABORATION.md`](COLLABORATION.md) §5.4 gives the interrupt an out-of-band channel; the fence is what makes the interrupt binding.
 
 Ported to TypeScript this is roughly 80 lines and no dependencies:
 
@@ -71,23 +71,19 @@ export interface AgentRun {
   generation: number      // bumped by interrupt, redirect, or scope change
   scope: RegionAnchor
   status: 'starting' | 'thinking' | 'writing' | 'stopping'
-          | 'completed' | 'cancelled' | 'expired' | 'failed'
-  heartbeatAt: number
-  ttlMs: number
+          | 'completed' | 'cancelled' | 'failed'
 }
 
-/** Alive means both halves hold — same rule, same reason. */
-export function isLive(run: AgentRun, now: number): boolean {
-  return !TERMINAL.has(run.status) && now < run.heartbeatAt + run.ttlMs
-}
-
-/** An edit from a superseded generation is refused, not merged. */
-export function isFenced(run: AgentRun, claimedGeneration: number): boolean {
-  return claimedGeneration !== run.generation
+/** A result is accepted only from the current, non-terminal generation. */
+export function mayApply(run: AgentRun, claimedGeneration: number): boolean {
+  return claimedGeneration === run.generation && !TERMINAL.has(run.status)
 }
 ```
 
-Malformed or future generations fail closed. The generation is owned by the app, never by the agent.
+Malformed, future, stopped, and stale generations fail closed. The generation is owned by the
+app, never by the agent. The local POC also aborts the in-flight request; the fence is the
+backstop if a provider returns anyway. Heartbeats and TTLs belong only in a later remote-runner
+design where an operation can genuinely be orphaned.
 
 ---
 

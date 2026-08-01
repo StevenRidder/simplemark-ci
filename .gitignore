@@ -1,3 +1,34 @@
+# macOS filesystem cruft
 .DS_Store
+._*
+**/._*
+
+# Node / build output
 node_modules/
 dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Tauri build output
+src-tauri/target/
+
+# Test and CI receipts
+.artifacts/
+coverage/
+test-results/
+playwright-report/
+
+# Local secrets and runner state
+.env
+.env.local
+.switchboard/
+
+# Agent worktrees. The fleet creates a per-task git worktree inside the shared
+# checkout, so the repo root can hold many working copies of itself. They are
+# checkouts, not source: a single `git add -A` would otherwise commit the whole
+# fleet's in-flight work.
+.worktrees/
+**/.claude/worktrees/
+
+# Claude Code local overrides (.claude/settings.json IS tracked)
+.claude/settings.local.json

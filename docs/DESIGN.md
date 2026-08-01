@@ -384,7 +384,7 @@ Every extension-rendered block shares one frame, so a future third-party block i
 └─────────────────────────────────────────────────────┘
 ```
 
-**Open question for build time:** the frame is legible but heavier than Bear would use. The alternative is bare blocks in the prose with controls fading in on hover. Decide during the first UI pass with real content on screen.
+**Resolved by [`ADR-0003`](decisions/0003-rendered-block-frame.md)** during the first UI pass (EDITOR-1): the frame stays, and the block bar's controls fade in on hover or focus rather than sitting there permanently.
 
 ### 10.3 Paste sequence
 
@@ -482,7 +482,7 @@ Public plugin API and sandbox · handwriting + OCR · iOS/iPad shell · graph vi
 ### Other open questions (non-blocking)
 
 1. Whether Dropbox and Google Drive can be supported on iOS at all, or whether iCloud Drive is the only viable mobile path.
-2. Whether rendered blocks are framed or bare (§10.2).
+2. ~~Whether rendered blocks are framed or bare (§10.2).~~ Resolved by [`ADR-0003`](decisions/0003-rendered-block-frame.md).
 
 ---
 

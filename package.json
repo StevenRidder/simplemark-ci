@@ -12,12 +12,21 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check:boundaries": "depcruise src tests --config .dependency-cruiser.cjs"
+    "check:boundaries": "depcruise src tests --config .dependency-cruiser.cjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 5273 --strictPort",
+    "test:ui": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.20.1",
     "dependency-cruiser": "^16.10.4",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@milkdown/kit": "^7.21.3",
+    "mermaid": "^11.16.0"
   }
 }

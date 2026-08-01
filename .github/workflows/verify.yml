@@ -55,12 +55,29 @@ jobs:
         with:
           node-version: '22'
 
+      # The gate's test:ui step drives a real browser. Installing Chromium here
+      # rather than inside the gate keeps the local run fast — a contributor who
+      # already has browsers does not re-download them on every gate run — while
+      # CI stays hermetic. Skipped entirely before the package exists, so the
+      # gate can still fail with its own honest message.
+      - name: Install Chromium for the UI gate
+        if: steps.lock.outputs.present == 'true'
+        run: npm ci && npx playwright install --with-deps chromium
+
       - name: Run the SimpleMark gate
         env:
           SIMPLEMARK_CI_STRICT: '1'
           SIMPLEMARK_CI_SCOPE: full
           CI_RESULT_REPORT: .artifacts/ci-result.json
         run: bash scripts/simplemark_ci.sh
+
+      - name: Upload Playwright receipt
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ui-playwright-${{ github.sha }}
+          path: .artifacts/ui-playwright-receipt.json
+          if-no-files-found: warn
 
       - name: Upload CI result
         if: always()

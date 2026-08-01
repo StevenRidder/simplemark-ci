@@ -1,0 +1,58 @@
+/*
+ * Design tokens, extracted verbatim from docs/wireframe.html.
+ *
+ * The wireframe is the approved visual specification (ADR-0001 §Browser
+ * development shell). These values are copied, not reinterpreted, so a screenshot
+ * of the running app can be compared against it directly.
+ *
+ * The palette is warm paper and restrained amber — familiar without impersonating
+ * Bear or Apple Notes. Agent presence gets a separate violet channel so scope and
+ * attribution stay recognisable without recolouring the document (DESIGN.md
+ * §10.4). Those agent tokens are defined here because they are part of the
+ * approved system; nothing in EDITOR-1 consumes them yet.
+ */
+
+:root {
+  color-scheme: light;
+  --canvas: #ebeae7;
+  --paper: #fffefa;
+  --chrome: #f7f6f2;
+  --ink: #242321;
+  --ink-2: #696660;
+  --ink-3: #a19d95;
+  --line: #e8e5df;
+  --soft: #f3f1ec;
+  --accent: #d08a32;
+  --accent-soft: #fff1d9;
+  --agent: #7356c9;
+  --agent-soft: #f0ebff;
+  --agent-line: #d9cdfb;
+  --danger: #c75a4a;
+  --success: #51805e;
+  --sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+  --serif: 'Iowan Old Style', 'New York', Palatino, Georgia, serif;
+  --mono: 'SFMono-Regular', Consolas, monospace;
+  --shadow: 0 24px 75px rgba(42, 39, 33, 0.17), 0 2px 9px rgba(42, 39, 33, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --canvas: #171716;
+    --paper: #222220;
+    --chrome: #1d1d1b;
+    --ink: #efede7;
+    --ink-2: #aaa69e;
+    --ink-3: #77736d;
+    --line: #393733;
+    --soft: #2b2a27;
+    --accent: #eca950;
+    --accent-soft: #48361f;
+    --agent: #b7a4f4;
+    --agent-soft: #332c4d;
+    --agent-line: #5d4f86;
+    --danger: #ef8c7d;
+    --success: #83b18e;
+    --shadow: 0 26px 80px rgba(0, 0, 0, 0.48);
+  }
+}

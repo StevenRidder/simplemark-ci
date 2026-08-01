@@ -24,8 +24,10 @@ fi
 # Required npm scripts. Absence is a hard failure — see FOUNDATION-1 on the
 # simplemark board (Scaffold the reusable SimpleMark product modules).
 REQUIRED_SCRIPTS="typecheck test check:boundaries"
-# Optional npm scripts. Absence is reported, never fatal.
-OPTIONAL_SCRIPTS="lint build test:fidelity"
+# Optional npm scripts. Absence is reported, never fatal. test:ui is the
+# project UI gate (Playwright); it is the command a project-scoped validation
+# policy should point at, in place of the inherited projectplanner default.
+OPTIONAL_SCRIPTS="lint build test:ui test:fidelity"
 
 FAILURES=()
 RESULTS=()

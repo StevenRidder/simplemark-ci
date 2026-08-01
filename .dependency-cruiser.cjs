@@ -107,8 +107,16 @@ module.exports = {
     {
       name: 'no-orphan-modules',
       severity: 'error',
-      comment: 'An unreachable module is dead code or a missing wire-up. Say which.',
-      from: { orphan: true, pathNot: '\\.d\\.ts$' },
+      comment:
+        'An unreachable module is dead code or a missing wire-up. Say which. ' +
+        'Playwright specs are exempt: the runner discovers them by path, so having ' +
+        'no importer is what a test entrypoint looks like, not dead code. Vitest ' +
+        'suites are not exempt — they import the modules under test, so a genuinely ' +
+        'orphaned one is still a real finding.',
+      from: {
+        orphan: true,
+        pathNot: ['\\.d\\.ts$', '^tests/ui/.+\\.spec\\.ts$'],
+      },
       to: {},
     },
     {

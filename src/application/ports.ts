@@ -39,3 +39,27 @@ export interface FilePort {
    */
   save(handle: string, bytes: Uint8Array): Promise<void>
 }
+
+/** The outcome of rendering diagram source. Failure is a value, never a throw. */
+export type RenderedDiagram =
+  | { readonly ok: true; readonly svg: string }
+  | { readonly ok: false; readonly message: string }
+
+/**
+ * Turns diagram source into safe, embeddable SVG.
+ *
+ * A port rather than a direct import so the editor adapter never depends on
+ * Mermaid: adapters do not import one another (ADR-0001 §Enforcement 3), and
+ * the composition root injects the concrete renderer. It also keeps the editor
+ * testable without loading a rendering engine.
+ *
+ * Implementations must sanitise before returning — pasted diagram source is
+ * untrusted input (DESIGN.md §7) — and must resolve with `ok: false` rather
+ * than throwing, so a broken diagram renders an inline error card instead of
+ * taking down the surrounding document.
+ */
+export interface DiagramRenderer {
+  /** Diagram languages this renderer claims, e.g. `mermaid`. */
+  readonly languages: readonly string[]
+  render(language: string, source: string): Promise<RenderedDiagram>
+}

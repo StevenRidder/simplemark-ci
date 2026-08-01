@@ -321,7 +321,13 @@ cmd_push() {
   local sha dispatch_since=""
   sha="$(git -C "$ROOT" rev-parse "$branch")"
   echo "ci-sandbox: pushing $branch @ ${sha:0:12} -> $CI_REPO"
-  git -C "$ROOT" push -u "$CI_REMOTE" "refs/heads/${branch}:refs/heads/${branch}"
+  # Deliberately no -u. The sandbox is a disposable verification target, never a
+  # branch's upstream: `prove` resolves the canonical SHA through $ORIGIN_REMOTE,
+  # and the code_strict work-session policy expects upstream to be the canonical
+  # repo. `-u` here would repoint the branch at the sandbox — and for `main` it
+  # would silently detach the local branch from origin. Only cmd_open_pr sets an
+  # upstream, and it sets origin.
+  git -C "$ROOT" push "$CI_REMOTE" "refs/heads/${branch}:refs/heads/${branch}"
 
   if [ "$dispatch" = 1 ]; then
     dispatch_since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -458,6 +464,25 @@ cmd_doctor() {
     doctor_ok "canonical remote '$ORIGIN_REMOTE' exists"
   else
     doctor_fail "canonical remote '$ORIGIN_REMOTE' is missing"
+  fi
+
+  # No local branch may track the sandbox. An earlier version of cmd_push passed
+  # -u, so a checkout that ran it still has branches pointing at the disposable
+  # remote; for `main` that silently detaches it from origin and a later `git
+  # pull` fetches the sandbox instead of code truth. Report it rather than
+  # assuming the fix was always in place.
+  local tracking_ci
+  tracking_ci="$(git -C "$ROOT" for-each-ref --format='%(refname:short) %(upstream:short)' refs/heads \
+    | awk -v r="$CI_REMOTE/" '$2 ~ "^"r {print $1}')"
+  if [ -z "$tracking_ci" ]; then
+    doctor_ok "no local branch tracks the sandbox remote '$CI_REMOTE'"
+  else
+    while IFS= read -r stray; do
+      [ -n "$stray" ] || continue
+      doctor_fail "local branch '$stray' tracks '$CI_REMOTE'; repoint it: git branch -u $ORIGIN_REMOTE/$stray $stray"
+    done <<EOF
+$tracking_ci
+EOF
   fi
 
   local local_main origin_main ci_main

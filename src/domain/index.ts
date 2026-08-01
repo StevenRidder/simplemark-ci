@@ -7,6 +7,7 @@
  * source baselines and dirty-block serialization with FIDELITY-1.
  */
 export { firstByteDifference } from './source/byte-diff.js'
+export { buildSourceMap, emitDocument } from './source/source-map.js'
 export {
   MERMAID_SIGNATURE,
   isStandaloneBlockPaste,
@@ -15,4 +16,5 @@ export {
   svgInHtml,
 } from './paste/recognition.js'
 export type { ByteDifference } from './source/byte-diff.js'
+export type { SourceBlock, SourceMap } from './source/source-map.js'
 export type { PasteCandidate } from './paste/recognition.js'

@@ -10,7 +10,7 @@ import {
   wrapInHeadingCommand,
 } from '@milkdown/kit/preset/commonmark'
 import { gfm } from '@milkdown/kit/preset/gfm'
-import { $view, callCommand } from '@milkdown/kit/utils'
+import { $view, callCommand, getMarkdown } from '@milkdown/kit/utils'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 
@@ -118,6 +118,17 @@ export class MilkdownEditor {
         this.editor.action(callCommand(wrapInBulletListCommand.key))
         return
     }
+  }
+
+  /**
+   * Serialises the current document to Markdown through the bridge under test.
+   *
+   * This is the exact path the fidelity spike measures, which is why it is
+   * product API rather than something the harness reimplements — a harness with
+   * its own serialiser would prove nothing about the real one.
+   */
+  serialize(): string {
+    return this.editor.action(getMarkdown())
   }
 
   async destroy(): Promise<void> {

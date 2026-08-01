@@ -120,6 +120,16 @@ module.exports = {
       to: {},
     },
     {
+      name: 'src-does-not-import-spike',
+      severity: 'error',
+      comment:
+        'The fidelity spike is disposable — ADR-0001 keeps it under spike/ because it ' +
+        'produces a decision, not a module. Product code importing it would promote it ' +
+        'by accident.',
+      from: { path: '^src/' },
+      to: { path: '^spike/' },
+    },
+    {
       name: 'src-does-not-import-tests',
       severity: 'error',
       comment: 'Product code may not depend on fixtures or test helpers.',

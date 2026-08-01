@@ -1,9 +1,15 @@
 # SimpleMark — Design Document
 
-- **Status:** Draft, revision 2 (design review incorporated)
+- **Status:** Draft, revision 3 — **D1/D2 superseded in part by [`COLLABORATION.md`](COLLABORATION.md)**
 - **Date:** 2026-08-01
 - **Working title:** SimpleMark
-- **One line:** An open-source Bear clone with world-class typography that renders raw Markdown, Mermaid, SVG, and code the instant you paste it.
+- **One line:** A living, local-first workspace where you and AI agents think together in one document — and the output stays yours as portable Markdown.
+
+---
+
+> **Read [`COLLABORATION.md`](COLLABORATION.md) first.** The product grew: a live CRDT session now owns
+> coordination while a document is open, and files own durability. That changes D1 and D2 below.
+> D7 (fidelity) is unchanged — block source spans simply live in the CRDT.
 
 ---
 
@@ -29,6 +35,8 @@ Notes are plain `.md` files in a folder the user picks. SQLite is a rebuildable 
 
 **Consequence:** zero lock-in is literally true, not a promise. Every feature must round-trip to Markdown or it does not ship — subject to the fidelity contract in D7 and the portability tiers in §5.
 
+**Amended by D8** ([`COLLABORATION.md`](COLLABORATION.md) §2.1): while a document has an active session, the Yjs CRDT is the *coordination* truth and the file is a projection of it. The moment the session ends, the folder is sufficient on its own again — which is the property lock-in actually depends on.
+
 ### D2 — Sync is delegated to the cloud drive
 
 No CRDT, no relay server, no accounts, no hosting bill. The notes folder lives in iCloud Drive (or Dropbox, or any synced folder) and the OS handles propagation.
@@ -37,6 +45,8 @@ No CRDT, no relay server, no accounts, no hosting bill. The notes folder lives i
 - Simultaneous offline edits on two devices produce a `(conflicted copy)` file. Handled per §8.
 - No real-time collaboration. Not wanted.
 - iOS is the weak spot: iCloud Drive works via the file provider; Dropbox and Google Drive on iOS are apps rather than filesystems and background folder sync is unreliable. **iCloud Drive is the supported iOS path.**
+
+**Amended by D8:** the cloud drive is durable sync and offline fallback only. Real-time collaboration runs over a localhost WebSocket, never over file propagation — a file watcher has no presence, no cursors, no interruption channel, and cannot merge two edits to one paragraph.
 
 ### D3 — Milkdown as the editor core *(gated on the §12 spike)*
 
@@ -76,6 +86,8 @@ Byte-identical round-trip through a general Markdown serializer is not achievabl
 **Implementation:** every top-level block node carries the byte range of its original source. Clean blocks re-emit that slice. Dirty blocks serialize. Front matter, arbitrary embedded HTML, and unknown constructs are always preserved as opaque source, never round-tripped through the AST.
 
 This is the hardest requirement in the project and the reason §12 exists.
+
+**Unchanged by D8.** Under live collaboration, `originalSource` and `dirty` live in the CRDT beside each block's content ([`COLLABORATION.md`](COLLABORATION.md) §6.3). Clean blocks still emit their original bytes. The ten acceptance fixtures apply unchanged.
 
 ---
 
@@ -424,6 +436,7 @@ Public plugin API and sandbox · handwriting + OCR · iOS/iPad shell · graph vi
 
 | Document | Covers |
 |---|---|
+| [`COLLABORATION.md`](COLLABORATION.md) | **Live collaboration** — the CRDT session, agents as participants with cursors and interruption, the three document layers, and the revised build order |
 | [`TECH-SPEC.md`](TECH-SPEC.md) | Universal paste — the five-level recognition ladder, the signed renderer catalog, sandboxed execution, and why pasted content may never choose what code runs |
 | [`RENDERERS.md`](RENDERERS.md) | Renderers vs embedded editors, the rule for choosing, and the v1 set: Mermaid, DOT, KaTeX, Shiki, Vega-Lite, Markmap |
 | [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) | MCP co-editing — the semantic tool surface, revision-hash concurrency, block anchors, and the two prerequisites this adds to Phase 1 |

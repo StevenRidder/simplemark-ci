@@ -1,13 +1,16 @@
 # SimpleMark
 
-An open-source Bear clone with world-class typography that renders raw Markdown, Mermaid, SVG, and code the instant you paste it.
+A living, local-first workspace where you and AI agents think together in one document — and the output stays yours as portable Markdown files.
 
-**The defining behavior:** paste raw Mermaid source or a raw `<svg>` tag — with no code fence — and it becomes a picture. No mode switch, no menu, no plugin install.
+**The defining behavior:** you type in a note while an agent adds a diagram beside the paragraph it's explaining. Both cursors are visible. You interrupt it mid-table and it changes course. `Cmd+Z` undoes your sentence, not its diagram. You close the app and the file on disk is clean Markdown that opens correctly in Bear.
+
+**And it renders anything.** Paste raw Mermaid, a raw `<svg>`, a `.pptx`, a chart spec, an ANSI capture — no fence, no mode switch, no plugin install. It works out what the thing is and shows it.
 
 ## Status
 
 Design stage. No code yet.
 
+- [`docs/COLLABORATION.md`](docs/COLLABORATION.md) — **start here** — the live CRDT session, agents as participants, the three document layers
 - [`docs/DESIGN.md`](docs/DESIGN.md) — product architecture, fidelity contract, paste rules, wireframe
 - [`docs/TECH-SPEC.md`](docs/TECH-SPEC.md) — universal paste: recognition ladder, renderer catalog, sandbox
 - [`docs/RENDERERS.md`](docs/RENDERERS.md) — renderers vs embedded editors, and the v1 set
@@ -15,17 +18,19 @@ Design stage. No code yet.
 - [`docs/wireframe.html`](docs/wireframe.html) — interactive interface wireframe (open in a browser)
 - [`docs/superpowers/plans/`](docs/superpowers/plans/) — the Phase 0–1 implementation plan
 
-## The second act
+## Two truths, two jobs
 
-Because the truth is a folder of Markdown, a coding agent can work in the same workspace over MCP with no protocol in between:
+A live document needs a CRDT — a file watcher has no presence, no cursors, no interruption channel, and cannot merge two edits to one paragraph. A durable document needs to be a file you own. So:
 
 ```
-   You edit in SimpleMark ─┐
-                           ├─→  Markdown files + attachments  ─→  renderers
-   Agent edits over MCP  ──┘         (the canonical truth)
+   You ──────┐
+             ├─→  Yjs session (localhost)  ─→  debounced save  ─→  .md in iCloud Drive
+   Agent ────┘         coordination truth                            durability truth
 ```
 
-The agent writes a ` ```mermaid ` block; the file watcher fires; you see the diagram. Agents modify the canonical Markdown and never operate the editor UI. Every write is compare-and-swap on a revision hash, journaled, and one click from undo.
+While a note is open, the session coordinates. The moment it closes, the folder is sufficient on its own — which is the property lock-in actually depends on.
+
+**v1 is two participants on one machine:** you and an agent, over localhost. No relay, no WebRTC, no rendezvous service. Second devices and multi-human come later, and everything built for a local peer works unchanged for a remote one.
 
 ## The bet
 
@@ -35,8 +40,9 @@ SimpleMark keeps files as the truth but treats the editor as a real document can
 
 | Decision | Choice |
 |---|---|
-| Editor core | Milkdown / ProseMirror — **gated on the fidelity spike below** |
-| Truth | Plain `.md` files in a folder; SQLite is a rebuildable cache |
+| Editor core | Milkdown / ProseMirror + Yjs — **gated on the spikes below** |
+| Coordination | Yjs CRDT while a document is live; localhost transport |
+| Durability | Plain `.md` files in a folder; SQLite is a rebuildable cache |
 | Fidelity | Untouched blocks are preserved byte-for-byte; only edited blocks re-serialize |
 | Sync | Delegated to iCloud Drive / any synced folder — no server, no accounts |
 | Canvas | Single unified view, no source/preview split |
@@ -44,10 +50,10 @@ SimpleMark keeps files as the truth but treats the editor as a real document can
 | Extensibility | Internal extension points in v1, shaped to become the public plugin API |
 | License | Apache-2.0 or MIT — permissive, so a hosted or proprietary layer stays possible |
 
-## First task — a go/no-go spike
+## First tasks — two go/no-go spikes
 
-Open a hostile real-world document, save it without editing, and diff. Then edit one block and diff everything else.
+**Phase 0 — collaboration.** Two app windows plus one simulated agent edit the same document. Concurrent inserts merge, cursors show, per-client undo is correct, a client disconnects and reconnects cleanly. If this doesn't work, nothing else matters.
 
-The entire files-as-truth promise rests on untouched content never being rewritten — no renumbered lists, no repadded tables, no restyled fences. No off-the-shelf Markdown editor does this, because serializers normalize. So the spike answers one question: can Milkdown be extended to preserve source, or does the document model need to be built on ProseMirror with an explicit source map?
+**Phase 0b — fidelity.** Open a hostile real-world document, save it without editing, and diff. Then edit one block and diff everything else. Untouched content must never be rewritten — no renumbered lists, no repadded tables, no restyled fences. No off-the-shelf Markdown editor does this, because serializers normalize. Ten acceptance fixtures are in [`docs/DESIGN.md` §12](docs/DESIGN.md).
 
-Ten acceptance fixtures are listed in [`docs/DESIGN.md` §12](docs/DESIGN.md). Nothing else starts until it resolves.
+Both are days, not weeks. Nothing else starts until they resolve.

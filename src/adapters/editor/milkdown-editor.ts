@@ -1,4 +1,5 @@
 import { Editor, defaultValueCtx, editorViewCtx, rootCtx } from '@milkdown/kit/core'
+import { clipboard } from '@milkdown/kit/plugin/clipboard'
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
 import {
   codeBlockSchema,
@@ -66,6 +67,11 @@ export class MilkdownEditor {
         })
       })
       .use(commonmark)
+      // Parses text/plain clipboard content as Markdown. Without it
+      // ProseMirror inserts the payload verbatim and remark then escapes the
+      // syntax on the way out, so a pasted document comes back as hundreds of
+      // paragraphs full of \\# and \\*\\* (BUG-1).
+      .use(clipboard)
       .use(listener)
       .use(diagramView)
       .create()

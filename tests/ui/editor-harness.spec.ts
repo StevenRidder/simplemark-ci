@@ -168,3 +168,61 @@ test('captures the calm state for wireframe comparison', async ({ page }, testIn
   const shot = await page.locator('.window').screenshot()
   await testInfo.attach('calm-state', { body: shot, contentType: 'image/png' })
 })
+
+// BUG-1 regression. EDITOR-1 shipped without @milkdown/kit/plugin/clipboard, so
+// pasted Markdown was inserted as literal text and then escaped on serialise —
+// turning a pasted document into 500+ paragraphs full of \# and \*\*. The UI
+// suite exercised typing and toolbar commands but never a paste, which is
+// exactly how it got through.
+test('pasted Markdown is parsed, not inserted as escaped literal text', async ({ page }) => {
+  const pasted = [
+    '## Pasted heading',
+    '',
+    'Body with **bold** and a [link](https://example.invalid).',
+    '',
+    '- first item',
+    '- second item',
+    '',
+    '```mermaid',
+    'flowchart TD',
+    '  PASTE[Pasted] --> RENDER[Rendered]',
+    '```',
+  ].join('\n')
+
+  // A real clipboard and a real Cmd/Ctrl+V. A synthetic ClipboardEvent is not
+  // equivalent — ProseMirror ignored it entirely, which would have made this
+  // test pass or fail for reasons unrelated to the bug.
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+
+  // Focus first. Headless Chromium refuses navigator.clipboard.writeText on an
+  // unfocused document, which made this pass in isolation and fail in the suite.
+  await page.bringToFront()
+  await page.locator(`${editor} p`).first().click()
+  await page.evaluate((text) => navigator.clipboard.writeText(text), pasted)
+
+  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+v')
+
+  // Structure, not text: the paste became real nodes.
+  await expect(page.locator(`${editor} h2`, { hasText: 'Pasted heading' })).toBeVisible()
+  await expect(page.locator(`${editor} li`, { hasText: 'first item' })).toBeVisible()
+  await expect(page.locator(`${editor} strong`, { hasText: 'bold' })).toBeVisible()
+
+  // The fenced diagram went through the existing NodeView.
+  await expect(page.locator('.diagram')).toHaveCount(2)
+
+  // Poll: the DOM updates synchronously but Milkdown's markdownUpdated listener
+  // — and therefore the DocumentSession transaction — lands just after.
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('## Pasted heading')
+
+  const markdown = await page.evaluate(() => window.simplemark!.session.snapshot().markdown)
+  expect(markdown).toContain('**bold**')
+  expect(markdown).toContain('flowchart TD')
+  // No syntax the user pasted may come back escaped.
+  expect(markdown).not.toContain('\\#')
+  expect(markdown).not.toContain('\\*')
+  expect(markdown).not.toContain('\\[')
+})

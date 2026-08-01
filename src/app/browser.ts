@@ -1,4 +1,6 @@
+import { CompositeRenderer } from '../adapters/renderers/composite-renderer.js'
 import { MermaidRenderer } from '../adapters/renderers/mermaid-renderer.js'
+import { SvgRenderer } from '../adapters/renderers/svg-renderer.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
@@ -53,7 +55,8 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   const app = await composeApp({
     ports: {
       file: new FixtureFilePort(FIXTURE_NAME, FIXTURE_MARKDOWN),
-      diagrams: new MermaidRenderer(),
+      // One port, several renderers. DOT, KaTeX, Vega-Lite and Markmap join here.
+      diagrams: new CompositeRenderer([new MermaidRenderer(), new SvgRenderer()]),
     },
     filePath: 'in-memory fixture · not a real file',
   })

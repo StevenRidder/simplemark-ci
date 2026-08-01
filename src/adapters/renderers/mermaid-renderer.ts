@@ -17,53 +17,33 @@ import type { DiagramRenderer, RenderedDiagram } from '../../application/index.j
  */
 
 /**
- * Mermaid resolves colours into the SVG at render time, so CSS custom
- * properties cannot cascade into a finished diagram. The palette is therefore
- * read from the live tokens and handed over as theme variables — that is what
- * keeps a diagram on warm paper in light mode and on dark paper in dark mode
- * instead of leaving a white diagram stranded on a dark page.
+ * Mermaid's own themes, not ours.
+ *
+ * EDITOR-1 fixed a dark-mode defect by switching to `theme: 'base'` with
+ * themeVariables derived from the design tokens. That fixed the scheme but
+ * degraded fidelity to real mermaid.js output — washed-out borders and
+ * arrowheads next to what every other Mermaid renderer produces. A diagram
+ * should look like the diagram, so the official themes are used instead:
+ * `neutral` in light, `dark` in dark. Both are Mermaid's, both are maintained,
+ * and switching between them is all the scheme support this needs.
  */
-function token(name: string, fallback: string): string {
-  if (typeof getComputedStyle !== 'function') return fallback
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return value === '' ? fallback : value
+function prefersDark(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches === true
 }
 
-/** The token values the last initialise used, so a scheme change re-initialises. */
-let initialisedSignature = ''
+/** The theme the last initialise used, so a scheme change re-initialises. */
+let initialisedTheme = ''
 
 function ensureInitialised(): void {
-  const paper = token('--paper', '#fffefa')
-  const soft = token('--soft', '#f3f1ec')
-  const line = token('--line', '#e8e5df')
-  const ink = token('--ink', '#242321')
-  const ink2 = token('--ink-2', '#696660')
-  const signature = [paper, soft, line, ink, ink2].join('|')
-  if (signature === initialisedSignature) return
+  const theme = prefersDark() ? 'dark' : 'neutral'
+  if (theme === initialisedTheme) return
 
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
-    theme: 'base',
-    fontFamily: token('--sans', 'sans-serif'),
-    themeVariables: {
-      background: soft,
-      primaryColor: paper,
-      primaryTextColor: ink,
-      primaryBorderColor: line,
-      secondaryColor: soft,
-      tertiaryColor: soft,
-      lineColor: ink2,
-      textColor: ink,
-      mainBkg: paper,
-      nodeBorder: line,
-      clusterBkg: soft,
-      clusterBorder: line,
-      edgeLabelBackground: paper,
-      titleColor: ink,
-    },
+    theme,
   })
-  initialisedSignature = signature
+  initialisedTheme = theme
 }
 
 let renderSequence = 0

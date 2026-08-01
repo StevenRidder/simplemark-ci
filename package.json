@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@types/dompurify": "^3.0.5",
     "@types/node": "^22.20.1",
     "dependency-cruiser": "^16.10.4",
     "typescript": "^5.9.3",
@@ -27,6 +28,7 @@
   },
   "dependencies": {
     "@milkdown/kit": "^7.21.3",
+    "dompurify": "^3.4.12",
     "mermaid": "^11.16.0"
   }
 }

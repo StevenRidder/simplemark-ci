@@ -1,5 +1,6 @@
 import { Editor, defaultValueCtx, editorViewCtx, rootCtx } from '@milkdown/kit/core'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
+import { history } from '@milkdown/kit/plugin/history'
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
 import {
   codeBlockSchema,
@@ -15,7 +16,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 
 import type { DiagramRenderer } from '../../application/index.js'
 import { DiagramNodeView } from './diagram-node-view.js'
-import { plainTextPaste } from './plain-text-paste.js'
+import { pasteSniffers } from './paste-sniffers.js'
 
 /**
  * The candidate editor: Milkdown on ProseMirror and remark.
@@ -73,14 +74,19 @@ export class MilkdownEditor {
       // commonmark + gfm, and §5 puts tables and task lists in portability
       // tier 1 — without this preset they have no schema at all (BUG-2).
       .use(gfm)
+      // Undo/redo. Neither the commonmark nor the gfm preset bundles history,
+      // so without this Cmd+Z did nothing at all — POC.md requires it, and
+      // DESIGN.md §4.3 requires undo immediately after a paste conversion to
+      // restore the raw pasted text.
+      .use(history)
       // Parses text/plain clipboard content as Markdown. Without it
       // ProseMirror inserts the payload verbatim and remark then escapes the
       // syntax on the way out, so a pasted document comes back as hundreds of
       // paragraphs full of \\# and \\*\\* (BUG-1).
       // Registered BEFORE clipboard. ProseMirror runs handlePaste in plugin
-      // order and the first handler to return true wins, so this must precede
-      // the clipboard plugin to take the text/plain branch §4.2 requires.
-      .use(plainTextPaste)
+      // order and the first handler to return true wins, so the sniffer chain
+      // must precede the clipboard plugin to see the payload at all.
+      .use(pasteSniffers({ renderer: options.renderer }))
       .use(clipboard)
       .use(listener)
       .use(diagramView)

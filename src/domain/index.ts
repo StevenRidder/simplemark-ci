@@ -7,4 +7,12 @@
  * source baselines and dirty-block serialization with FIDELITY-1.
  */
 export { firstByteDifference } from './source/byte-diff.js'
+export {
+  MERMAID_SIGNATURE,
+  isStandaloneBlockPaste,
+  looksLikeMermaid,
+  looksLikeSvg,
+  svgInHtml,
+} from './paste/recognition.js'
 export type { ByteDifference } from './source/byte-diff.js'
+export type { PasteCandidate } from './paste/recognition.js'

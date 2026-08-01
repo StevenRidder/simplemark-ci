@@ -323,3 +323,135 @@ test('GFM constructs render: tables, task lists, strikethrough', async ({ page }
   expect(doc).toMatch(/\[[ x]\]\s+unchecked task/)
   expect(doc).toContain('~~struck~~')
 })
+
+// PASTE-1 — the DESIGN.md §4 sniffer chain, the product's defining behavior:
+// "you paste raw Mermaid source or a raw <svg> tag with no code fence, and it
+// becomes a picture." Each test below is a row of the §4.2 ruling table.
+async function pasteAtEnd(page: import('@playwright/test').Page, text: string, html?: string) {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.bringToFront()
+  await page.locator(`${editor} p`).last().click()
+  await page.evaluate(
+    async ({ t, h }) => {
+      if (h === undefined) {
+        await navigator.clipboard.writeText(t)
+        return
+      }
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/plain': new Blob([t], { type: 'text/plain' }),
+          'text/html': new Blob([h], { type: 'text/html' }),
+        }),
+      ])
+    },
+    { t: text, h: html },
+  )
+  await page.keyboard.press('End')
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+v')
+}
+
+const BARE_MERMAID = 'flowchart LR\n  PASTE[Bare paste] --> PIC[Becomes a picture]'
+
+test('bare Mermaid pasted at a block boundary becomes a rendered diagram', async ({ page }) => {
+  await expect(page.locator('.diagram')).toHaveCount(1)
+
+  await pasteAtEnd(page, BARE_MERMAID)
+
+  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram').last().locator('.diagram-render svg')).toBeVisible()
+  await expect(page.locator('.diagram-error:visible')).toHaveCount(0)
+
+  // §4.4: never lose the source — it lands on disk as a portable fence.
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('```mermaid')
+})
+
+test('a bare <svg> pasted at a block boundary renders, sanitised', async ({ page }) => {
+  // §7: scripts and event handlers must not survive.
+  const hostile =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" onload="window.__pwned=1">' +
+    '<script>window.__pwned=1</script>' +
+    '<rect x="10" y="10" width="80" height="80" fill="none" stroke="currentColor"/></svg>'
+
+  await pasteAtEnd(page, hostile)
+
+  await expect(page.locator('.diagram')).toHaveCount(2)
+  const rendered = page.locator('.diagram').last().locator('.diagram-render svg')
+  await expect(rendered).toBeVisible()
+
+  // Neutered, but rendered — the rect survived, the payload did not.
+  await expect(rendered.locator('rect')).toHaveCount(1)
+  expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined()
+  const markup = await rendered.evaluate((el) => el.outerHTML)
+  expect(markup).not.toContain('onload')
+  expect(markup).not.toContain('<script')
+})
+
+test('prose beginning with a diagram keyword stays prose', async ({ page }) => {
+  // §4.2: "Prose beginning with the word 'graph' — mermaid.parse() rejects it."
+  await pasteAtEnd(page, 'graph theory is the study of pairwise relations between objects.')
+
+  await expect(page.locator('.diagram')).toHaveCount(1)
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('graph theory is the study')
+})
+
+test('a multi-block paste takes the Markdown path and leaves bare diagram source as text', async ({
+  page,
+}) => {
+  // §4.2: "Bare unfenced diagram source inside a larger paste stays text."
+  await pasteAtEnd(page, ['## A heading', '', BARE_MERMAID, '', 'Trailing prose.'].join('\n'))
+
+  await expect(page.locator(`${editor} h2`, { hasText: 'A heading' })).toBeVisible()
+  await expect(page.locator('.diagram')).toHaveCount(1)
+})
+
+test('svg-in-html wins over the text flavour (§4.2 priority 30)', async ({ page }) => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>'
+  await pasteAtEnd(page, 'irrelevant plain text', `<meta charset="utf-8"><div>${svg}</div>`)
+
+  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram').last().locator('.diagram-render svg circle')).toHaveCount(1)
+})
+
+test('undo after conversion restores the raw pasted text (§4.3)', async ({ page }) => {
+  await pasteAtEnd(page, BARE_MERMAID)
+  await expect(page.locator('.diagram')).toHaveCount(2)
+
+  await page.keyboard.press('ControlOrMeta+z')
+
+  await expect(page.locator('.diagram')).toHaveCount(1)
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('flowchart LR')
+})
+
+// Regression: neither the commonmark nor the gfm preset bundles history, so
+// EDITOR-1 shipped an editor where Cmd+Z did nothing. POC.md requires it, and
+// no test covered it because the suite only ever typed forwards.
+test('Cmd+Z undoes an ordinary edit', async ({ page }) => {
+  await page.locator(`${editor} p`).first().click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' UNDO ME')
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('UNDO ME')
+
+  await page.keyboard.press('ControlOrMeta+z')
+
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .not.toContain('UNDO ME')
+
+  // The surrounding prose is intact. Deliberately not asserting byte equality
+  // with the pre-edit document: remark rewrites `---` to `***` on the first
+  // serialise regardless of undo, which is the D7 normalisation FIDELITY-1
+  // owns. Asserting it here would fail for a reason that has nothing to do
+  // with undo.
+  const after = await page.evaluate(() => window.simplemark!.session.snapshot().markdown)
+  expect(after).toContain('application database.')
+  expect(after).toContain('The live document boundary')
+})

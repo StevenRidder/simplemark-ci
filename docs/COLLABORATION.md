@@ -274,57 +274,64 @@ type ControlMessage =
 
 **Contract:** an agent must drain its inbox between every step of a multi-step edit, and must abandon in-flight work on `stop`. An agent that ignores its inbox is disconnected by the host after one warning. This is enforced, not requested.
 
-### 5.7 Many agents in one room
+### 5.7 Governing the room — focus-aware, and small
 
-Symmetry creates one failure mode that a single-agent design never has: **agent thrash.** Agent A rewrites a paragraph, Agent B disagrees and rewrites it back, A responds. Nobody typed anything and the document has churned forty times.
+Evidence first. The CHI 2026 study *Collaborative Document Editing with Multiple Users and AI Agents* (30 people, 14 teams) found:
 
-Four mechanisms, all cheap, all enforced by the host rather than requested of the model.
+- Teams **liked** AI inside the shared document rather than in a side chatbot. Validates the artifact.
+- Participants used agents as **tools within existing writing norms**, not as social teammates.
+- **Autonomous, document-wide intervention produced cognitive and visual overload.** Participants preferred manual, scoped invocation.
+- **~23% did not feel in control of the text.**
+- The study deliberately had agents reply *as comments* rather than edit directly, to preserve human control.
 
-#### Region leases (soft locks)
+Its design direction is not "always require approval." It is sharper than that:
 
-A participant intending sustained work on a region takes a lease on it:
+> **Agent initiative should be aware of human focus, collaboration activity, and attention.**
 
-```ts
-interface RegionLease {
-  range: [RelativePosition, RelativePosition]
-  holder: ParticipantId
-  intent: string          // "rewriting the storage section"
-  expiresAt: number       // 60s, renewed while active
-}
+That is a stronger constraint than leases and budgets, and it partly replaces them. An earlier draft of this section specified region leases, a reaction budget, a loop breaker, and multi-agent deconfliction — a governance protocol for a problem not yet observed. **Cut to the smallest thing that respects focus.**
+
+#### v1 room defaults
+
+```text
+- Humans edit anywhere, always. No lease, no wait, no permission.
+- An agent has ONE assigned selection or section at a time.
+- An agent never edits text under an active human cursor.
+- An agent streams its intent, then ONE coherent edit transaction.
+- Any human can interrupt, redirect, or revoke its scope at any moment.
+- Background or document-wide work produces a quiet review item,
+  never an unsolicited inline edit.
+- Each agent has a small per-minute change budget.
 ```
 
-- **Agents must take a lease before a multi-step edit.** Refused if one is held; the agent waits, works elsewhere, or asks.
-- **Humans never wait.** A human typing into a leased region breaks the lease immediately and the holder is told. Human intent always wins — this is a soft lock for coordinating machines, not a gate on people.
-- Leases are visible: a soft margin tint and `Codex is rewriting this section`.
+Explicitly **not** in v1: multi-agent debate loops, an elaborate lease protocol, autonomous document-wide rewriting, agent-to-agent reaction budgets. Those solve problems the study suggests you should design out rather than manage.
 
-#### Loop breaker
+#### Focus-awareness, concretely
 
-Every block carries a short revision chain of who last touched it. If a block is modified by agents **three times in a row with no human edit between**, further agent writes to it are refused and the block is flagged in Activity:
-
-> *"Codex and Critic have revised this paragraph 3× without human input — review needed."*
-
-The counter resets on any human edit. This converts an infinite loop into a question, which is the correct outcome.
-
-#### Reaction budget
-
-An agent responding to *another agent's* edit spends from a budget: **5 reactions per document per hour**, refilled by human activity. Agents responding to *human* edits are unlimited. This makes human-directed work cheap and machine-to-machine argument expensive, which is the incentive you want.
-
-#### Scoped roles
-
-Agents are invited into a room with a declared scope, visible in the participant list:
-
-| Scope | Example |
+| Situation | Agent behavior |
 |---|---|
-| `section: "Architecture"` | may only write inside that heading |
-| `layer: conversation` | may only comment, never edit the canvas |
-| `kind: mermaid, vega-lite` | may only author or amend those blocks |
-| `readonly` | reviewer — comments and suggestions only |
+| You are actively editing a paragraph | Does not enter it. Waits or works in its own scope. |
+| You select a section and invoke an agent | May edit within that scope, live |
+| Two humans active in a section | Offers a compact suggestion, or works elsewhere |
+| Nothing selected, no invocation | Does nothing. There is no ambient agent activity. |
+| Document-wide work requested | Deferred, quiet, surfaced as a review queue |
 
-A critic agent gets `layer: conversation`. A diagram agent gets `kind: mermaid`. They cannot collide because their capabilities do not overlap — the cheapest deconfliction available, and it costs nothing at runtime.
+**Invocation is manual.** An agent in the room is not a process looking for work; it is something you point at a thing.
+
+#### Interruption is enforced by the fence
+
+A stop is not a message. Every agent operation carries a run id and a generation; interrupting or redirecting bumps the generation, and an edit arriving from a superseded generation is **refused, not merged**. See [`SWITCHBOARD-KERNEL.md`](SWITCHBOARD-KERNEL.md) §2 — this is the one piece of machinery worth building before the first agent edit lands.
+
+Humans never need a lease to type. CRDT merge handles concurrent human editing; fences and scopes constrain only an agent's right to commit an automated transaction.
 
 #### Attribution with mixed authorship
 
-A block edited by three participants shows all three in its margin chip, most recent first, and the Activity timeline holds the full chain. Provenance is never collapsed to "last writer" — in a room where an agent may polish a human's prose, "who wrote this" is genuinely a list.
+A block edited by several participants shows each in its margin chip, most recent first; Activity holds the full chain. Provenance is never collapsed to "last writer" — where an agent may polish a human's prose, *who wrote this* genuinely has several answers.
+
+#### This is a hypothesis, not an advantage
+
+Syncpen ships propose-only: agents suggest, humans accept. The CHI study's participants preferred scoped, manual invocation and 23% felt out of control. **Both point away from live agent editing.**
+
+The bet is that *scoped, focus-aware, interruptible* live editing is better than propose-only — faster, and it keeps the agent's work anchored where it belongs. That is worth testing and is not yet demonstrated. §8.2 is the test.
 
 ### 5.5 Delegation in the document
 
@@ -421,13 +428,35 @@ The gate moved. It is no longer "the file watcher caught an agent write."
 | **1** | **The notebook** | Folder → paste raw Mermaid → renders → save → reopen → external edit. No session, no service. |
 | **2** | **Rich blocks** | SVG, code, math, tables, charts. Still single-player. |
 | **3** | **Bear-parity shell** | Three panes, tags, search, typography. **Shippable here** — a beautiful local notebook, complete. |
-| **4** | **Collaboration spike** | Two windows, two simulated humans and two agents in one room: inserts merge, cursors show, per-client undo is correct, reconnect works, and two agents fighting over a paragraph trip the loop breaker |
+| **4** | **Collaboration spike** | The §8.2 experiment, used for a full day on real work |
 | **5** | **Collaborate + Invite agent** | The buttons. Live sessions on real notes, MCP participant, control channel |
 | **6** | **Conversation + Activity layers** | Anchored threads, delegation menu, timeline and revert |
 | **7+** | **Remote peers** | iPad and remote humans; optional relay; offline and reconnect |
 | **8+** | Excalidraw, converters, public plugin API | |
 
 **Phase 3 is a real ship.** If everything after it were abandoned, SimpleMark would still be the thing that doesn't exist today: a beautiful local Markdown notebook that renders anything you paste.
+
+### 8.2 The Phase 4 experiment — build only this
+
+```text
+- Two human cursors in one Markdown document.
+- One agent cursor.
+- Human selects a section: "turn this into a Mermaid diagram."
+- Agent works in that scope and inserts the block live.
+- Human interrupts midway: "make it simpler."
+- Agent revises in place; the superseded run cannot land a late edit.
+- Human hits undo: the agent's transaction reverts cleanly.
+- The document saves as normal Markdown.
+```
+
+**Then use it for a full day on real work.** Track four things and nothing else:
+
+1. How often you interrupt or revoke the agent's scope.
+2. Whether you hide its presence or activity.
+3. Whether agent edits feel faster than reviewing suggestions.
+4. Whether you trust the saved Markdown afterwards.
+
+**If it feels like a useful co-worker, keep live-edit mode.** If you repeatedly pause it, make suggest mode the default and keep live mode for the moments where it is magical. Either outcome is a result; only building both without measuring is a failure.
 
 ### 8.1 Two definitions of done
 

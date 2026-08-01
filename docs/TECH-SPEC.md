@@ -11,7 +11,9 @@
 
 ## 1. The promise, stated precisely
 
-> Paste something. SimpleMark works out what it is, obtains whatever is needed to display it, and shows it. If it cannot, it says so plainly and keeps your content intact.
+> Paste common technical source or a document attachment, and SimpleMark makes it immediately useful: render it natively, preview it safely, or show it with the best available local viewer — without losing the original. If it cannot, it says so plainly and keeps your content intact.
+
+**Not "everything renders."** That promises impossible safety, performance, and fidelity. The honest claim is a tiered one, and the tiers are stated in §6.3.
 
 "Something" means: Mermaid, Graphviz, PlantUML, raw SVG, JSON, CSV, YAML, GeoJSON, Vega-Lite specs, LaTeX, iCal, source code in any language, a `.pptx`, a `.docx`, a `.pdf`, an image, an audio file, an ANSI terminal capture, an HTML fragment, a Jupyter notebook, a `.ipynb` cell, a URL, or a chunk of a JS library's demo code.
 
@@ -377,6 +379,17 @@ Opened in Bear, Obsidian, or GitHub, that is a picture of the deck with a captio
 
 ### 6.3 What renders where
 
+Three tiers, and the difference matters:
+
+| Tier | Meaning |
+|---|---|
+| **Native render** | Parsed and drawn by a renderer; source stays editable in the note |
+| **Safe preview** | Converted to page or slide images; the original is an untouched attachment |
+| **Best available viewer** | Handed to a local viewer or shown as a typed attachment card |
+
+**`.pptx` in v1 is a preview, not an editor.** Slides render as images and the file is preserved verbatim. Editable presentations are a different product; do not let the paste pipeline imply otherwise.
+
+
 | Kind | Renderer | Fallback written to disk |
 |---|---|---|
 | mermaid, graphviz, plantuml | core / verified | fenced source |
@@ -388,7 +401,7 @@ Opened in Bear, Obsidian, or GitHub, that is a picture of the deck with a captio
 | vega-lite, geojson | verified | fenced source + rendered PNG |
 | ansi | verified (xterm) | fenced source |
 | ipynb | verified | rendered PNG + attachment |
-| pptx, docx, xlsx, pdf | verified converter | page/slide PNGs + attachment |
+| pptx, docx, xlsx, pdf | verified converter — **preview only** | page/slide PNGs + attachment |
 | png, jpeg, gif, webp | core | standard image syntax |
 | audio, video | core (native element) | attachment + link |
 | url | core (preview card) | plain link |

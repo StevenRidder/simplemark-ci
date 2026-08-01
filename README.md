@@ -2,7 +2,9 @@
 
 A lightweight, beautiful, local-first Markdown notebook that turns raw technical material into editable documents — and lets humans and AI agents join you live when you want them.
 
-**The core promise:** paste raw Mermaid, a raw `<svg>`, a `.pptx`, a chart spec, an ANSI capture — no fence, no mode switch, no plugin install. It works out what the thing is and renders it, and the file on disk stays portable Markdown you own.
+**The core promise:** paste common technical source or a document attachment, and SimpleMark makes it immediately useful — render it natively, preview it safely, or show it with the best available local viewer — **without losing the original.**
+
+In practice: raw Mermaid, a raw `<svg>`, DOT, LaTeX, a chart spec, code, an ANSI capture all render natively, with no fence and no mode switch. A `.pptx` or `.pdf` previews as pages, with the file intact as an attachment. The Markdown on disk stays portable and yours.
 
 **Collaboration is optional and live.** Alone it is calm and fast, like Bear. Click *Collaborate* and someone joins this note. Click *Invite agent* and one works alongside you — visible, interruptible, redirectable. Close the session and you have ordinary Markdown plus attachments in your folder.
 
@@ -13,7 +15,8 @@ A lightweight, beautiful, local-first Markdown notebook that turns raw technical
 Design stage. No code yet.
 
 - [`docs/DESIGN.md`](docs/DESIGN.md) — **start here** — the notebook: architecture, fidelity contract, paste rules, wireframe
-- [`docs/COLLABORATION.md`](docs/COLLABORATION.md) — the optional live session: CRDT room, agents as participants, governed multi-agent rules
+- [`docs/COLLABORATION.md`](docs/COLLABORATION.md) — the optional live session: CRDT room, focus-aware agent rules, the day-of-use experiment
+- [`docs/SWITCHBOARD-KERNEL.md`](docs/SWITCHBOARD-KERNEL.md) — the four patterns borrowed from Switchboard, and the four deliberately not
 - [`docs/TECH-SPEC.md`](docs/TECH-SPEC.md) — universal paste: recognition ladder, renderer catalog, sandbox
 - [`docs/RENDERERS.md`](docs/RENDERERS.md) — renderers vs embedded editors, and the v1 set
 - [`docs/AGENT-WORKSPACE.md`](docs/AGENT-WORKSPACE.md) — MCP co-editing: you and an agent in one folder

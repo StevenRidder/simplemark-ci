@@ -1,36 +1,42 @@
 # SimpleMark
 
-A living, local-first workspace where you and AI agents think together in one document — and the output stays yours as portable Markdown files.
+A lightweight, beautiful, local-first Markdown notebook that turns raw technical material into editable documents — and lets humans and AI agents join you live when you want them.
 
-**The defining behavior:** you type in a note while an agent adds a diagram beside the paragraph it's explaining. Both cursors are visible. You interrupt it mid-table and it changes course. `Cmd+Z` undoes your sentence, not its diagram. You close the app and the file on disk is clean Markdown that opens correctly in Bear.
+**The core promise:** paste raw Mermaid, a raw `<svg>`, a `.pptx`, a chart spec, an ANSI capture — no fence, no mode switch, no plugin install. It works out what the thing is and renders it, and the file on disk stays portable Markdown you own.
 
-**And it renders anything.** Paste raw Mermaid, a raw `<svg>`, a `.pptx`, a chart spec, an ANSI capture — no fence, no mode switch, no plugin install. It works out what the thing is and shows it.
+**Collaboration is optional and live.** Alone it is calm and fast, like Bear. Click *Collaborate* and someone joins this note. Click *Invite agent* and one works alongside you — visible, interruptible, redirectable. Close the session and you have ordinary Markdown plus attachments in your folder.
+
+**No active session means no service, no cost, no overhead.** SimpleMark is a notebook that becomes multiplayer, not a workspace you have to enter.
 
 ## Status
 
 Design stage. No code yet.
 
-- [`docs/COLLABORATION.md`](docs/COLLABORATION.md) — **start here** — the live CRDT session, agents as participants, the three document layers
-- [`docs/DESIGN.md`](docs/DESIGN.md) — product architecture, fidelity contract, paste rules, wireframe
+- [`docs/DESIGN.md`](docs/DESIGN.md) — **start here** — the notebook: architecture, fidelity contract, paste rules, wireframe
+- [`docs/COLLABORATION.md`](docs/COLLABORATION.md) — the optional live session: CRDT room, agents as participants, governed multi-agent rules
 - [`docs/TECH-SPEC.md`](docs/TECH-SPEC.md) — universal paste: recognition ladder, renderer catalog, sandbox
 - [`docs/RENDERERS.md`](docs/RENDERERS.md) — renderers vs embedded editors, and the v1 set
 - [`docs/AGENT-WORKSPACE.md`](docs/AGENT-WORKSPACE.md) — MCP co-editing: you and an agent in one folder
 - [`docs/wireframe.html`](docs/wireframe.html) — interactive interface wireframe (open in a browser)
 - [`docs/superpowers/plans/`](docs/superpowers/plans/) — the Phase 0–1 implementation plan
 
-## Two truths, two jobs
+## The hierarchy
 
-A live document needs a CRDT — a file watcher has no presence, no cursors, no interruption channel, and cannot merge two edits to one paragraph. A durable document needs to be a file you own. So:
+```
+SimpleMark first:     write, read, paste, render, think
+Collaboration second: invite a human or an agent into this exact
+                      document, when it is useful
+```
+
+When a session *is* running, a CRDT coordinates it — a file watcher has no presence, no cursors, no interruption channel, and cannot merge two edits to one paragraph. Files remain the durable artifact:
 
 ```
    You ──────┐
-             ├─→  Yjs session (localhost)  ─→  debounced save  ─→  .md in iCloud Drive
-   Agent ────┘         coordination truth                            durability truth
+             ├─→  Yjs session  ─→  debounced save  ─→  .md in your folder
+   Agent ────┘   coordination                          durability
 ```
 
-While a note is open, the session coordinates. The moment it closes, the folder is sufficient on its own — which is the property lock-in actually depends on.
-
-**v1 is two participants on one machine:** you and an agent, over localhost. No relay, no WebRTC, no rendezvous service. Second devices and multi-human come later, and everything built for a local peer works unchanged for a remote one.
+You plus local agents never leave the machine. A LAN peer connects directly. Only a remote human or a sleeping device needs a relay — tiny, self-hostable, zero-knowledge, and **optional**.
 
 ## The bet
 
@@ -50,10 +56,10 @@ SimpleMark keeps files as the truth but treats the editor as a real document can
 | Extensibility | Internal extension points in v1, shaped to become the public plugin API |
 | License | Apache-2.0 or MIT — permissive, so a hosted or proprietary layer stays possible |
 
-## First tasks — two go/no-go spikes
+## First task — the fidelity gate
 
-**Phase 0 — collaboration.** Two app windows plus one simulated agent edit the same document. Concurrent inserts merge, cursors show, per-client undo is correct, a client disconnects and reconnects cleanly. If this doesn't work, nothing else matters.
+**Phase 0 — fidelity.** Open a hostile real-world document, save it without editing, and diff. Then edit one block and diff everything else. Untouched content must never be rewritten — no renumbered lists, no repadded tables, no restyled fences. No off-the-shelf Markdown editor does this, because serializers normalize. Ten acceptance fixtures are in [`docs/DESIGN.md` §12](docs/DESIGN.md).
 
-**Phase 0b — fidelity.** Open a hostile real-world document, save it without editing, and diff. Then edit one block and diff everything else. Untouched content must never be rewritten — no renumbered lists, no repadded tables, no restyled fences. No off-the-shelf Markdown editor does this, because serializers normalize. Ten acceptance fixtures are in [`docs/DESIGN.md` §12](docs/DESIGN.md).
+Days, not weeks. Nothing else starts until it resolves.
 
-Both are days, not weeks. Nothing else starts until they resolve.
+**Phase 3 is a real ship:** a beautiful local Markdown notebook that renders anything you paste. Everything after it — live sessions, agents in the room — is built on a thing that already works alone.

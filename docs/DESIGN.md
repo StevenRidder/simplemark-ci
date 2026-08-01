@@ -3,13 +3,15 @@
 - **Status:** Draft, revision 3 — **D1/D2 superseded in part by [`COLLABORATION.md`](COLLABORATION.md)**
 - **Date:** 2026-08-01
 - **Working title:** SimpleMark
-- **One line:** A living, local-first workspace where you and AI agents think together in one document — and the output stays yours as portable Markdown.
+- **One line:** A lightweight, beautiful, local-first Markdown notebook that turns raw technical material into editable documents — and becomes multiplayer only when you want it.
 
 ---
 
-> **Read [`COLLABORATION.md`](COLLABORATION.md) first.** The product grew: a live CRDT session now owns
-> coordination while a document is open, and files own durability. That changes D1 and D2 below.
-> D7 (fidelity) is unchanged — block source spans simply live in the CRDT.
+> **This document specifies the notebook — the product when nothing else is running.** That is the
+> default and the majority case: a note is a file, and the app is a beautiful editor over it.
+> [`COLLABORATION.md`](COLLABORATION.md) specifies what changes when you explicitly start a live
+> session: a CRDT coordinates while the document is open, and files remain the durable artifact.
+> D1 and D2 below gain an exception *only* while live. D7 (fidelity) is unchanged either way.
 
 ---
 
@@ -436,7 +438,7 @@ Public plugin API and sandbox · handwriting + OCR · iOS/iPad shell · graph vi
 
 | Document | Covers |
 |---|---|
-| [`COLLABORATION.md`](COLLABORATION.md) | **Live collaboration** — the CRDT session, agents as participants with cursors and interruption, the three document layers, and the revised build order |
+| [`COLLABORATION.md`](COLLABORATION.md) | **The optional live session** — CRDT room, agents as participants with cursors and interruption, governed multi-agent rules, and the build order that ships the notebook first |
 | [`TECH-SPEC.md`](TECH-SPEC.md) | Universal paste — the five-level recognition ladder, the signed renderer catalog, sandboxed execution, and why pasted content may never choose what code runs |
 | [`RENDERERS.md`](RENDERERS.md) | Renderers vs embedded editors, the rule for choosing, and the v1 set: Mermaid, DOT, KaTeX, Shiki, Vega-Lite, Markmap |
 | [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) | MCP co-editing — the semantic tool surface, revision-hash concurrency, block anchors, and the two prerequisites this adds to Phase 1 |

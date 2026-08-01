@@ -1,20 +1,44 @@
 # SimpleMark — Live Collaboration
 
-**A living document where humans and agents think together in real time, and the output is still yours as files.**
+**Collaboration is a capability of a note, not the shape of the product.**
 
-- **Status:** Draft 1 — supersedes parts of `DESIGN.md` D1/D2/D7
+- **Status:** Draft 2 — collaboration reframed as opt-in; `DESIGN.md` D1/D2 amended only for live sessions
 - **Date:** 2026-08-01
 - **Companion to:** [`DESIGN.md`](DESIGN.md), [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md), [`RENDERERS.md`](RENDERERS.md)
 
 ---
 
-## 1. What the product actually is
+## 1. Where collaboration sits
 
-Not "beautiful Markdown with Mermaid." That is a feature.
+**SimpleMark is not an AI workspace.** It is a fast, beautiful, local Markdown notebook that *happens to become multiplayer when you need it.*
 
-> **N humans and N agents are in the same room, editing the same document and each other's work, at the same time. Every cursor is visible, every change is attributed, and the result still lands as ordinary Markdown files you own.**
+```text
+SimpleMark first:     write, read, paste, render, think
+Collaboration second: invite a human or an agent into this exact
+                      document, when it is useful
+```
 
-The mental model is Google Wave for durable Markdown work, with agents as first-class participants rather than a chat panel bolted onto a notes app.
+Alone, it is Bear at its best — calm, instant, no setup, your files. You never enter a separate "workspace product." Collaboration should feel like looking up from a notebook and saying *come work on this with me* — not like the app asking permission to manage your work.
+
+> **The product statement:** SimpleMark is a lightweight Markdown notebook that turns raw technical material into beautiful, editable documents — and lets humans and AI agents join you live when needed.
+
+Where that puts us against the category:
+
+| Their centre of gravity | SimpleMark's |
+|---|---|
+| AI / team workspace | Personal writing and thinking surface |
+| Cloud collaboration | Local files first |
+| Agents as the product | Rendering and document feel as the product |
+| Organisational knowledge | One exceptional note, opened instantly |
+| Ongoing agent workflows | Bring an agent in for a moment of work |
+
+### 1.0 What this section specifies
+
+Everything below describes what happens **when a session is running.** When one isn't — the normal case — none of it exists: no CRDT, no relay, no service, no cost, no mental overhead. The note is a file, the app is a notebook.
+
+The useful idea borrowed from Google Wave is the living shared artifact. Not the inbox, the chat, the tasks, or the social layer.
+
+> **When a session *is* running:** N humans and N agents are in the same room, editing the same document and each other's work. Every cursor is visible, every change attributed, and the result still lands as ordinary Markdown you own.
 
 ```text
 Document:
@@ -46,17 +70,27 @@ Conversations exist to steer work and resolve decisions. Once resolved, the conc
 
 ---
 
-## 2. What this changes
+## 2. What this changes — and only while live
 
-Three of the original decisions move. Stating it plainly rather than quietly amending them.
+Two decisions gain an exception. Neither is replaced, and neither applies to a note with no session attached.
 
 | Decision | Was | Now |
 |---|---|---|
-| **D1** Files are the truth | Files are the only truth | Files are the **durable** truth; a live session's CRDT is the **coordination** truth |
-| **D2** Sync delegated to the cloud drive | iCloud propagates everything | iCloud is **per-vault durable storage**, written once by a save leader (§3.4); **real-time runs over an encrypted relay**, never over file propagation |
+| **D1** Files are the truth | Files are the only truth | Unchanged when cold. **While live**, files are the durable truth and the CRDT is the coordination truth |
+| **D2** Sync delegated to the cloud drive | iCloud propagates everything | Unchanged when cold. **While live**, iCloud is per-vault durable storage written once by a save leader (§3.4); real-time runs peer-to-peer or over an optional relay |
 | **D7** Fidelity contract | Untouched blocks re-emit verbatim | **Unchanged** — see §6.3. Original source per block lives in the CRDT. |
 
-### 2.1 D8 — The live session owns coordination; the file owns durability
+### 2.1 D8 — Collaboration is a capability, not the storage model
+
+Five statements, in order of importance:
+
+1. A note **opens locally and works perfectly alone.** No service starts.
+2. **Collaborate** starts or joins a live CRDT room for *that note*.
+3. **Invite agent** gives an agent scoped, live access to that room.
+4. On close, the durable Markdown saves to your folder as usual.
+5. **No active session means no collaboration service, no cost, no overhead.**
+
+Within a live session, the ownership rule below holds.
 
 ```mermaid
 flowchart LR
@@ -104,9 +138,17 @@ Real multiplayer is in scope. You, your teammates, your iPad, and N agents can b
 
 This costs four subsystems the single-machine version avoided. Each is specified below, and none of them requires an account system.
 
-### 3.1 Transport: a dumb, zero-knowledge relay
+### 3.1 Transport: local first, relay only if you need one
 
-Peers cannot reliably reach each other across NATs, and a Mac-as-host dies when the lid closes. So there is a relay — deliberately the least trusted component in the system.
+**Cheap for personal use is a requirement, not an aspiration.** The app bundles the collaboration service; you plus your local agents never leave the machine.
+
+| Case | Transport | Cost |
+|---|---|---|
+| You + local agents | In-process, localhost | Zero. No network. |
+| You + someone on your LAN | mDNS discovery, direct peer connection | Zero |
+| You + a remote human, or your iPad | An always-on peer, or a tiny relay | Near-zero; **optional** |
+
+A relay is what makes cross-device real-time work when no device of yours is awake. It is a convenience at the edge of the product, **not its foundation** — deliberately the least trusted component in the system.
 
 ```mermaid
 flowchart LR
@@ -122,7 +164,7 @@ flowchart LR
 **The relay never sees your content.** Yjs updates are encrypted client-side with a per-document key before transmission; the relay stores and fans out opaque blobs. It knows document ids, participant public keys, and timing — nothing else. That keeps "local-first, your data" honest even with a server in the path.
 
 - **Protocol:** Hocuspocus (the reference Yjs WebSocket server) over TLS, with an encryption extension on the client side.
-- **Self-hostable in one command.** A single container, ~50 MB of RAM per active room. Anyone can run their own; the project ships one for convenience, never as a requirement.
+- **Self-hostable in one command.** A single container, ~50 MB of RAM per active room. Anyone can run their own; the project ships one for convenience, never as a requirement. **The app is fully functional having never contacted it.**
 - **LAN fast path:** peers on the same network discover each other via mDNS and sync directly, using the relay only for presence. Two people at one table do not round-trip through the internet.
 - **Offline:** every client persists its own update log. Reconnect replays. Yjs merges. No conflict dialog, ever, for the collaborative path.
 
@@ -371,21 +413,29 @@ What actually softens is the *ownership* claim, not the *fidelity* claim: while 
 
 The gate moved. It is no longer "the file watcher caught an agent write."
 
+**The notebook ships before the room.** Collaboration is built on a foundation that already works alone — which is also the honest test of whether it is a capability or a dependency.
+
 | Phase | Deliverable | Proof |
 |---|---|---|
-| **0** | **Collaboration spike** | Two app windows, two simulated humans and two simulated agents in one room: concurrent inserts merge, cursors show, per-client undo is correct, a client disconnects and reconnects cleanly, and two agents editing the same paragraph trip the loop breaker instead of thrashing |
-| **0b** | **Fidelity spike** (`DESIGN.md` §12) | The 10 fixtures survive, now with block state in the CRDT |
-| **1** | **Markdown bridge** | Load and save real notes, render Mermaid and SVG, without destroying source |
-| **2** | **MCP participant** | Live read, subscribe, transactional edit, control channel |
-| **3** | **Rich blocks** | Mermaid, SVG, code, math, then charts |
-| **4** | **Conversation + Activity layers** | Anchored threads, delegation menu, transaction timeline and revert |
-| **5** | **Bear-parity shell** | Three panes, tags, search, typography |
-| **6+** | **Second device** | iPad joins the session; offline and reconnect behavior |
-| **7+** | Excalidraw, converters, public plugin API | |
+| **0** | **Fidelity spike** (`DESIGN.md` §12) | The 10 fixtures survive parse → serialize untouched |
+| **1** | **The notebook** | Folder → paste raw Mermaid → renders → save → reopen → external edit. No session, no service. |
+| **2** | **Rich blocks** | SVG, code, math, tables, charts. Still single-player. |
+| **3** | **Bear-parity shell** | Three panes, tags, search, typography. **Shippable here** — a beautiful local notebook, complete. |
+| **4** | **Collaboration spike** | Two windows, two simulated humans and two agents in one room: inserts merge, cursors show, per-client undo is correct, reconnect works, and two agents fighting over a paragraph trip the loop breaker |
+| **5** | **Collaborate + Invite agent** | The buttons. Live sessions on real notes, MCP participant, control channel |
+| **6** | **Conversation + Activity layers** | Anchored threads, delegation menu, timeline and revert |
+| **7+** | **Remote peers** | iPad and remote humans; optional relay; offline and reconnect |
+| **8+** | Excalidraw, converters, public plugin API | |
 
-**Phase 0 now runs before the fidelity spike**, because if live collaboration doesn't work the fidelity question is moot. Both are days, not weeks.
+**Phase 3 is a real ship.** If everything after it were abandoned, SimpleMark would still be the thing that doesn't exist today: a beautiful local Markdown notebook that renders anything you paste.
 
-### 8.1 The definition of done for v1
+### 8.1 Two definitions of done
+
+**Phase 3 — the notebook:**
+
+> You paste a bare Mermaid diagram into a note and it becomes a picture. You paste a `.pptx` and see slides. Typography is beautiful, search is instant, and the file on disk is clean Markdown that opens correctly in Bear. Nothing is running but the app.
+
+**Phase 5+ — the room:**
 
 > You and a colleague are typing in one document. Codex adds a diagram next to the paragraph it is explaining; a Critic agent comments on your colleague's claim and proposes an edit to Codex's table. Every cursor is visible and named. You interrupt Codex mid-table and it changes course. `Cmd+Z` undoes your sentence and nobody else's. The two agents do not thrash, because the second round trips the loop breaker. Your colleague's Mac and your iPad both hold clean, portable Markdown that opens correctly in Bear.
 

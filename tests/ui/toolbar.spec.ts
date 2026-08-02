@@ -47,6 +47,13 @@ async function selectWord(page: import('@playwright/test').Page, word: string) {
   for (let i = 0; i < word.length; i += 1) await page.keyboard.press('Shift+ArrowLeft')
 }
 
+async function openTableOptions(page: import('@playwright/test').Page) {
+  await page.getByRole('button', { name: 'Table options' }).click()
+  const menu = page.locator('.table-controls-menu:not([hidden])')
+  await expect(menu).toBeVisible()
+  return menu
+}
+
 test.describe('inline commands reach the document', () => {
   for (const [label, word, expected] of [
     ['Italic', 'slanted', '*slanted*'],
@@ -93,17 +100,21 @@ test('table-local controls change rows, columns, and alignment as portable Markd
 
   const table = page.locator(`${editor} table`)
   await table.locator('th').first().click()
-  await expect(page.getByRole('button', { name: 'Row below' })).toBeVisible()
+  await expect(table).toHaveCSS('table-layout', 'auto')
+  await expect(page.getByRole('button', { name: 'Table options' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Row below' })).toBeHidden()
+  const compactControl = await page.locator('.table-controls:not([hidden])').boundingBox()
+  expect(compactControl?.width ?? Infinity).toBeLessThan(100)
 
   const rowsBefore = await table.locator('tr').count()
-  await page.getByRole('button', { name: 'Row below' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Row below' }).click()
   await expect(table.locator('tr')).toHaveCount(rowsBefore + 1)
 
   const cellsBefore = await table.locator('tr').first().locator('th, td').count()
-  await page.getByRole('button', { name: 'Column right' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Column right' }).click()
   await expect(table.locator('tr').first().locator('th, td')).toHaveCount(cellsBefore + 1)
 
-  await page.getByRole('button', { name: 'Align right' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Align right' }).click()
   await table.locator('th').first().click()
   await page.keyboard.type('Revenue')
   await expect.poll(() => markdown(page)).toContain('Revenue')
@@ -135,26 +146,26 @@ test('table controls delete structure and keep display sizing out of source', as
 
   const table = page.locator(`${editor} table`)
   await table.locator('td').first().click()
-  await expect(page.getByRole('button', { name: 'Delete row' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Table options' })).toBeVisible()
 
   const rowsBefore = await table.locator('tr').count()
-  await page.getByRole('button', { name: 'Delete row' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Delete row' }).click()
   await expect(table.locator('tr')).toHaveCount(rowsBefore - 1)
 
   // The controls offer reader-local layout modes. They must never turn a
   // portable `.md` file into HTML or hidden table metadata.
   await table.locator('td').first().click()
-  await page.getByRole('button', { name: 'Fit content' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Fit content' }).click()
   await expect(table).toHaveCSS('table-layout', 'auto')
-  await page.getByRole('button', { name: 'Equal columns' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Equal columns' }).click()
   await expect(table).toHaveCSS('table-layout', 'fixed')
   expect(await markdown(page)).not.toContain('style=')
   expect(await markdown(page)).not.toContain('colwidth')
 
   const columnsBefore = await table.locator('tr').first().locator('th, td').count()
-  await page.getByRole('button', { name: 'Delete column' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Delete column' }).click()
   await expect(table.locator('tr').first().locator('th, td')).toHaveCount(columnsBefore - 1)
-  await page.getByRole('button', { name: 'Delete table' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Delete table' }).click()
   await expect(table).toHaveCount(0)
 })
 
@@ -196,15 +207,15 @@ test('table-local sort and move controls reorder portable rows and columns', asy
   await page.keyboard.type('Apple')
 
   await table.locator('td').first().click()
-  await page.getByRole('button', { name: 'Sort selected column ascending' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Sort selected column ascending' }).click()
   await expect(table.locator('tr').nth(1).locator('td').first()).toContainText('Apple')
 
   await table.locator('tr').nth(1).locator('td').first().click()
-  await page.getByRole('button', { name: 'Shift row down' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Shift row down' }).click()
   await expect(table.locator('tr').nth(2).locator('td').first()).toContainText('Apple')
 
   await table.locator('tr').nth(2).locator('td').first().click()
-  await page.getByRole('button', { name: 'Move right' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Move right' }).click()
   await expect(table.locator('tr').first().locator('th').nth(1)).toContainText('Name')
   await expect.poll(() => markdown(page)).toContain('Apple')
   expect(await markdown(page)).not.toContain('colwidth')

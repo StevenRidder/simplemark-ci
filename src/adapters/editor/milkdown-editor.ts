@@ -106,6 +106,7 @@ export interface MilkdownEditorOptions {
 export class MilkdownEditor {
   #blockDrag: { pointerId: number; source: number } | undefined
   #tableControls: HTMLElement | undefined
+  #tableControlsOpen = false
   #activeTable: HTMLTableElement | undefined
   #activeTableCell: HTMLTableCellElement | undefined
 
@@ -333,15 +334,29 @@ export class MilkdownEditor {
   }
 
   /**
-   * Shows a small table-local correction strip only while a reader is working
-   * in a table. It intentionally lives beside the selected table rather than
-   * claiming permanent toolbar or sidebar space.
+   * A selected table earns one quiet entry point, not a second toolbar. The
+   * full correction menu appears only after a reader asks for it.
    */
   private installTableControls(): void {
     const controls = document.createElement('div')
     controls.className = 'table-controls'
     controls.hidden = true
     controls.setAttribute('aria-label', 'Table controls')
+
+    const trigger = document.createElement('button')
+    trigger.type = 'button'
+    trigger.className = 'table-controls-trigger'
+    trigger.textContent = 'Table'
+    trigger.setAttribute('aria-label', 'Table options')
+    trigger.setAttribute('aria-expanded', 'false')
+    trigger.addEventListener('mousedown', (event) => event.preventDefault())
+    trigger.addEventListener('click', () => this.setTableControlsOpen(!this.#tableControlsOpen))
+    controls.append(trigger)
+
+    const menu = document.createElement('div')
+    menu.className = 'table-controls-menu'
+    menu.hidden = true
+    menu.setAttribute('aria-label', 'Table options')
 
     const groups: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
       ['Rows', [
@@ -367,6 +382,10 @@ export class MilkdownEditor {
       const group = document.createElement('div')
       group.className = 'table-control-group'
       group.setAttribute('aria-label', label)
+      const groupLabel = document.createElement('span')
+      groupLabel.className = 'table-control-group-label'
+      groupLabel.textContent = label
+      group.append(groupLabel)
       for (const [action, title] of actions) {
         const button = document.createElement('button')
         button.type = 'button'
@@ -376,12 +395,14 @@ export class MilkdownEditor {
         button.title = title
         button.addEventListener('mousedown', (event) => {
           event.preventDefault()
+          this.setTableControlsOpen(false)
           this.runTableAction(action)
         })
         group.append(button)
       }
-      controls.append(group)
+      menu.append(group)
     }
+    controls.append(menu)
     document.body.append(controls)
     this.#tableControls = controls
 
@@ -450,15 +471,47 @@ export class MilkdownEditor {
     this.setTableControlEnabled('moveColumnLeft', columnIndex !== undefined && columnIndex > 0)
     this.setTableControlEnabled('moveColumnRight', columnIndex !== undefined && columnIndex < table.rows[0]!.cells.length - 1)
     controls.hidden = false
-    const tableRect = table.getBoundingClientRect()
-    const controlsRect = controls.getBoundingClientRect()
-    controls.style.left = `${Math.max(12, Math.min(tableRect.right - controlsRect.width, window.innerWidth - controlsRect.width - 12))}px`
-    controls.style.top = `${Math.max(12, tableRect.top - controlsRect.height - 8)}px`
+    this.positionTableControls()
+  }
+
+  private setTableControlsOpen(open: boolean): void {
+    if (this.#tableControls === undefined) return
+    this.#tableControlsOpen = open
+    const trigger = this.#tableControls.querySelector<HTMLButtonElement>('.table-controls-trigger')
+    const menu = this.#tableControls.querySelector<HTMLElement>('.table-controls-menu')
+    if (trigger !== null) trigger.setAttribute('aria-expanded', String(open))
+    if (menu !== null) menu.hidden = !open
+    this.positionTableControls()
+  }
+
+  private positionTableControls(): void {
+    if (this.#tableControls === undefined || this.#activeTable === undefined) return
+    const tableRect = this.#activeTable.getBoundingClientRect()
+    const controlsRect = this.#tableControls.getBoundingClientRect()
+    const menu = this.#tableControls.querySelector<HTMLElement>('.table-controls-menu')
+    // The menu is absolutely positioned, so it does not contribute to its
+    // trigger's bounding box. Clamp against whichever of the two is visible.
+    const visibleWidth = Math.max(controlsRect.width, menu?.hidden ? 0 : (menu?.getBoundingClientRect().width ?? 0))
+    this.#tableControls.style.left = `${Math.max(12, Math.min(tableRect.left, window.innerWidth - visibleWidth - 12))}px`
+    this.#tableControls.style.top = `${Math.max(12, tableRect.top - controlsRect.height - 8)}px`
+    if (menu === null || menu.hidden) return
+
+    // Prefer opening into the table, but never make a control unreachable at
+    // the bottom of a short viewport. In that case it becomes a true popover
+    // above the trigger instead of a clipped strip below it.
+    menu.style.top = 'calc(100% + 7px)'
+    menu.style.bottom = 'auto'
+    const openedMenuRect = menu.getBoundingClientRect()
+    if (openedMenuRect.bottom > window.innerHeight - 12 && controlsRect.top - openedMenuRect.height - 7 >= 12) {
+      menu.style.top = 'auto'
+      menu.style.bottom = 'calc(100% + 7px)'
+    }
   }
 
   private refreshTableControls(view: EditorView): void {
     if (!isInTable(view.state)) {
       if (this.#tableControls !== undefined) this.#tableControls.hidden = true
+      this.#tableControlsOpen = false
       this.#activeTable = undefined
       this.#activeTableCell = undefined
       return
@@ -579,6 +632,7 @@ export class MilkdownEditor {
         case 'deleteTable':
           deleteTable(view.state, view.dispatch.bind(view))
           if (this.#tableControls !== undefined) this.#tableControls.hidden = true
+          this.#tableControlsOpen = false
           this.#activeTable = undefined
           break
         default:
@@ -784,6 +838,7 @@ export class MilkdownEditor {
     // table; remove that one detached element with the editor itself.
     this.#tableControls?.remove()
     this.#tableControls = undefined
+    this.#tableControlsOpen = false
     this.#activeTable = undefined
     this.#activeTableCell = undefined
     await this.editor.destroy()

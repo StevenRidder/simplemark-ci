@@ -582,7 +582,11 @@ button[disabled] {
    (§5), so they have to look native rather than like an afterthought. */
 .milkdown .ProseMirror table {
   width: 100%;
-  table-layout: fixed;
+  /* This is deliberately the browser default. GFM records no widths, so a
+     reopened table must size from its content, just as it did before editing
+     affordances were added. `Equal columns` remains an explicit, temporary
+     reader choice; it is not a reload-time guess. */
+  table-layout: auto;
   border-collapse: collapse;
   font: 15px/1.5 var(--sans);
   margin: 26px 0;
@@ -622,16 +626,6 @@ button[disabled] {
 .table-controls {
   position: fixed;
   z-index: 45;
-  display: flex;
-  gap: 4px;
-  max-width: calc(100vw - 24px);
-  padding: 5px;
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--paper) 96%, transparent);
-  box-shadow: 0 10px 28px rgba(32, 29, 24, 0.16);
-  backdrop-filter: blur(16px);
 }
 
 .table-controls[hidden] {
@@ -639,25 +633,79 @@ button[disabled] {
 }
 
 .table-control-group {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 2px;
-  padding-right: 4px;
-  border-right: 1px solid var(--line);
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--paper) 92%, var(--soft));
 }
 
-.table-control-group:last-child {
-  padding-right: 0;
-  border-right: 0;
+.table-controls-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 9px;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  box-shadow: 0 8px 20px rgba(32, 29, 24, 0.14);
+  color: var(--ink-2);
+  font: 650 11px/1 var(--sans);
+}
+
+.table-controls-trigger::after {
+  content: '⌄';
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.table-controls-trigger[aria-expanded='true'] {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.table-controls-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(138px, 1fr));
+  gap: 6px;
+  width: min(356px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--paper) 97%, transparent);
+  box-shadow: 0 14px 32px rgba(32, 29, 24, 0.18);
+  backdrop-filter: blur(16px);
+}
+
+.table-controls-menu[hidden] {
+  display: none;
+}
+
+.table-control-group-label {
+  grid-column: 1 / -1;
+  padding: 1px 2px 4px;
+  color: var(--ink-3);
+  font: 700 9px/1 var(--sans);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
 .table-control-group button {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  padding: 5px 7px;
+  padding: 5px 6px;
   color: var(--ink-2);
-  font: 600 10px/1 var(--sans);
-  white-space: nowrap;
+  font: 600 10px/1.25 var(--sans);
+  text-align: left;
 }
 
 .table-control-group button:hover {

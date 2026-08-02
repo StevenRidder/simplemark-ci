@@ -139,7 +139,7 @@ test('Tab from the final table cell creates a new editable GFM row', async ({ pa
   await expect.poll(() => markdown(page)).toContain('A real next row')
 })
 
-test('table controls delete structure and keep display sizing out of source', async ({ page }) => {
+test('table controls delete structure without turning into table administration', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
   await page.getByRole('button', { name: 'Table' }).click()
@@ -151,16 +151,6 @@ test('table controls delete structure and keep display sizing out of source', as
   const rowsBefore = await table.locator('tr').count()
   await (await openTableOptions(page)).getByRole('button', { name: 'Delete row' }).click()
   await expect(table.locator('tr')).toHaveCount(rowsBefore - 1)
-
-  // The controls offer reader-local layout modes. They must never turn a
-  // portable `.md` file into HTML or hidden table metadata.
-  await table.locator('td').first().click()
-  await (await openTableOptions(page)).getByRole('button', { name: 'Fit content' }).click()
-  await expect(table).toHaveCSS('table-layout', 'auto')
-  await (await openTableOptions(page)).getByRole('button', { name: 'Equal columns' }).click()
-  await expect(table).toHaveCSS('table-layout', 'fixed')
-  expect(await markdown(page)).not.toContain('style=')
-  expect(await markdown(page)).not.toContain('colwidth')
 
   const columnsBefore = await table.locator('tr').first().locator('th, td').count()
   await (await openTableOptions(page)).getByRole('button', { name: 'Delete column' }).click()
@@ -190,35 +180,19 @@ test('a table column can be width-dragged without width metadata entering Markdo
   expect(await markdown(page)).not.toContain('colwidth')
 })
 
-test('table-local sort and move controls reorder portable rows and columns', async ({ page }) => {
+test('advanced table administration stays out of the reader menu', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
   await page.getByRole('button', { name: 'Table' }).click()
 
   const table = page.locator(`${editor} table`)
-  const cells = table.locator('th, td')
-  await cells.nth(0).click()
-  await page.keyboard.type('Name')
-  await cells.nth(1).click()
-  await page.keyboard.type('Status')
-  await cells.nth(3).click()
-  await page.keyboard.type('Zebra')
-  await cells.nth(6).click()
-  await page.keyboard.type('Apple')
-
   await table.locator('td').first().click()
-  await (await openTableOptions(page)).getByRole('button', { name: 'Sort selected column ascending' }).click()
-  await expect(table.locator('tr').nth(1).locator('td').first()).toContainText('Apple')
-
-  await table.locator('tr').nth(1).locator('td').first().click()
-  await (await openTableOptions(page)).getByRole('button', { name: 'Shift row down' }).click()
-  await expect(table.locator('tr').nth(2).locator('td').first()).toContainText('Apple')
-
-  await table.locator('tr').nth(2).locator('td').first().click()
-  await (await openTableOptions(page)).getByRole('button', { name: 'Move right' }).click()
-  await expect(table.locator('tr').first().locator('th').nth(1)).toContainText('Name')
-  await expect.poll(() => markdown(page)).toContain('Apple')
-  expect(await markdown(page)).not.toContain('colwidth')
+  await openTableOptions(page)
+  await expect(page.getByRole('button', { name: 'Sort selected column ascending' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Shift row down' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Move right' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Fit content' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Equal columns' })).toHaveCount(0)
 })
 
 test('the numbered list button produces an ordered list', async ({ page }) => {

@@ -358,25 +358,20 @@ export class MilkdownEditor {
     menu.hidden = true
     menu.setAttribute('aria-label', 'Table options')
 
+    // This menu is for ordinary correction, not table administration. More
+    // powerful operations remain implemented below for a future deliberate
+    // surface, but never turn a reader's table into a cockpit by default.
     const groups: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
       ['Rows', [
         ['rowBefore', 'Row above'], ['rowAfter', 'Row below'],
-        ['moveRowUp', 'Shift row up'], ['moveRowDown', 'Shift row down'],
-        ['sortAscending', 'Sort selected column ascending'],
-        ['sortDescending', 'Sort selected column descending'],
         ['deleteRow', 'Delete row'],
       ]],
       ['Columns', [
         ['colBefore', 'Column left'], ['colAfter', 'Column right'],
-        ['moveColumnLeft', 'Move left'], ['moveColumnRight', 'Move right'],
         ['deleteColumn', 'Delete column'],
       ]],
       ['Column', [['alignLeft', 'Align left'], ['alignCenter', 'Align center'], ['alignRight', 'Align right']]],
-      ['Table', [
-        ['fitColumns', 'Fit content'],
-        ['equalColumns', 'Equal columns'],
-        ['deleteTable', 'Delete table'],
-      ]],
+      ['Table', [['deleteTable', 'Delete table']]],
     ]
     for (const [label, actions] of groups) {
       const group = document.createElement('div')

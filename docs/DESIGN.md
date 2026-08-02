@@ -1,31 +1,38 @@
 # SimpleMark — Design Document
 
-- **Status:** Draft, revision 4 — local `DocumentSession` POC governed by
-  [`ADR-0002`](decisions/0002-local-document-session-before-crdt.md)
-- **Date:** 2026-08-01
+- **Status:** Draft, revision 5 — rendered-document POC governed by
+  [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md)
+- **Date:** 2026-08-02
 - **Working title:** SimpleMark
-- **One line:** A lightweight, beautiful, local-first Markdown notebook that turns raw technical material into editable documents — and becomes multiplayer only when you want it.
+- **One line:** The beautiful living document for AI work: always rendered, always your file.
 
 ---
 
-> **This document specifies the notebook — the product when nothing else is running.** That is the
-> default and the majority case: a note is a file, and the app is a beautiful editor over it.
-> [`COLLABORATION.md`](COLLABORATION.md) specifies live participation. The first local human-agent
-> session is coordinated by the application `DocumentSession`, not a CRDT. A later multi-client
-> spike chooses a ProseMirror step authority, a structured CRDT, or no expansion. Files remain
-> durable either way.
+> **[`PRODUCT.md`](PRODUCT.md) is the product authority.** AI composes Markdown; the human reads,
+> judges, and occasionally corrects the result. This document specifies the local rendered canvas
+> and source-preserving machinery that make that experience trustworthy. Agent participation and
+> collaboration are later capabilities, not the default surface or the first product proof.
 
 ---
 
 ## 1. What this is
 
-Bear got the feel right — calm three-pane layout, beautiful typography, tags instead of folders, plain-text notes, invisible sync. It got the rendering wrong: paste a Mermaid diagram and you get grey text.
+Codex, Claude, and other tools already produce useful plans, research, specifications, and reports
+as Markdown. Reading those artifacts in a terminal, IDE preview, chat transcript, or visible source
+editor is needlessly poor.
 
-Obsidian and friends render more, but make you configure a vault, install plugins, and buy sync.
+SimpleMark opens the original local file directly as a beautiful technical document. It keeps the
+page rendered while an external agent updates the file and reveals source only for the exact thing
+the human chooses to correct. There is no vault, workspace, provider setup, chat panel, session
+manager, or source/preview mode.
 
-SimpleMark is Bear's feel with a renderer that never says no.
+Bear got document feel right but does not render the full technical artifact. Obsidian and similar
+tools render more but ask the user to enter a vault and manage an authoring environment. AI
+workspaces expose the machinery for operating agents. SimpleMark keeps the artifact at the center.
 
-**The defining behavior:** you paste raw Mermaid source or a raw `<svg>` tag with no code fence, and it becomes a picture. No mode switch, no menu, no plugin install.
+**The defining behavior:** an agent writes `plan.md`; SimpleMark shows the same file as a polished,
+living document and updates it without losing the reader's place. Mermaid, SVG, math, tables, and
+code are part of the page. One click permits a small correction; the page returns to rendered form.
 
 ---
 
@@ -42,9 +49,10 @@ Notes are plain `.md` files in a folder the user picks. SQLite is a rebuildable 
 
 **Consequence:** zero lock-in is literally true, not a promise. Every feature must round-trip to Markdown or it does not ship — subject to the fidelity contract in D7 and the portability tiers in §5.
 
-**Amended by D8 and ADR-0002:** while a document has an active local POC session, the application
-`DocumentSession` is the coordination truth and the file is its durable projection. A future
-multi-client session may replace that coordinator only after the authority-decision spike passes.
+**Amended by D8, ADR-0002, and ADR-0005:** while a document is open, the application
+`DocumentSession` coordinates the rendered state, human corrections, and accepted external-file
+updates; the file remains the durable artifact. A future direct-agent or multi-client session may
+expand that coordinator only after its evidence gate passes.
 
 ### D2 — Sync is delegated to the cloud drive
 
@@ -55,9 +63,9 @@ No CRDT, no relay server, no accounts, no hosting bill. The notes folder lives i
 - No real-time collaboration. Not wanted.
 - iOS is the weak spot: iCloud Drive works via the file provider; Dropbox and Google Drive on iOS are apps rather than filesystems and background folder sync is unreliable. **iCloud Drive is the supported iOS path.**
 
-**Amended by D8 and ADR-0002:** cloud-drive propagation is not the live agent transport. The local
-POC is in-process. Real-time peer transport and offline merge are deferred with the multi-client
-authority decision.
+**Amended by D8, ADR-0002, and ADR-0005:** external file propagation is the first agent integration:
+the agent writes the ordinary file and SimpleMark watches it. This is not real-time peer transport.
+Direct participant transport and offline merge remain deferred with their later gates.
 
 ### D3 — Milkdown as the editor core *(gated on the §12 spike)*
 
@@ -147,7 +155,8 @@ internals.
 
 ## 4. The paste pipeline
 
-This is the product. Everything else supports it.
+Paste recognition supports direct correction and human additions. The primary path is opening an
+existing AI-generated file; paste is valuable, but it is not the product definition.
 
 ```
 Cmd+V
@@ -259,7 +268,15 @@ bridge edits and focus; ProseMirror cannot infer selections inside an opaque nes
 
 ---
 
-## 6. Editor surface (Bear parity)
+## 6. Rendered document surface
+
+The document is the default and persistent state. Markdown punctuation is not shown merely because
+the user moved the cursor. A click selects or enters the exact sentence or block being corrected;
+source controls disappear again when that correction ends.
+
+**The initial layout is one document canvas.** No tag sidebar, note list, file tree, activity panel,
+chat rail, or workspace navigation ships in the first product proof. Native open/recent-file
+affordances may exist in window chrome without turning the app into a library.
 
 **Formatting bubble** on selection, plus keyboard shortcuts and live input rules (`**bold**` renders as you type):
 
@@ -269,7 +286,9 @@ Built from `@milkdown/preset-commonmark` + `@milkdown/preset-gfm`, `@milkdown/ki
 
 **Typography preferences** (D6): font family, size, line height, line width, theme (light/dark/auto), with a curated set of text faces rather than a system font dump.
 
-**Layout:** three panes — tags sidebar, note list, editor. Collapsible to two or one.
+Typography, scroll position, selection, table overflow, and rendered-block stability are product
+acceptance criteria. External file refresh must not replace the whole DOM, flash the page, move a
+reader who is above the changed block, or reveal raw source.
 
 ---
 
@@ -338,23 +357,23 @@ The governing rule: **failures are visible and local.** No silent fallbacks, no 
 
 ## 10. Wireframe
 
-Interactive version: [`wireframe.html`](wireframe.html) — open it in a browser. It shows the
-local POC as a real note rather than a collaboration dashboard, with four selectable states:
-**Writing alone**, **AI working**, **Redirecting**, and **Stopped**. It is responsive down to a
-phone-sized canvas and follows the system light/dark theme.
+Interactive version: [`wireframe.html`](wireframe.html) — open it in a browser. Its document canvas,
+typography, reader controls, and rendered-block treatment remain useful. Its **AI working**,
+**Redirecting**, and **Stopped** states illustrate a later capability and are not the first product
+surface under [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md).
 
 ### 10.1 Main window
 
-The POC is one document window. It has Bear/Apple Notes-level editing chrome without importing
-their information architecture: new note, text styles, checklist, table, attachment,
-diagram/drawing, share, search, and more. `Aa` opens a small formatting palette. On a phone the
-same editing tools move to a compact bottom bar.
+The POC is one document window. Opening a file goes directly to the page. Reader preferences and
+file actions live in restrained window chrome; correction controls appear only around selected
+content. There is no permanent authoring toolbar in the initial reading state.
 
-There is no permanent agent pane or activity sidebar. Alone, the canvas is only a note. Selecting
-a passage and choosing **Work with AI** adds a coloured scope, a named cursor, and one contextual
-control card beside that passage. The card contains the instruction, live status, **Redirect**, and
-**Stop**. Agent output remains ordinary document content with a quiet attribution and a deliberate
-**Undo this change** action.
+There is no agent pane, activity sidebar, file tree, workspace chooser, model picker, or chat panel.
+The first integration is the watched file: an external agent changes it and the rendered document
+updates calmly. A quiet update marker may identify changed content temporarily, but it may not turn
+ordinary refresh into a review queue.
+
+The following passage interaction is retained only as a later agent-participation design:
 
 Redirect opens the passage conversation in place:
 
@@ -423,23 +442,32 @@ Proof of the hard promise comes before the pretty part.
 
 Detailed in §12. Nothing else starts until it resolves D3.
 
-### Phase 1 — Local live POC (weeks)
+### Phase 1 — Beautiful living document POC (weeks)
 
 The only post-gate implementation target is [`POC.md`](POC.md). One thin path, end to end,
-ugly on purpose:
+polished where the reader can see it:
 
-> open one local note → paste raw Mermaid → render → save → invite one local agent into the
-> same `DocumentSession` → interrupt and redirect it → reopen clean Markdown
+> external agent writes one local file → open directly → render beautifully → update in place when
+> the file changes → correct one sentence → save → reopen clean Markdown
 
-This exercises the source map, a NodeView, the shared editor/MCP application contract, generation
-fences, atomic writes, human undo, and deliberate agent revert. It deliberately does **not**
-exercise Yjs, cloud sync, remote peers, or offline merge.
+This exercises the source map, NodeViews, reader continuity, file watching, external-change import,
+atomic writes, and contextual editing. It deliberately does **not** exercise MCP, an in-app agent,
+chat, activity, generation fences in the UI, Yjs, cloud sync, remote peers, or offline merge.
 
-### Phase 2 — Bear-parity shell
+### Phase 2 — Technical renderer breadth and daily-use shell
 
-Three panes, tags, search, formatting bubble, slash menu, typography preferences, SVG and Shiki blocks, wikilinks and backlinks.
+Mermaid, SVG, KaTeX, tables, Shiki code, typography preferences, open/recent files, and the smallest
+correction tools required for daily use. Tags, note libraries, backlinks, and multi-pane knowledge
+management are not implied.
 
-### Phase 3 — Multi-client authority decision
+### Phase 3 — Optional in-app agent participation
+
+Compare scoped, attributed `DocumentSession` transactions against the simpler external-file
+workflow. Proceed only if direct participation is materially faster or safer without making the
+document feel like an agent cockpit. The existing MCP, fence, Stop, Redirect, and revert designs
+govern this test.
+
+### Phase 4 — Multi-client authority decision
 
 Connect two version-pinned ProseMirror clients. Test native step collaboration first using Pitter
 Patter Collab or `prosemirror-collab-commit`; compare Yjs only if masterless operation is required.
@@ -493,7 +521,8 @@ Public plugin API and sandbox · handwriting + OCR · iOS/iPad shell · graph vi
 | [`COLLABORATION.md`](COLLABORATION.md) | **The optional live session** — local `DocumentSession` first, then a gated multi-client authority decision |
 | [`TECH-SPEC.md`](TECH-SPEC.md) | Universal paste — the five-level recognition ladder, the signed renderer catalog, sandboxed execution, and why pasted content may never choose what code runs |
 | [`RENDERERS.md`](RENDERERS.md) | Renderers vs embedded editors, the rule for choosing, and the v1 set: Mermaid, DOT, KaTeX, Shiki, Vega-Lite, Markmap |
-| [`POC.md`](POC.md) | The next executable target and its acceptance test |
+| [`PRODUCT.md`](PRODUCT.md) | **The product authority** — job, user, category difference, default experience, sequencing, and language |
+| [`POC.md`](POC.md) | The renderer-first next executable target and its acceptance test |
 | [`MCP-SERVER.md`](MCP-SERVER.md) | **The agent contract** — one tool surface for open and unopened notes, participants and capabilities, rebase concurrency, the fence, and attention rules |
 | [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) | MCP co-editing — safety posture and build rationale. Its §3–§4 tool surface is superseded by [`MCP-SERVER.md`](MCP-SERVER.md) |
 

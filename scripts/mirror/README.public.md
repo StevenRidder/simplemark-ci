@@ -1,24 +1,32 @@
 # SimpleMark
 
-A lightweight, local-first Markdown notebook that turns raw technical material into editable documents — and lets humans and AI agents join you live when you want them.
+**The beautiful living document for AI work.**
 
-**The core promise:** paste common technical source, and SimpleMark makes it immediately useful — render it natively, preview it safely, or show it with the best available local viewer — **without losing the original.**
+Your agent writes the Markdown. SimpleMark turns it into a document: open the local `.md` file,
+see it rendered exceptionally, keep reading while the agent updates it, and click in only for a
+small correction.
 
-![Typing in SimpleMark, then pasting Markdown, Mermaid and raw SVG — each recognised and rendered on paste, with the diagram source edited live](docs/assets/simplemark-demo.gif)
+**Always rendered. Always your file.** No IDE, vault, account, provider setup, workspace, or
+permanent Markdown source view.
 
-*Recorded from the running app in one unbroken session — no cuts.*
+![Current SimpleMark renderer prototype showing Markdown, Mermaid and SVG rendered in one document canvas](docs/assets/simplemark-demo.gif)
 
-In practice: raw Mermaid, a raw `<svg>`, DOT, LaTeX, a chart spec, code, an ANSI capture all render natively, with no fence and no mode switch. The Markdown on disk stays portable and yours.
+*Current pre-alpha renderer and correction proof, recorded from the running app in one unbroken
+session. The canonical watched-file product demo is specified in [`docs/PRODUCT.md`](docs/PRODUCT.md).*
 
-**Collaboration is optional and live.** Alone it is calm and fast. Invite someone and they join this note; invite an agent and it works alongside you — visible, interruptible, redirectable. Close the session and you have ordinary Markdown plus attachments in your folder.
+In practice: Codex, Claude, or another tool writes `plan.md`; SimpleMark shows that exact file as a
+beautiful technical document and refreshes it cleanly as the file changes. Mermaid, SVG, math,
+tables, code, and technical material render inline. The source stays portable and yours.
 
-**No active session means no service, no cost, no overhead.** SimpleMark is a notebook that becomes multiplayer, not a workspace you have to enter.
+SimpleMark is not an AI workspace or a cockpit for operating agents. Editing is a contextual escape
+hatch. Agent participation and collaboration are optional later capabilities, hidden until invoked.
 
-## The three commitments
+## The commitments
 
 1. **Files are the truth.** Every feature round-trips to Markdown. Untouched blocks re-emit their original bytes — only blocks you actually edit are re-serialized.
-2. **Sync is your cloud drive.** iCloud, Dropbox, whatever you already use. No relay, no accounts, no hosting.
-3. **Typography is document-level.** Reader controls (typeface, size, background) style the document you are reading; they are not per-selection formatting Markdown cannot express.
+2. **Rendered is the default.** Markdown punctuation is storage syntax, not the interface. Source appears only for the content you deliberately correct.
+3. **External updates are ordinary.** An agent can change the same file while SimpleMark remains a calm, current reading surface.
+4. **Typography is product behavior.** The page must feel like a document worth keeping open, not an IDE preview.
 
 ## Run it
 
@@ -51,6 +59,7 @@ npm run check:boundaries
 
 ## Documents
 
+- [`docs/PRODUCT.md`](docs/PRODUCT.md) — the product contract, category difference, and sequencing
 - [`docs/DESIGN.md`](docs/DESIGN.md) — the product design, including the paste-recognition chain
 - [`docs/TECH-SPEC.md`](docs/TECH-SPEC.md) — the technical specification
 - [`docs/RENDERERS.md`](docs/RENDERERS.md) — the renderer taxonomy and how new ones are added
@@ -61,7 +70,9 @@ npm run check:boundaries
 
 ## Status
 
-Pre-alpha. The editor, the paste-recognition chain, Mermaid and SVG rendering, byte-fidelity round-tripping, and the reader controls work. Opening arbitrary files from disk, persistence, search, and the live-agent session do not yet.
+Pre-alpha. The editor canvas, paste-recognition chain, Mermaid and SVG rendering, byte-fidelity
+round-tripping, and reader controls work. Opening arbitrary files from disk, persistence, calm
+external-change refresh, and the renderer-first product proof are not complete yet.
 
 ## Licence
 

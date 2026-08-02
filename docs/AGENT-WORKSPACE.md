@@ -1,10 +1,11 @@
-# SimpleMark — Agent Workspace
+# SimpleMark — Agent participation rationale
 
-**The later cold-file MCP surface.** For the first live human-plus-agent proof, see [`POC.md`](POC.md).
+**Historical rationale and superseded tool design for a later capability. It is not the product
+shape or the next POC.**
 
 - **Status:** Draft 1 — **§3–§4 superseded by [`MCP-SERVER.md`](MCP-SERVER.md)** and
   [`ADR-0004`](decisions/0004-mcp-as-participant-client.md)
-- **Date:** 2026-08-01
+- **Date:** 2026-08-02
 - **Companion to:** [`DESIGN.md`](DESIGN.md), [`TECH-SPEC.md`](TECH-SPEC.md), [`RENDERERS.md`](RENDERERS.md)
 
 > **Supersession record.** This document's cold-file tool surface was written for a single-process
@@ -17,11 +18,17 @@
 > **What remains current:** §1.1's rule that agents never operate the editor UI (restated and
 > broadened), §5's safety posture, §6's human-facing surface, and §7–§8's build rationale. The §7
 > prerequisites — stable note ids and a revision exposed on read and write — are unchanged and
-> remain Phase 1 work.
+> remain later agent-phase work unless the renderer-first file model needs them independently.
+
+> **Product sequencing:** [`PRODUCT.md`](PRODUCT.md) and
+> [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md) supersede agent
+> participation as the first product proof. The initial integration is simpler: the agent writes an
+> ordinary local `.md` file and SimpleMark watches and renders it. This document applies only if
+> later use proves that direct in-app participation adds value.
 
 ---
 
-## 1. The shape
+## 1. The later shape
 
 ```
    You edit in SimpleMark ─┐
@@ -41,18 +48,19 @@ No synthetic keystrokes, no clicking buttons, no driving the canvas. The app is 
 
 ### 1.2 What this document does not cover
 
-This document specifies agents working on notes that are **not live**. A live POC note uses the
-application `DocumentSession`, session-local anchors, named transactions, and the control channel
-specified in `COLLABORATION.md` and proved in `POC.md`. A future multi-client adapter first tests a
-ProseMirror step authority and may use Yjs only for a proven masterless requirement. A live note
-never falls back to a watcher-driven write.
+This historical document specified agents working on notes that were **not live**. Its tool surface
+is superseded by [`MCP-SERVER.md`](MCP-SERVER.md). The current renderer-first POC intentionally uses
+watched external-file updates and no MCP participant. A future direct-participation test uses the
+application `DocumentSession`, structural transactions, and the control channel in
+`COLLABORATION.md` only after the reader product earns that expansion.
 
 ---
 
 ## 2. Scope
 
-**In:** a local stdio MCP server, bound to one folder, no network listener, no accounts, and
-single-user cold-file work. It follows the POC rather than competing with it.
+**In, only for a later agent-participation phase:** a local stdio MCP server, bound to one folder,
+no network listener, no accounts, and single-user work. It follows the renderer-first POC rather
+than competing with it.
 
 **Out:** hosted servers, multi-user concurrency, agent identity federation, remote access. If those ever arrive they are a separate product decision, not an extension of this one.
 
@@ -189,7 +197,7 @@ This is the §8 external-change machinery from `DESIGN.md` with an attribution l
 
 ---
 
-## 7. Why this shapes Phase 1
+## 7. Why this shapes a later agent phase
 
 The reviewer's instinct is right: design for it now, build it later. Concretely, five things must be true before MCP is written, and four of them already are:
 
@@ -201,7 +209,9 @@ The reviewer's instinct is right: design for it now, build it later. Concretely,
 | Stable note ids independent of path | **Add to Task 6** — id in front matter, not a path hash |
 | Revision hash exposed on read/write | **Add to Task 6** — `Vault.read()` returns `{ content, rev }` |
 
-Both additions are small and belong in Phase 1 regardless: stable ids are what keep `[[wikilinks]]` alive across a rename (`DESIGN.md` §8), and `rev` is already computed by the write ledger. Doing them now costs a few lines; retrofitting them later would touch every call site.
+Neither prerequisite justifies pulling MCP into the renderer-first POC. Stable ids and revisions may
+still be implemented earlier when the file/document design independently needs them; otherwise they
+belong to the later agent-participation phase.
 
 ---
 

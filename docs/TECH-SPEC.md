@@ -1,15 +1,21 @@
 # SimpleMark — Technical Specification
 
-**Universal paste: recognition, renderer acquisition, sandboxed rendering**
+**Trusted recognition and rendering for AI-generated technical documents**
 
 - **Status:** Draft 1
-- **Date:** 2026-08-01
+- **Date:** 2026-08-02
 - **Companion to:** [`DESIGN.md`](DESIGN.md) (product architecture), [`../README.md`](../README.md)
-- **Scope of this document:** how "paste anything and it renders" is actually built.
+- **Scope of this document:** how opened or pasted technical content renders safely without losing
+  the source.
 
 ---
 
 ## 1. The promise, stated precisely
+
+[`PRODUCT.md`](PRODUCT.md) is the product authority. The primary path is opening Markdown already
+written by an AI and keeping it beautifully rendered while the file changes. Paste uses the same
+recognition and rendering pipeline for occasional human additions; it is not the category or the
+first screen.
 
 > Paste common technical source or a document attachment, and SimpleMark makes it immediately useful: render it natively, preview it safely, or show it with the best available local viewer — without losing the original. If it cannot, it says so plainly and keeps your content intact.
 
@@ -497,16 +503,18 @@ Each phase produces working software and a decision.
 | Phase | Deliverable | Gate |
 |---|---|---|
 | **0** | Source-preservation spike (`DESIGN.md` §12) | Go/no-go on the document model |
-| **1** | Vault + editor vertical slice: folder → paste Mermaid → save → reopen → external edit | The file model is real |
-| **2** | Recognition ladder L0–L2 + core renderers (mermaid, svg, code, csv, json, latex, images) | Magic works offline, deterministically |
-| **3** | Catalog + resolver + iframe sandbox; first verified renderer (`xterm@5`) | Acquisition is safe and provable |
-| **4** | Converter host: pptx, docx, pdf → raster + attachment | Binary formats land |
-| **5** | L3 LLM classifier, off by default, local-first | Open-ended recognition |
-| **6** | L4 ask-and-learn, renderer management UI | The tail case is handled |
-| **7** | Bear-parity shell: three panes, tags, search, typography | It becomes an app |
-| **8** | Public plugin API (`DESIGN.md` D5), then handwriting + OCR | Third parties |
+| **1** | Rendered-file vertical slice: open one AI-generated file → render → watched update → correct → save → reopen | The living local document is real |
+| **2** | Core renderers: Mermaid, SVG, code, tables, JSON/CSV, and KaTeX | Common technical AI output looks exceptional offline |
+| **3** | Reading-quality gate: typography, layout, scroll stability, source-on-demand, light/dark visual regression | It is worth leaving the IDE for |
+| **4** | Recognition ladder L0–L2 for occasional paste and correction | Human additions work deterministically |
+| **5** | Catalog + resolver + iframe sandbox; first verified renderer (`xterm@5`) | Optional renderer acquisition is safe and provable |
+| **6** | Converter host: pptx, docx, pdf → raster + attachment | Binary formats land only after the Markdown document is excellent |
+| **7** | L3 classifier and L4 ask-and-learn, off by default | The tail broadens without becoming provider UI |
+| **8** | Public plugin API (`DESIGN.md` D5), then handwriting + OCR | Third parties, if the canvas stays coherent |
 
-Phases 2 and 3 are where the product becomes itself. Phase 5 is the flourish — and note that phases 0–4 deliver the full experience for every format listed in §6.3 **with no LLM at all**. The model widens the tail; it is not load-bearing.
+Phases 1–3 are where the product becomes itself. Later recognition, acquisition, conversion, and
+plugins cannot compensate for a mediocre document. The model widens the tail; it is not
+load-bearing and never becomes a required provider surface.
 
 ---
 

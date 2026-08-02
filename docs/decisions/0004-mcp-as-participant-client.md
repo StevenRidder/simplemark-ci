@@ -6,6 +6,10 @@
 - **Supersedes:** the two-surface cold/live MCP split in `AGENT-WORKSPACE.md` §3–§4 and
   `COLLABORATION.md` §7, including its revision-hash compare-and-swap concurrency model
 
+> **Sequencing amendment:** [`ADR-0005`](0005-rendered-document-before-agent-participation.md)
+> makes MCP an optional later capability. This protocol remains accepted if direct agent
+> participation is built, but it contributes no requirement or UI to the renderer-first POC.
+
 ## Context
 
 Two accepted documents each specified half of the agent surface. `AGENT-WORKSPACE.md` specified
@@ -82,8 +86,8 @@ is preserved rather than worked around.
 
 ### The seam that makes staging honest
 
-MCP calls `DocumentAuthorityPort` in `application`. Phase 1 implements that port with the in-process
-`DocumentSession`; the multi-client milestone implements it with whatever the `ADR-0002` authority
+MCP calls `DocumentAuthorityPort` in `application`. A later local agent-participation phase
+implements that port with the in-process `DocumentSession`; the multi-client milestone implements it with whatever the `ADR-0002` authority
 spike selects. **No tool signature changes across that boundary.** Tools that exist in the contract
 but are not yet built return `unsupported_in_phase`, and `vault_info` reports the live tool list.
 

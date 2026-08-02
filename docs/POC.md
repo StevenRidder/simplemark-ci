@@ -1,98 +1,141 @@
-# SimpleMark — Proof of Concept
+# SimpleMark — Rendered-document proof of concept
 
 **Status:** the next executable target  
-**Scope:** one local note, one macOS window, one human, one local agent, no CRDT
+**Scope:** one AI-generated local Markdown file, one document window, one human reader, no in-app
+agent, no collaboration, no CRDT
 
 ## The question
 
-Can one person and one agent genuinely work in the same technical Markdown note, live and without
-fear of losing the file?
+Can SimpleMark make an AI-generated Markdown file feel like a beautiful, living technical document
+while leaving the file trustworthy and fully owned by the user?
 
-The POC answers that interaction question before attempting distributed collaboration. The human
-editor and MCP adapter submit transactions to one in-process `DocumentSession`; neither edits files
-or each other directly.
+The first product proof is not whether SimpleMark can operate an agent. Codex, Claude, or another
+tool already writes the file. SimpleMark must be the best place to read and judge the result outside
+the coding environment.
 
 ```text
-Human editor ─┐
-              ├─ DocumentSession ─→ structured document ─→ atomic Markdown save
-Local agent ──┘
+Codex / Claude / tool ─→ local plan.md ─→ watched import ─┐
+                                                          ├─→ rendered document
+Small human correction ───────────────→ DocumentSession ──┘
+                                         │
+                                         └─→ atomic Markdown save
 ```
 
-This is live human-agent editing, but it is not yet multi-client editing. The later authority
-decision is deferred to [`ADR-0002`](decisions/0002-local-document-session-before-crdt.md).
+[`PRODUCT.md`](PRODUCT.md) defines the job and [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md)
+records why agent participation follows rather than leads this proof.
 
 ## In
 
-- One local Markdown file, one macOS app window, and one structured ProseMirror-compatible document.
+- Open one arbitrary local `.md` file directly, without importing it into a vault or library.
+- One calm document window that opens to rendered content rather than an empty editor or file tree.
 - The source-preservation gate from `DESIGN.md` §12.
-- Raw Mermaid paste, inline render, click-to-edit source, and portable fenced Markdown on save.
-- One local MCP-connected agent with a visible name, scope, status, and activity entry.
-- Manual invocation over one explicit selection or whole blocks. Nothing selected means nothing
-  happens; the agent never edits beneath an active human cursor.
-- One coherent, named agent transaction: select text and ask it to add a Mermaid diagram.
-- One passage-anchored, session-only conversation. **Redirect now** fences the active generation
-  and starts its replacement; **Leave note** communicates without changing the run.
-- Out-of-band Stop and Redirect. A stopped or redirected generation cannot land a late edit.
-- `Cmd+Z` undoes the human's last action. Activity deliberately reverts an agent transaction.
+- Excellent document typography, spacing, hierarchy, code treatment, tables, and links.
+- Mermaid, SVG, math, and fenced code rendered inline from representative AI-generated input.
+- A file watcher that recognizes a complete external write and imports the changed document through
+  the application boundary.
+- Incremental or stable refresh that preserves reading position and does not flash, jump, steal
+  focus, or expose source.
+- A quiet, temporary indication of externally changed content; no mandatory diff or review flow.
+- Click one sentence or rendered block to make a small correction in place.
+- Reveal source only for the exact block that requires it; return to the rendered state on commit or
+  escape.
+- Atomic save to the same file.
 - Close and reopen to ordinary, readable Markdown.
 
 ## Out
 
-- Yjs, another process, another human, another device, offline merge, or remote collaboration.
-- Folder scanning, tags, search, sidebars, attachments, or full Bear-parity polish.
-- iCloud live sync, LAN discovery, relays, encryption, keys, and permissions.
-- A public or broad MCP surface; only the live-note commands needed for this proof.
-- Multiple agents, autonomous document-wide work, leases, reaction budgets, and persisted threads.
-- SVG beyond opaque preservation, renderer acquisition, PPTX/PDF/DOCX, and other converters.
+- An MCP server, in-app agent participant, agent name, scope, status, cursor, chat, activity feed,
+  Stop, Redirect, attribution, or agent-transaction revert.
+- Model or provider selection, prompting, context management, tool calls, or agent session history.
+- Yjs, another human, another device, remote collaboration, presence, comments, or offline merge.
+- Vault creation, folder scanning, tags, backlinks, knowledge graphs, project navigation, or a
+  permanent file tree.
+- Broad formatting chrome or a separate source editor.
+- Multiple documents, search, attachment management, PDF/DOCX/PPTX conversion, renderer acquisition,
+  and public plugins.
 
-## Transaction contract
+These features are not rejected forever. They are excluded because none is necessary to prove the
+install reason.
 
-Every human and agent change reaches `DocumentSession` as a typed transaction containing:
+## External-change contract
 
-```ts
-interface DocumentTransaction {
-  actorId: string
-  name: string
-  expectedRevision: number
-  scope: BlockScope
-  run?: { id: string; generation: number }
-  steps: readonly DocumentStep[]
-}
-```
+An external agent changing the file is normal product behavior, not an exceptional conflict path.
 
-The session checks the revision, scope, active-human focus, and run generation before applying it.
-The agent returns whole-block or coherent structural steps, never blind Markdown offsets. MCP and
-the editor are thin adapters over this same command.
+The watcher must:
+
+1. ignore SimpleMark's own atomic-save event;
+2. wait until the external write is complete rather than parsing a partial file;
+3. rebuild source mappings from the new bytes;
+4. calculate the smallest safe document update;
+5. preserve viewport position using a stable visible anchor;
+6. preserve selection if the selected block did not change;
+7. refuse to overwrite an unsaved human correction silently; and
+8. surface parse or renderer failure locally without blanking the rest of the document.
+
+If the external file changes while the human has an unsaved correction, the POC may present a small
+conflict choice for the affected block. It may not replace the entire document, silently discard
+either change, or open a cockpit-sized review experience.
 
 ## Source baseline rule
 
 Each clean block keeps an immutable `originalSource` plus the revision it came from. Dirty is
 monotonic until save. Once touched, the block is serialized from the structured document and its
-old source is ignored. Only a successful atomic save creates a new clean baseline. `originalSource`
-is never collaborative editable content.
+old source is ignored. Only a successful atomic save creates a new clean baseline.
 
-## Acceptance test
+Watched external bytes create a new baseline only after the external update has been accepted.
+`originalSource` is preservation metadata, never independently editable or mergeable content.
 
-1. Open every D7 fixture and save untouched: each file is byte-identical.
-2. Paste bare Mermaid at a block boundary: it renders and saves as a normal `mermaid` fence.
-3. Select a paragraph and ask the agent to add a diagram below it.
-4. See one named scope/status and one grouped, attributed agent transaction.
-5. Leave a note and verify it does not interrupt the run.
-6. Redirect the agent; verify the old generation is fenced before the replacement starts.
-7. Stop the replacement and verify neither stopped generation can apply a delayed result.
-8. Put the human cursor inside a block and verify the agent cannot edit that block.
-9. Undo a human edit without undoing the agent; revert the agent transaction separately.
-10. Reopen the file in a plain-text editor and confirm it is clean, portable Markdown.
+## Visual acceptance
+
+The POC is unsuccessful if it merely looks like a competent GitHub or IDE preview.
+
+Representative input must prove:
+
+- readable long-form prose with strong heading hierarchy and comfortable measure;
+- tables that remain legible without collapsing the page or forcing unnecessary horizontal scroll;
+- code with excellent syntax color, line wrapping/scrolling, copy behavior, and dark/light contrast;
+- Mermaid and SVG that size naturally, remain crisp, and expose quiet block controls only on hover
+  or focus;
+- math aligned cleanly with surrounding prose;
+- links, blockquotes, lists, task lists, footnotes, and callouts with coherent visual rhythm;
+- no visible Markdown punctuation in the reading state; and
+- no file-tree, agent, session, provider, chat, history, or collaboration chrome competing with the
+  document.
+
+The visual target is a technical document someone wants to keep open all day, not a parser demo.
+
+## Ten-step acceptance test
+
+1. Have an external agent or script write a representative `plan.md` containing prose, a table,
+   code, Mermaid, SVG, math, lists, links, and a blockquote.
+2. Open that exact file in SimpleMark and reach the rendered document directly, with no import,
+   vault, workspace, account, provider, or editor-mode step.
+3. Compare the page against the visual acceptance list and confirm no raw Markdown is visible.
+4. Save without editing and prove the file is byte-identical.
+5. Scroll to the middle of the document, then have the external tool change a block below the
+   viewport; confirm the page updates without moving the reader.
+6. Have the external tool change the visible block; confirm the update is legible, local, and does
+   not flash the page, expose source, or steal focus.
+7. Click one prose sentence, correct it, commit, and confirm the canvas returns to the rendered
+   state.
+8. Click one Mermaid block, reveal and correct only its source, commit, and confirm the diagram
+   updates without recreating or destabilizing the surrounding document.
+9. Diff the saved file: only the two intentionally edited blocks may differ; all unrelated bytes
+   remain identical.
+10. Reopen the file in a plain-text editor and in SimpleMark; confirm it remains portable Markdown
+    and renders to the same living document.
 
 ## Decision after one day of real use
 
-Use the POC on one real architecture note for a day. Record only:
+Use SimpleMark as the reading surface for real agent-generated documents for one day. Record:
 
-- whether live agent edits feel faster than suggestions;
-- how often the human interrupts, redirects, or pauses the agent;
-- whether the agent's presence is helpful or distracting; and
-- whether the saved Markdown remains trusted.
+- whether the user leaves the coding environment to read in SimpleMark;
+- whether the rendered result is materially better than the IDE or GitHub preview;
+- whether external updates preserve reading flow;
+- how often a human makes a small correction directly versus returning instructions to the agent;
+- any time raw Markdown or product machinery intrudes on reading; and
+- whether the saved files remain trusted.
 
-If it is delightful, proceed to the multi-client authority spike. If it is distracting, make
-suggest mode the default. Either outcome is useful evidence; neither requires building distributed
-editing first.
+If the document is not worth keeping open, improve the reader before adding scope. If it is useful,
+expand renderer breadth and daily-use file handling. Test in-app agent participation only when real
+use identifies a correction or direction workflow that external file updates cannot serve well.

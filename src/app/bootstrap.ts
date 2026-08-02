@@ -41,6 +41,10 @@ export interface ComposeOptions {
   readonly preferenceStorage?: Pick<Storage, 'getItem' | 'setItem'>
   /** Debounce for save-on-pause. Zero disables the timer so tests drive save directly. */
   readonly autosaveMs?: number
+  /** Platform hook for opening a real file; absent when the platform cannot. */
+  readonly onOpenFile?: () => void
+  /** Shown on the disabled open control when onOpenFile is absent. */
+  readonly openFileUnavailableReason?: string
 }
 
 export async function composeApp(options: ComposeOptions): Promise<AppComposition> {
@@ -58,6 +62,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const chrome = createWindowChrome({
     fileName: session.name,
     filePath: options.filePath,
+    onOpenFile: options.onOpenFile,
+    openFileUnavailableReason: options.openFileUnavailableReason,
     preferences,
     onPreferences: (next) => {
       preferences = next

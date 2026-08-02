@@ -1,14 +1,18 @@
 # SimpleMark — Renderers
 
-**Two classes of rich content, one rule for choosing between them, and the v1 set.**
+**The technical content that turns AI-written Markdown into a document worth reading.**
 
 - **Status:** Draft 1
-- **Date:** 2026-08-01
+- **Date:** 2026-08-02
 - **Companion to:** [`TECH-SPEC.md`](TECH-SPEC.md) (recognition + acquisition), [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md)
 
 ---
 
 ## 1. The distinction that decides everything
+
+Under [`PRODUCT.md`](PRODUCT.md), rendering quality is the product rather than supporting polish.
+The human should see the diagram, equation, table, code, or chart—not the syntax the agent used to
+describe it. Source is one click beneath the exact block only when correction is necessary.
 
 | | **Renderer** | **Embedded editor** |
 |---|---|---|
@@ -23,13 +27,16 @@
 
 You can describe a flowchart. You cannot describe a sketch.
 
-This is not asceticism — it is what keeps [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) possible. Every renderer is a format an agent can write fluently and you can read in a diff. Every embedded editor is a hole in that property.
+This is not asceticism. Every renderer is a format an external agent can write fluently while the
+human consumes the output visually. Every embedded editor is a hole in that property and a risk of
+turning the document into another authoring environment.
 
 ---
 
 ## 2. The v1 set
 
-Six renderers. Together they cover most technical thinking without turning the app into a dozen mini-applications.
+Six renderers. Together they cover most technical AI output without turning the app into a dozen
+mini-applications or exposing a renderer cockpit.
 
 | Content | Library | Stored as | Bundle | Tier | Agent-authorable |
 |---|---|---|---|---|---|

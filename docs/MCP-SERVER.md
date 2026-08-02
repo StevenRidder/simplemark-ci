@@ -1,13 +1,14 @@
 # SimpleMark — MCP server
 
-**One tool surface. Agents participate in documents; they never operate the editor, write files,
-or hold a parallel document model.**
+**Prepared protocol for optional direct agent participation. It is not required for the first
+product and contributes no default UI.**
 
 - **Status:** Draft 1
 - **Date:** 2026-08-02
 - **Governed by:** [`ADR-0001`](decisions/0001-single-product-modular-architecture.md),
   [`ADR-0002`](decisions/0002-local-document-session-before-crdt.md),
-  [`ADR-0004`](decisions/0004-mcp-as-participant-client.md)
+  [`ADR-0004`](decisions/0004-mcp-as-participant-client.md), and sequencing decision
+  [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md)
 - **Supersedes:** [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) §3–§4 and
   [`COLLABORATION.md`](COLLABORATION.md) §7
 - **Companion to:** [`DESIGN.md`](DESIGN.md), [`COLLABORATION.md`](COLLABORATION.md),
@@ -16,6 +17,14 @@ or hold a parallel document model.**
 ---
 
 ## 1. The shape
+
+[`PRODUCT.md`](PRODUCT.md) defines the first job: an external agent writes Markdown and SimpleMark
+renders the same watched local file. That workflow needs no MCP setup, provider integration, agent
+inventory, session management, chat, activity feed, or agent chrome.
+
+Everything below is dormant expansion architecture. It becomes eligible only if real use shows that
+direct scoped transactions are materially better than watched file updates while preserving the
+document-first interface.
 
 You tell an agent to edit a SimpleMark note. It might be open on your screen with two colleagues
 in it, or it might be a file nobody has touched in a month. **The agent makes the same call either
@@ -493,7 +502,8 @@ Under [`ADR-0001`](decisions/0001-single-product-modular-architecture.md)'s depe
 
 `DocumentAuthorityPort` is the seam that lets this contract survive
 [`ADR-0002`](decisions/0002-local-document-session-before-crdt.md)'s deferred decision. Phase 1
-implements it with the in-process `DocumentSession`; M5 implements it with whatever the authority
+does not require this protocol. A later local agent phase implements it with the in-process
+`DocumentSession`; M5 implements it with whatever the authority
 spike selects. **No tool signature changes.**
 
 ---
@@ -602,8 +612,11 @@ reports `phase` and the live `tools[]`.
 | **M5** | N participants, real rebase, save-leader lease, fence lease | **gated on the ADR-0002 authority spike** |
 | **M6** | Hosted transport | relay; requires its own ADR |
 
-M0 is already required by [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) §7 and belongs in Phase 1
-regardless. M1–M4 need no authority decision. **Only M5 is gated.**
+Under [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md), M0–M4 are all
+sequenced after the renderer-first POC unless an earlier non-MCP file requirement independently
+needs M0. M1–M4 need no multi-client authority decision, but they still need evidence that direct
+agent participation improves on watched file updates. **M5 additionally requires the multi-client
+gate.**
 
 M5 additionally depends on [`ADR-0002`](decisions/0002-local-document-session-before-crdt.md) proof
 obligations 3, 4, and 6: anchors and decorations survive remote changes; human undo, remote edits,
@@ -632,7 +645,9 @@ and fenced generations. M5 cannot ship if those fail.
 - **Jail escape corpus** — `..`, symlinks, absolute paths, unicode path tricks, disallowed
   extensions.
 - **Attention rules** — document-wide write refused inline with a human present; permitted with none.
-- [`POC.md`](POC.md)'s ten acceptance steps continue to govern the live agent path unchanged.
+- The renderer-first [`POC.md`](POC.md) remains a prerequisite but does not govern this later live
+  agent path. A separate acceptance test must prove scoped participation without adding permanent
+  agent UI or weakening source fidelity.
 
 ---
 

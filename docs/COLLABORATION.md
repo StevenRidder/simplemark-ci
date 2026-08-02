@@ -1,46 +1,51 @@
 # SimpleMark — Live Collaboration
 
-**Collaboration is a capability of a note, not the shape of the product.**
+**Prepared expansion architecture, not the install reason or the next product proof.**
 
-- **Status:** Draft 3 — local `DocumentSession` POC first; distributed collaboration deferred
-- **Date:** 2026-08-01
+- **Status:** Draft 4 — retained for later agent participation and distributed collaboration;
+  renderer-first POC governed by [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md)
+- **Date:** 2026-08-02
 - **Companion to:** [`DESIGN.md`](DESIGN.md), [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md), [`RENDERERS.md`](RENDERERS.md)
 
 ---
 
 ## 1. Where collaboration sits
 
-**SimpleMark is not an AI workspace.** It is a fast, beautiful, local Markdown notebook that *happens to become multiplayer when you need it.*
+[`PRODUCT.md`](PRODUCT.md) owns the current product contract. **SimpleMark is not an AI workspace.**
+It is the beautiful living document for AI work. The primary workflow is an external agent writing
+the local file while the human reads, judges, and occasionally corrects the rendered result.
 
 ```text
-SimpleMark first:     write, read, paste, render, think
-Collaboration second: invite a human or an agent into this exact
-                      document, when it is useful
+First:   open, render, watch, read, judge, correct
+Later:   invite an agent or human only if the file-based living document is insufficient
 ```
 
-Alone, it is Bear at its best — calm, instant, no setup, your files. You never enter a separate "workspace product." Collaboration should feel like looking up from a notebook and saying *come work on this with me* — not like the app asking permission to manage your work.
+You never enter a separate workspace product. Collaboration, if earned, should feel like asking
+someone into the document—not like the app asking permission to manage the work.
 
-> **The product statement:** SimpleMark is a lightweight Markdown notebook that turns raw technical material into beautiful, editable documents — and lets humans and AI agents join you live when needed.
+> **The product statement:** Your agent writes the Markdown. SimpleMark turns it into a beautiful,
+> living document. Collaboration is an optional capability behind that experience.
 
 Where that puts us against the category:
 
 | Their centre of gravity | SimpleMark's |
 |---|---|
-| AI / team workspace | Personal writing and thinking surface |
+| AI / team workspace | One rendered document |
 | Cloud collaboration | Local files first |
 | Agents as the product | Rendering and document feel as the product |
 | Organisational knowledge | One exceptional note, opened instantly |
-| Ongoing agent workflows | Bring an agent in for a moment of work |
+| Ongoing agent workflows | External file updates first; direct participation only if earned |
 
 ### 1.0 What this section specifies
 
-Everything below describes what happens **when a session is running.** When one isn't—the normal
-case—none of it exists: no coordinator, relay, service, cost, or mental overhead. The note is a
-file; the app is a notebook.
+Everything below describes a **later session capability.** None of it belongs in the renderer-first
+POC or default interface: no participant controls, coordinator, relay, chat, presence, scope, run
+state, or activity surface. The ordinary product is the same local file rendered beautifully while
+external tools update it.
 
 The useful idea borrowed from Google Wave is the living shared artifact. Not the inbox, the chat, the tasks, or the social layer.
 
-> **The first session:** one human and one local agent share an application `DocumentSession`.
+> **The first optional agent session:** one human and one local agent share an application `DocumentSession`.
 > **The later room:** N humans and N agents may share an authority-backed document only after the
 > authority-decision gates in §8 pass. Both land as ordinary Markdown you own.
 
@@ -87,8 +92,10 @@ or handed work, but are not mechanically “redirected.”
 
 ## 2. The architecture correction
 
-[`ADR-0002`](decisions/0002-local-document-session-before-crdt.md) removes Yjs from the first POC.
-One process already provides ordering and authority, so the editor and local MCP adapter share one
+[`ADR-0002`](decisions/0002-local-document-session-before-crdt.md) removes Yjs from the first
+direct-participation test. [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md)
+moves that test after the renderer-first product proof. When direct participation is tested, one
+process already provides ordering and authority, so the editor and local MCP adapter share one
 application `DocumentSession`. Distributed merge is introduced only when a second client exists.
 
 ```mermaid
@@ -170,9 +177,10 @@ Say it out loud rather than discovering it later:
 
 ## 3. Future scope: multi-human and multi-device
 
-Real multiplayer is the expansion path after the local POC, not the first executable target.
-`POC.md` proves one human plus one local agent before this system gains remote humans, a second
-device, a relay, encryption, or multi-agent governance.
+Real multiplayer is the expansion path after both the renderer-first POC and an optional local
+agent-participation test, not the first executable target. `POC.md` proves the living local document
+without an in-app agent. Only later evidence may justify a local participant, remote humans, a
+second device, a relay, encryption, or multi-agent governance.
 
 | After the POC | Deferred further |
 |---|---|
@@ -549,19 +557,21 @@ The gate moved. It is no longer "the file watcher caught an agent write."
 | Phase | Deliverable | Proof |
 |---|---|---|
 | **0** | **Fidelity spike** (`DESIGN.md` §12) | The 10 fixtures survive parse → serialize untouched |
-| **1** | **Local live POC, no CRDT** | One `DocumentSession`; `POC.md` passes and is used for one real day |
-| **2** | **The notebook** | Folder → Mermaid → save → reopen → external edit |
-| **3** | **Bear-parity shell** | Three panes, tags, search, typography; shippable alone |
-| **4** | **Multi-client authority decision** | Step authority first; compare Yjs only for masterless need; all correctness gates pass |
-| **5** | **Collaboration expansion** | A second human client, Conversation + Activity, then multi-agent tests |
-| **6+** | **Remote peers** | iPad and remote humans; optional relay; offline and reconnect |
-| **7+** | Excalidraw, converters, public plugin API | |
+| **1** | **Beautiful living document POC** | Open → render → watched external update → correct → save → reopen; `POC.md` passes and is used for one real day |
+| **2** | **Daily-use renderer product** | Technical renderer breadth, calm file handling, typography; shippable alone |
+| **3** | **Optional local agent participation** | One `DocumentSession`; prove direct transactions beat the watched-file workflow without adding cockpit UI |
+| **4** | **Multi-client authority decision** | Only if needed: step authority first; compare Yjs only for masterless need |
+| **5+** | **Collaboration expansion** | A second human client, then remote peers, Conversation, Activity, and multi-agent tests |
+| **Later** | Excalidraw, converters, public plugin API | Only after the document experience remains coherent |
 
-**Phase 3 is a real ship.** If everything after it were abandoned, SimpleMark would still be a
-beautiful local Markdown notebook that renders its supported technical source without a plugin
-or mode switch. Broader formats expand only after their renderer or converter is proven.
+**Phase 2 is a real ship.** If everything after it were abandoned, SimpleMark would still be the
+beautiful living document for AI-generated Markdown. Broader formats and participation expand only
+after their value is proven.
 
-### 8.1 The Phase 1 POC — build only this
+### 8.1 The later local agent-participation test
+
+This is explicitly **not** the renderer-first `POC.md`. Build it only after that product is useful
+without an in-app agent:
 
 ```text
 - One human cursor in one local Markdown document.

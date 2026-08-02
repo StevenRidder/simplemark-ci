@@ -35,6 +35,13 @@ export interface WindowChromeOptions {
   readonly onCommand: (command: EditorCommand) => void
   readonly preferences: ReaderPreferences
   readonly onPreferences: (next: ReaderPreferences) => void
+  /**
+   * Opens a real file (APP-1). Absent when the platform cannot: the control
+   * then renders visibly disabled with the reason — never fake, never hidden.
+   */
+  readonly onOpenFile?: (() => void) | undefined
+  /** Why onOpenFile is absent, shown on the disabled control. */
+  readonly openFileUnavailableReason?: string | undefined
 }
 
 export interface WindowChrome {
@@ -173,6 +180,24 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       { disabled: true, owner: 'the Bear-parity shell' },
     ),
   )
+
+  // Open a real file (APP-1). Sits with the document controls because it is
+  // one: the leading cluster is navigation, the trailing cluster is editing.
+  const openButton = document.createElement('button')
+  openButton.type = 'button'
+  openButton.className = 'tool open-file'
+  openButton.setAttribute('aria-label', 'Open file')
+  if (options.onOpenFile !== undefined) {
+    openButton.title = 'Open a Markdown file'
+    openButton.addEventListener('click', () => options.onOpenFile?.())
+  } else {
+    openButton.disabled = true
+    openButton.title =
+      options.openFileUnavailableReason ?? 'Open file — not available on this platform'
+  }
+  openButton.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5a1 1 0 0 1 1-1h5l2 3h7a1 1 0 0 1 1 1v3"/><path d="M4 19l2.5-8H22l-2.7 8Z"/></svg>'
+  left.append(openButton)
 
   const filename = document.createElement('div')
   filename.className = 'filename'

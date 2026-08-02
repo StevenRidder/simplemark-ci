@@ -1,12 +1,18 @@
 # SimpleMark Phase 0–1: Foundation implementation plan
 
-**Status:** executable after task ownership is established
+**Status:** partially superseded by
+[`ADR-0005`](../../decisions/0005-rendered-document-before-agent-participation.md). Foundation,
+fidelity, editor, renderer, and file work remain current; the live-agent deliverable is parked behind
+the renderer-first [`POC.md`](../../POC.md) and one-day product gate.
 
 **Governing decisions:** [ADR-0001](../../decisions/0001-single-product-modular-architecture.md),
-[ADR-0002](../../decisions/0002-local-document-session-before-crdt.md)
+[ADR-0002](../../decisions/0002-local-document-session-before-crdt.md),
+[ADR-0005](../../decisions/0005-rendered-document-before-agent-participation.md)
 
-**Goal:** prove byte-preserving Markdown, then test one human and one local agent editing live through
-one authoritative `DocumentSession`.
+**Current goal:** prove byte-preserving Markdown, then open and beautifully render one AI-generated
+local file, update calmly when an external agent changes it, allow one contextual correction, and
+save without unrelated source changes. Direct agent participation follows only if this product is
+useful on its own.
 
 ## Architecture
 
@@ -22,8 +28,9 @@ src/adapters ─→ src/application ─→ src/domain
                  editor and MCP share use cases
 ```
 
-Phase 1 contains no Yjs dependency or collaboration adapter implementation. The distributed
-multi-client authority decision is a later plan.
+Phase 1 contains no MCP requirement, in-app agent, Yjs dependency, or collaboration adapter
+implementation. Direct agent participation and the distributed multi-client authority decision are
+later evidence-gated plans.
 
 The first visible build runs in a browser development shell backed by the approved wireframe. It
 is not a separate product: browser and Tauri entrypoints compose the same document session, editor,
@@ -123,7 +130,7 @@ Write `spike/fidelity/RESULT.md` with:
 
 Stop for review at this gate. Do not begin the app shell on an ambiguous result.
 
-## Deliverable 1: local editor and Mermaid
+## Deliverable 1: beautiful living local document and Mermaid
 
 ### 1.0 Reusable browser walking skeleton
 
@@ -131,8 +138,12 @@ Promote the passing fidelity harness directly; do not rewrite it:
 
 - Add a browser implementation of the application file port using the File System Access API,
   with an explicit unsupported-browser state.
-- Open one chosen `.md` file, edit it in the wireframe-derived canvas, render/edit Mermaid, save,
-  close, and reopen.
+- Open one chosen AI-generated `.md` file directly in the wireframe-derived canvas, render Mermaid
+  and representative technical content, save, close, and reopen.
+- Watch the same file for complete external writes, import through `DocumentSession`, and preserve
+  viewport, selection, and rendered state across safe updates.
+- Let the human reveal and correct one selected sentence or Mermaid block, then return to the
+  rendered state.
 - Route every operation through `DocumentSession`; the browser entrypoint may not parse Markdown,
   mutate ProseMirror, render Mermaid, or serialize files itself.
 - Exercise the exact shared bundle that Tauri will load. A small platform-adapter contract test
@@ -178,7 +189,11 @@ interface DocumentSession {
   paste/IME, inner/outer undo, deletion, update-without-recreation, DOM mutation filtering, reopen.
 - Save as an ordinary fenced `mermaid` block and fail visibly on invalid input.
 
-## Deliverable 2: one live local agent
+## Parked deliverable 2: one live local agent
+
+**Do not start this deliverable until the renderer-first `POC.md` passes and one day of real use
+shows direct participation would improve on watched external-file updates.** The design below is
+retained as prepared expansion work.
 
 ### 2.1 Thin MCP adapter
 
@@ -203,25 +218,30 @@ parallel document model.
 - Stop travels out of band and makes every later write from the stopped generation fail closed.
 - `Cmd+Z` remains the human editor's undo; Activity deliberately reverts an agent transaction.
 
-### 2.4 POC acceptance
+### 2.4 Later agent-participation acceptance
 
-Run all ten steps in `POC.md`, including a delayed-result test after Redirect and Stop, active-human
-focus rejection, separate human undo/agent revert, and plain-text reopen.
+Write a separate acceptance test before starting this parked deliverable. It must include a delayed
+result after Redirect and Stop, active-human focus rejection, separate human undo/agent revert,
+plain-text reopen, and proof that the agent UI remains absent outside an explicitly invoked scope.
 
-## Deliverable 3: one-day product decision
+## Deliverable 3: one-day renderer-product decision
 
-Use one real architecture note for a full working day. Record only speed versus suggestions,
-interrupts/redirects/pauses, distraction, and file trust. Choose one outcome:
+Use real AI-generated architecture notes for a full working day. Record only whether the user leaves
+the coding environment for SimpleMark, rendering quality versus IDE preview, reading continuity
+during external updates, direct-correction frequency, visible machinery, and file trust. Choose one
+outcome:
 
-- retain scoped live editing and authorize the multi-client authority spike;
-- make suggest-first the default and keep live editing optional; or
-- stop collaboration expansion and ship the notebook.
+- improve the renderer and reading experience before expanding scope;
+- ship the rendered-document product and broaden technical renderers; or
+- authorize a separate local agent-participation test because a specific observed need is not served
+  by watched file updates.
 
 ## Deferred plan: multi-client authority decision
 
-If the one-day decision authorizes it, create a separate version-pinned plan for two ProseMirror
-clients. Test a native ProseMirror step authority first using Pitter Patter Collab or
+Only after the renderer gate and a later local agent-participation gate justify multiple clients,
+create a separate version-pinned plan for two ProseMirror clients. Test a native ProseMirror step authority first using Pitter Patter Collab or
 `prosemirror-collab-commit`. Compare Yjs only if truly masterless operation is required. Prove
 structured convergence, schema and permission enforcement, anchors/decorations/NodeViews, separate
 undo, disconnect/reconnect/contention retry, bounded history, checkpoint/compaction, and safe
-source-baseline/save leadership. Passing the local POC proves none of these distributed properties.
+source-baseline/save leadership. Passing either local proof establishes none of these distributed
+properties.

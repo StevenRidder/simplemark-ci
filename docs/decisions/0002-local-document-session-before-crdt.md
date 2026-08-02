@@ -5,6 +5,10 @@
 - **Decision owners:** SimpleMark maintainers
 - **Supersedes:** Yjs as a dependency of the Phase 1 one-human/one-agent POC
 
+> **Sequencing amendment:** [`ADR-0005`](0005-rendered-document-before-agent-participation.md)
+> makes the beautiful living document the first POC and moves direct agent participation later.
+> This ADR still governs `DocumentSession` authority and any later multi-client decision.
+
 ## Context
 
 SimpleMark's eventual room may contain multiple humans, agents, and intermittently connected
@@ -15,8 +19,9 @@ Putting Markdown source characters directly in a text CRDT is rejected. Concurre
 formatting delimiters can preserve valid text while losing both authors' formatting intent, as
 demonstrated by Ink & Switch's Peritext research. A collaborative rich-text system therefore needs
 a structured document representation, stable relative positions, explicit undo ownership, schema
-convergence tests, persistence, and compaction. Those are real costs, but they do not answer the
-first product question: whether scoped, visible, interruptible agent editing feels useful.
+convergence tests, persistence, and compaction. Those are real costs, but they do not answer whether
+scoped, visible, interruptible agent editing feels useful. `ADR-0005` subsequently moved even that
+question behind the renderer-first product proof.
 
 ## Decision
 

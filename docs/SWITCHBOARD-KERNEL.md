@@ -13,6 +13,11 @@
 
 **Do not build SimpleMark on Switchboard.** It is a task-completion control plane: claims, runner lifecycle, CI and merge provenance, project authorization, 33 MCP tools, ~200 test modules. Transplanting it would make a lightweight notebook feel like air-traffic control.
 
+[`PRODUCT.md`](PRODUCT.md) makes the boundary sharper: SimpleMark displays the artifact; it does not
+operate the AI work that produced it. The patterns below remain useful only behind an optional
+direct-participation capability. They earn no default panel, status surface, or implementation noun
+in the rendered-document UI.
+
 **Do take four patterns.** Switchboard has already paid for the mistakes that agent-in-a-document will otherwise make, and one of its modules is portable almost verbatim in concept.
 
 | Take | From | Why |

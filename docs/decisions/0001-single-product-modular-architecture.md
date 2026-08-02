@@ -5,10 +5,16 @@
 - **Decision owners:** SimpleMark maintainers
 - **Supersedes:** the pnpm-workspace and `packages/core` / `packages/editor` layout in the Phase 0–1 implementation plan
 
+> **Sequencing amendment:** [`ADR-0005`](0005-rendered-document-before-agent-participation.md)
+> removes the local agent from the first product proof. The single-repo boundary and dependency
+> direction accepted here remain unchanged.
+
 ## Context
 
-SimpleMark is one small product with web and native shells. Its first proof is deliberately narrow:
-one Markdown file, one product shell, Mermaid, and one local agent. Splitting that product into a
+SimpleMark is one small product with web and native shells. At the time of this decision, its first
+proof was deliberately narrow: one Markdown file, one product shell, Mermaid, and one local agent.
+`ADR-0005` later removed the local agent from that first proof without changing this repository
+decision. Splitting that product into a
 monorepo of internal packages would add manifests, build graphs, version boundaries, and dependency
 ceremony before any component has an independent consumer or release.
 

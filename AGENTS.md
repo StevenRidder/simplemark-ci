@@ -5,13 +5,16 @@ this file says how to change it.
 
 ## Read first
 
-1. [`docs/DESIGN.md`](docs/DESIGN.md) — the notebook: architecture, the D1–D7 decisions,
+1. [`docs/PRODUCT.md`](docs/PRODUCT.md) — the current job, product boundary, sequencing, UI rules,
+   demo, and language. Product work must make this experience stronger.
+2. [`docs/DESIGN.md`](docs/DESIGN.md) — the notebook: architecture, the D1–D7 decisions,
    the paste pipeline, and the §12 go/no-go spike.
-2. [`docs/decisions/`](docs/decisions/) — accepted architecture. **ADR-0001** (one repo,
+3. [`docs/decisions/`](docs/decisions/) — accepted architecture. **ADR-0001** (one repo,
    one package, enforced module boundaries) and **ADR-0002** (local `DocumentSession`
-   before any CRDT) are load-bearing and govern every change below.
-3. [`docs/POC.md`](docs/POC.md) — the next executable target and its ten-step acceptance test.
-4. [`docs/superpowers/plans/`](docs/superpowers/plans/) — the Phase 0–1 implementation plan.
+   before any CRDT) remain load-bearing; **ADR-0005** makes the rendered-document proof precede
+   in-app agent participation.
+4. [`docs/POC.md`](docs/POC.md) — the next executable target and its ten-step acceptance test.
+5. [`docs/superpowers/plans/`](docs/superpowers/plans/) — executable implementation plans.
 
 Read only the specs relevant to the surface being changed. If accepted architecture,
 executable enforcement, and current code disagree, surface the conflict — do not
@@ -59,6 +62,11 @@ app ──> adapters ──> application ──> domain
 
 Further invariants:
 
+- **Rendered document first (ADR-0005).** The install reason is reading and judging AI-generated
+  Markdown as a beautiful living document. Raw source, agent controls, collaboration, sessions,
+  and activity do not occupy the default surface. Editing is contextual; agent participation is a
+  later gate.
+
 - **Fidelity (D7).** Untouched blocks re-emit their original bytes; only dirty blocks
   serialize. `originalSource` is an immutable save baseline, never collaborative content.
   `dirty` is monotonic until a successful atomic save.
@@ -105,6 +113,7 @@ scripts/ci-sandbox.sh open-pr <branch>
 | Information | Home |
 |---|---|
 | What the product is and its status | `README.md` |
+| Current user, job, product boundary, sequencing, and language | `docs/PRODUCT.md` |
 | Durable architectural choice and rejected alternatives | `docs/decisions/` |
 | Current coding and placement rules | this file |
 | Product or protocol contract | the relevant spec under `docs/` |

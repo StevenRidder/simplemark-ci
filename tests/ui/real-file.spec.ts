@@ -100,6 +100,38 @@ test('an edit is saved to the file and survives close-and-reopen', async ({ page
   await expect(page.locator(EDITOR)).toContainText('A sentence typed into the real file.')
 })
 
+test('a table edit saves and reopens as an ordinary GFM pipe table', async ({ page }) => {
+  await openTheFile(page)
+
+  const table = page.locator(`${EDITOR} table`)
+  await table.locator('td').first().click()
+  const controls = page.locator('.table-controls:not([hidden])')
+  await expect(controls).toBeVisible()
+  await controls.getByRole('button', { name: 'Row below' }).click()
+  await controls.getByRole('button', { name: 'Column right' }).click()
+  await table.locator('td').last().click()
+  await page.keyboard.type('Saved cell')
+
+  // Milkdown batches document-change notifications; wait for the actual
+  // DocumentSession transaction rather than racing a save against the editor.
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().dirty))
+    .toBe(true)
+  await page.evaluate(() => window.simplemark!.save())
+  const onDisk = await diskContent(page)
+  expect(onDisk).toContain('Saved cell')
+  expect(onDisk).toContain('| Format')
+  expect(onDisk).toMatch(/^\| [-:]+/m)
+  expect(onDisk).not.toContain('colwidth')
+  expect(onDisk).not.toContain('<table')
+
+  await openTheFile(page)
+  await expect(page.locator(`${EDITOR} table tr`)).toHaveCount(4)
+  await expect(page.locator(`${EDITOR} table tr`).first().locator('th')).toHaveCount(4)
+  await expect(page.locator(EDITOR)).toContainText('Saved cell')
+  await expect(page.locator('.table-controls')).toHaveCount(1)
+})
+
 test('pasted Mermaid round-trips to the file as a portable fence', async ({ page }) => {
   await openTheFile(page)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])

@@ -17,13 +17,29 @@ import {
   wrapInOrderedListCommand,
 } from '@milkdown/kit/preset/commonmark'
 import {
+  addColAfterCommand,
+  addColBeforeCommand,
+  addRowAfterCommand,
+  addRowBeforeCommand,
+  columnResizingPlugin,
   gfm,
   insertTableCommand,
+  setAlignCommand,
   toggleStrikethroughCommand,
 } from '@milkdown/kit/preset/gfm'
 import { $useKeymap, $view, callCommand, getMarkdown } from '@milkdown/kit/utils'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Selection } from '@milkdown/kit/prose/state'
+import {
+  addRowAfter,
+  deleteColumn,
+  deleteRow,
+  deleteTable,
+  goToNextCell,
+  isInTable,
+  moveTableColumn,
+  moveTableRow,
+} from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 
 import type { DiagramRenderer } from '../../application/index.js'
@@ -89,6 +105,9 @@ export interface MilkdownEditorOptions {
 
 export class MilkdownEditor {
   #blockDrag: { pointerId: number; source: number } | undefined
+  #tableControls: HTMLElement | undefined
+  #activeTable: HTMLTableElement | undefined
+  #activeTableCell: HTMLTableCellElement | undefined
 
   private constructor(
     private readonly editor: Editor,
@@ -127,6 +146,10 @@ export class MilkdownEditor {
       // commonmark + gfm, and §5 puts tables and task lists in portability
       // tier 1 — without this preset they have no schema at all (BUG-2).
       .use(gfm)
+      // Width handles write only ProseMirror's in-memory table layout. GFM has
+      // no column-width syntax, so the Markdown serializer deliberately emits
+      // no width metadata (EDITOR-5's portability boundary).
+      .use(columnResizingPlugin)
       // Undo/redo. Neither the commonmark nor the gfm preset bundles history,
       // so without this Cmd+Z did nothing at all — POC.md requires it, and
       // DESIGN.md §4.3 requires undo immediately after a paste conversion to
@@ -150,6 +173,7 @@ export class MilkdownEditor {
 
     const instance = new MilkdownEditor(editor, options.renderer)
     instance.installBlockReordering()
+    instance.installTableControls()
     return instance
   }
 
@@ -305,6 +329,263 @@ export class MilkdownEditor {
         const insertBefore = event.clientY < targetRect.top + targetRect.height / 2
         this.moveBlock(view, source, this.topLevelPosition(view, target), insertBefore)
       })
+    })
+  }
+
+  /**
+   * Shows a small table-local correction strip only while a reader is working
+   * in a table. It intentionally lives beside the selected table rather than
+   * claiming permanent toolbar or sidebar space.
+   */
+  private installTableControls(): void {
+    const controls = document.createElement('div')
+    controls.className = 'table-controls'
+    controls.hidden = true
+    controls.setAttribute('aria-label', 'Table controls')
+
+    const groups: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
+      ['Rows', [
+        ['rowBefore', 'Row above'], ['rowAfter', 'Row below'],
+        ['moveRowUp', 'Shift row up'], ['moveRowDown', 'Shift row down'],
+        ['sortAscending', 'Sort selected column ascending'],
+        ['sortDescending', 'Sort selected column descending'],
+        ['deleteRow', 'Delete row'],
+      ]],
+      ['Columns', [
+        ['colBefore', 'Column left'], ['colAfter', 'Column right'],
+        ['moveColumnLeft', 'Move left'], ['moveColumnRight', 'Move right'],
+        ['deleteColumn', 'Delete column'],
+      ]],
+      ['Column', [['alignLeft', 'Align left'], ['alignCenter', 'Align center'], ['alignRight', 'Align right']]],
+      ['Table', [
+        ['fitColumns', 'Fit content'],
+        ['equalColumns', 'Equal columns'],
+        ['deleteTable', 'Delete table'],
+      ]],
+    ]
+    for (const [label, actions] of groups) {
+      const group = document.createElement('div')
+      group.className = 'table-control-group'
+      group.setAttribute('aria-label', label)
+      for (const [action, title] of actions) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.dataset['tableAction'] = action
+        button.textContent = title
+        button.setAttribute('aria-label', title)
+        button.title = title
+        button.addEventListener('mousedown', (event) => {
+          event.preventDefault()
+          this.runTableAction(action)
+        })
+        group.append(button)
+      }
+      controls.append(group)
+    }
+    document.body.append(controls)
+    this.#tableControls = controls
+
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const reveal = (event: Event): void => {
+        const target = event.target
+        if (!(target instanceof Element)) return
+        const table = target.closest('table')
+        if (!(table instanceof HTMLTableElement) || !view.dom.contains(table)) return
+        const cell = target.closest('th, td')
+        requestAnimationFrame(() => this.showTableControls(
+          view,
+          table,
+          cell instanceof HTMLTableCellElement ? cell : undefined,
+        ))
+      }
+      view.dom.addEventListener('pointerup', reveal)
+      // A parsed table may move the ProseMirror selection during its click
+      // handler, after pointerup. Run once more at click time so existing
+      // files get the same controls as a newly inserted table.
+      view.dom.addEventListener('click', reveal)
+      view.dom.addEventListener('focusin', reveal)
+      view.dom.addEventListener('keydown', () => {
+        requestAnimationFrame(() => this.refreshTableControls(view))
+      })
+      view.dom.addEventListener('keydown', (event) => {
+        // The stock GFM keymap correctly advances within a table, but stops at
+        // its final cell. Capture that one dead end before ProseMirror consumes
+        // the key: append a row, then continue into it.
+        if (event.key !== 'Tab' || event.shiftKey || !isInTable(view.state)) return
+        const selectedCell = this.selectedTableCell(view)
+        const table = selectedCell?.closest('table')
+        const cells = table?.querySelectorAll('th, td')
+        if (selectedCell === undefined || cells === undefined || selectedCell !== cells[cells.length - 1]) return
+        const dispatch = view.dispatch.bind(view)
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        if (addRowAfter(view.state, dispatch)) goToNextCell(1)(view.state, dispatch)
+      }, true)
+    })
+  }
+
+  private showTableControls(
+    view: EditorView,
+    table: HTMLTableElement,
+    cell: HTMLTableCellElement | undefined = undefined,
+  ): void {
+    if (this.#tableControls === undefined) return
+    this.#activeTable = table
+    if (cell !== undefined) this.#activeTableCell = cell
+    const controls = this.#tableControls
+    const deleteRow = controls.querySelector<HTMLButtonElement>('[data-table-action="deleteRow"]')
+    if (deleteRow !== null) {
+      // A pipe table's first row is always its header. Deleting it would make
+      // a malformed GFM table, so retain the user-visible data rows only.
+      deleteRow.disabled = this.#activeTableCell?.tagName === 'TH'
+      deleteRow.title = deleteRow.disabled ? 'The first GFM row is the required header' : 'Delete row'
+    }
+    const activeRow = this.#activeTableCell?.parentElement
+    const rowIndex = activeRow instanceof HTMLTableRowElement ? activeRow.rowIndex : undefined
+    const lastRow = table.rows.length - 1
+    this.setTableControlEnabled('moveRowUp', rowIndex !== undefined && rowIndex > 1)
+    this.setTableControlEnabled('moveRowDown', rowIndex !== undefined && rowIndex > 0 && rowIndex < lastRow)
+    const columnIndex = this.#activeTableCell?.cellIndex
+    this.setTableControlEnabled('moveColumnLeft', columnIndex !== undefined && columnIndex > 0)
+    this.setTableControlEnabled('moveColumnRight', columnIndex !== undefined && columnIndex < table.rows[0]!.cells.length - 1)
+    controls.hidden = false
+    const tableRect = table.getBoundingClientRect()
+    const controlsRect = controls.getBoundingClientRect()
+    controls.style.left = `${Math.max(12, Math.min(tableRect.right - controlsRect.width, window.innerWidth - controlsRect.width - 12))}px`
+    controls.style.top = `${Math.max(12, tableRect.top - controlsRect.height - 8)}px`
+  }
+
+  private refreshTableControls(view: EditorView): void {
+    if (!isInTable(view.state)) {
+      if (this.#tableControls !== undefined) this.#tableControls.hidden = true
+      this.#activeTable = undefined
+      this.#activeTableCell = undefined
+      return
+    }
+    if (this.#activeTable !== undefined) this.showTableControls(view, this.#activeTable)
+  }
+
+  private selectedTableCell(view: EditorView): HTMLTableCellElement | undefined {
+    const selection = window.getSelection()
+    const node = selection?.anchorNode
+    const element = node instanceof Element ? node : node?.parentElement
+    const cell = element?.closest('th, td')
+    return cell instanceof HTMLTableCellElement && view.dom.contains(cell) ? cell : undefined
+  }
+
+  private setTableControlEnabled(action: string, enabled: boolean): void {
+    const button = this.#tableControls?.querySelector<HTMLButtonElement>(`[data-table-action="${action}"]`)
+    if (button !== undefined && button !== null) button.disabled = !enabled
+  }
+
+  private moveActiveRow(view: EditorView, direction: -1 | 1): void {
+    const row = this.#activeTableCell?.parentElement
+    if (!(row instanceof HTMLTableRowElement)) return
+    const from = row.rowIndex
+    const to = from + direction
+    // The first GFM row is the header and never moves into the data range.
+    if (from < 1 || to < 1 || this.#activeTable === undefined || to >= this.#activeTable.rows.length) return
+    moveTableRow({ from, to })(view.state, view.dispatch.bind(view))
+  }
+
+  private moveActiveColumn(view: EditorView, direction: -1 | 1): void {
+    const from = this.#activeTableCell?.cellIndex
+    if (from === undefined || this.#activeTable === undefined) return
+    const to = from + direction
+    if (to < 0 || to >= this.#activeTable.rows[0]!.cells.length) return
+    moveTableColumn({ from, to })(view.state, view.dispatch.bind(view))
+  }
+
+  private sortRowsByActiveColumn(view: EditorView, direction: 1 | -1): void {
+    if (this.#activeTable === undefined || this.#activeTableCell === undefined) return
+    const column = this.#activeTableCell.cellIndex
+    const sourceRows = Array.from(this.#activeTable.rows).slice(1)
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+    const desired = sourceRows
+      .map((row, index) => ({ index, value: row.cells[column]?.textContent?.trim() ?? '' }))
+      .sort((left, right) => direction * collator.compare(left.value, right.value))
+      .map(({ index }) => index)
+    const current = sourceRows.map((_row, index) => index)
+    for (let target = 0; target < desired.length; target += 1) {
+      const from = current.indexOf(desired[target]!)
+      if (from === target) continue
+      if (!moveTableRow({ from: from + 1, to: target + 1 })(view.state, view.dispatch.bind(view))) return
+      const [moved] = current.splice(from, 1)
+      current.splice(target, 0, moved!)
+    }
+  }
+
+  private runTableAction(action: string): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      if (!isInTable(view.state)) return
+      switch (action) {
+        case 'rowBefore':
+          this.editor.action(callCommand(addRowBeforeCommand.key))
+          break
+        case 'rowAfter':
+          this.editor.action(callCommand(addRowAfterCommand.key))
+          break
+        case 'colBefore':
+          this.editor.action(callCommand(addColBeforeCommand.key))
+          break
+        case 'colAfter':
+          this.editor.action(callCommand(addColAfterCommand.key))
+          break
+        case 'deleteRow':
+          if (this.#activeTableCell?.tagName === 'TH') return
+          deleteRow(view.state, view.dispatch.bind(view))
+          break
+        case 'deleteColumn':
+          deleteColumn(view.state, view.dispatch.bind(view))
+          break
+        case 'moveRowUp':
+          this.moveActiveRow(view, -1)
+          break
+        case 'moveRowDown':
+          this.moveActiveRow(view, 1)
+          break
+        case 'moveColumnLeft':
+          this.moveActiveColumn(view, -1)
+          break
+        case 'moveColumnRight':
+          this.moveActiveColumn(view, 1)
+          break
+        case 'sortAscending':
+          this.sortRowsByActiveColumn(view, 1)
+          break
+        case 'sortDescending':
+          this.sortRowsByActiveColumn(view, -1)
+          break
+        case 'alignLeft':
+          this.editor.action(callCommand(setAlignCommand.key, 'left'))
+          break
+        case 'alignCenter':
+          this.editor.action(callCommand(setAlignCommand.key, 'center'))
+          break
+        case 'alignRight':
+          this.editor.action(callCommand(setAlignCommand.key, 'right'))
+          break
+        // GFM has no width syntax. These are deliberately local display
+        // preferences, alongside the drag handles from columnResizingPlugin;
+        // they never enter the Markdown document or its save transaction.
+        case 'fitColumns':
+          if (this.#activeTable !== undefined) this.#activeTable.style.tableLayout = 'auto'
+          break
+        case 'equalColumns':
+          if (this.#activeTable !== undefined) this.#activeTable.style.tableLayout = 'fixed'
+          break
+        case 'deleteTable':
+          deleteTable(view.state, view.dispatch.bind(view))
+          if (this.#tableControls !== undefined) this.#tableControls.hidden = true
+          this.#activeTable = undefined
+          break
+        default:
+          return
+      }
+      view.focus()
+      requestAnimationFrame(() => this.refreshTableControls(view))
     })
   }
 
@@ -498,6 +779,13 @@ export class MilkdownEditor {
   }
 
   async destroy(): Promise<void> {
+    // The editor root is replaced when a reader opens another file. Table
+    // controls deliberately live above that root so they can sit beside the
+    // table; remove that one detached element with the editor itself.
+    this.#tableControls?.remove()
+    this.#tableControls = undefined
+    this.#activeTable = undefined
+    this.#activeTableCell = undefined
     await this.editor.destroy()
   }
 }

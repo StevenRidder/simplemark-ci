@@ -43,6 +43,20 @@ test('renders the approved wireframe chrome', async ({ page }) => {
   expect(bodyFont).toMatch(/Iowan Old Style|New York|Palatino|Georgia|serif/)
 })
 
+test('save-state wording does not move the formatting controls', async ({ page }) => {
+  const formatting = page.locator('.edit-tools')
+  const before = await formatting.boundingBox()
+  expect(before).not.toBeNull()
+
+  await page.locator(`${editor} p`).first().click()
+  await page.keyboard.type(' one edit is enough')
+  await expect(page.locator('.status')).toHaveAttribute('data-state', 'dirty')
+
+  const after = await formatting.boundingBox()
+  expect(after).not.toBeNull()
+  expect(after!.x).toBe(before!.x)
+})
+
 test('is the real ProseMirror candidate, not a contenteditable demo', async ({ page }) => {
   // A bare contenteditable div would satisfy neither of these.
   await expect(page.locator(editor)).toHaveAttribute('contenteditable', 'true')

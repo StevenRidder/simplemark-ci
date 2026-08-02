@@ -377,6 +377,13 @@ button[disabled] {
 }
 
 .status {
+  /* Save messages have different lengths. Keep their slot stable so changing
+     from Saved to Unsaved changes never nudges the formatting controls. */
+  flex: 0 0 118px;
+  inline-size: 118px;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
   font-size: 10.5px;
   white-space: nowrap;
   color: var(--success);

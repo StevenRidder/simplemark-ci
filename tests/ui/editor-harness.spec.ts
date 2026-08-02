@@ -47,10 +47,14 @@ test('is the real ProseMirror candidate, not a contenteditable demo', async ({ p
 })
 
 test('controls that a later task delivers are visibly disabled, never fake', async ({ page }) => {
+  // TOOLBAR-1 made Checklist, Table and Convert to diagram real; what remains
+  // disabled needs infrastructure that does not exist. Search, New note and
+  // Document list belong to SHELL-1; Work with AI to the live-agent deliverable.
   await expect(page.getByRole('button', { name: 'Work with AI' })).toBeDisabled()
-  await expect(page.getByRole('button', { name: 'Table' })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Attach file' })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Search' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Document list' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Table' })).toBeEnabled()
 })
 
 test('typing flows through the application API and advances the document revision', async ({

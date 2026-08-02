@@ -11,7 +11,21 @@
  * explicit: unsupported controls are absent or disabled, never fake.
  */
 
-export type EditorCommand = 'heading' | 'bold' | 'bulletList'
+export type EditorCommand =
+  | 'heading'
+  | 'bold'
+  | 'italic'
+  | 'strikethrough'
+  | 'bulletList'
+  | 'orderedList'
+  | 'taskList'
+  | 'table'
+  | 'undo'
+  | 'redo'
+  | 'convertToDiagram'
+
+import { FONT_FAMILIES, READER_THEMES, nextScale } from '../reader-preferences.js'
+import type { ReaderPreferences } from '../reader-preferences.js'
 
 export type SaveState = 'saved' | 'dirty' | 'error'
 
@@ -19,6 +33,8 @@ export interface WindowChromeOptions {
   readonly fileName: string
   readonly filePath: string
   readonly onCommand: (command: EditorCommand) => void
+  readonly preferences: ReaderPreferences
+  readonly onPreferences: (next: ReaderPreferences) => void
 }
 
 export interface WindowChrome {
@@ -28,27 +44,54 @@ export interface WindowChrome {
   setStatus(state: SaveState, message?: string): void
 }
 
+/** A toolbar button that runs an editor command without stealing the selection. */
+function commandButton(
+  className: string,
+  label: string,
+  content: string,
+  command: EditorCommand,
+  onCommand: (command: EditorCommand) => void,
+): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.className = className
+  button.type = 'button'
+  button.innerHTML = content
+  button.setAttribute('aria-label', label)
+  button.title = label
+  // mousedown, not click: the editor must keep focus and selection, or the
+  // command runs against nothing.
+  button.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    onCommand(command)
+  })
+  return button
+}
+
 /** Controls the approved wireframe shows but a later task delivers. */
-const DEFERRED: ReadonlyArray<{ label: string; icon: string; owner: string }> = [
+/** Toolbar commands that are real. */
+const TOOL_COMMANDS: ReadonlyArray<{ label: string; icon: string; command: EditorCommand }> = [
   {
     label: 'Checklist',
-    owner: 'a later editing pass',
+    command: 'taskList',
     icon: '<path d="m4 6 1.5 1.5L8 5"/><path d="m4 12 1.5 1.5L8 11"/><path d="m4 18 1.5 1.5L8 17"/><path d="M11 6h9M11 12h9M11 18h9"/>',
   },
   {
     label: 'Table',
-    owner: 'a later editing pass',
+    command: 'table',
     icon: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16"/>',
   },
+  {
+    label: 'Convert to diagram',
+    command: 'convertToDiagram',
+    icon: '<rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="15" width="6" height="5" rx="1"/><path d="M9 6.5h5a3 3 0 0 1 3 3V15M12 12l5 3 4-3"/>',
+  },
+]
+
+const DEFERRED: ReadonlyArray<{ label: string; icon: string; owner: string }> = [
   {
     label: 'Attach file',
     owner: 'the attachments work',
     icon: '<path d="m20.5 11.5-8.8 8.8a6 6 0 0 1-8.5-8.5l9.5-9.5a4 4 0 0 1 5.7 5.7l-9.6 9.5a2 2 0 1 1-2.8-2.8l8.8-8.8"/>',
-  },
-  {
-    label: 'Insert diagram',
-    owner: 'the paste pipeline',
-    icon: '<rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="15" width="6" height="5" rx="1"/><path d="M9 6.5h5a3 3 0 0 1 3 3V15M12 12l5 3 4-3"/>',
   },
 ]
 
@@ -105,6 +148,20 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   lights.innerHTML = '<i></i><i></i><i></i>'
   left.append(
     lights,
+    commandButton(
+      'tool',
+      'Undo',
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>',
+      'undo',
+      options.onCommand,
+    ),
+    commandButton(
+      'tool',
+      'Redo',
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>',
+      'redo',
+      options.onCommand,
+    ),
     svgButton('tool path-hide', 'Document list', '<path d="M4 6h16M4 12h16M4 18h10"/>', {
       disabled: true,
       owner: 'the Bear-parity shell',
@@ -150,53 +207,113 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     event.preventDefault()
     options.onCommand('heading')
   })
-  const bodyButton = document.createElement('button')
-  bodyButton.type = 'button'
-  bodyButton.className = 'selected'
-  bodyButton.textContent = 'Body'
-  bodyButton.disabled = true
-  bodyButton.title = 'Body — the default; paragraph conversion lands with the full style menu'
-  styleRow.append(headingButton, bodyButton)
+  const orderedButton = commandButton(
+    '',
+    'Numbered list',
+    '1. List',
+    'orderedList',
+    options.onCommand,
+  )
+  styleRow.append(headingButton, orderedButton)
 
   const inlineRow = document.createElement('div')
   inlineRow.className = 'inline-row'
-  const boldButton = document.createElement('button')
-  boldButton.type = 'button'
-  boldButton.innerHTML = '<b>B</b>'
-  boldButton.setAttribute('aria-label', 'Bold')
-  boldButton.addEventListener('mousedown', (event) => {
-    event.preventDefault()
-    options.onCommand('bold')
+  inlineRow.append(
+    commandButton('', 'Bold', '<b>B</b>', 'bold', options.onCommand),
+    commandButton('', 'Italic', '<i>I</i>', 'italic', options.onCommand),
+    commandButton('', 'Strikethrough', '<s>S</s>', 'strikethrough', options.onCommand),
+    commandButton('', 'Bullet list', '\u2022', 'bulletList', options.onCommand),
+  )
+
+  // ---- reader typography (D6) ----
+  let preferences = options.preferences
+  const emitPreferences = (next: ReaderPreferences): void => {
+    preferences = next
+    paintPreferenceUi()
+    options.onPreferences(next)
+  }
+
+  const themeRow = document.createElement('div')
+  themeRow.className = 'theme-row'
+  const themeButtons = READER_THEMES.map((theme) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = `swatch swatch-${theme}`
+    button.dataset['theme'] = theme
+    button.setAttribute('aria-label', `${theme} background`)
+    button.title = `${theme[0]!.toUpperCase()}${theme.slice(1)} background`
+    button.addEventListener('mousedown', (event) => {
+      event.preventDefault()
+      emitPreferences({ ...preferences, theme })
+    })
+    themeRow.append(button)
+    return button
   })
-  const listButton = document.createElement('button')
-  listButton.type = 'button'
-  listButton.textContent = '•'
-  listButton.setAttribute('aria-label', 'Bullet list')
-  listButton.addEventListener('mousedown', (event) => {
-    event.preventDefault()
-    options.onCommand('bulletList')
-  })
-  for (const [label, title] of [
-    ['I', 'Italic'],
-    ['S', 'Strikethrough'],
+
+  const sizeRow = document.createElement('div')
+  sizeRow.className = 'size-row'
+  for (const [label, direction, cls, title] of [
+    ['A', 'down', 'size-smaller', 'Smaller text'],
+    ['A', 'up', 'size-larger', 'Larger text'],
   ] as const) {
     const button = document.createElement('button')
     button.type = 'button'
     button.textContent = label
+    button.className = cls
     button.setAttribute('aria-label', title)
-    button.disabled = true
-    button.title = `${title} — not in this build; a later editing pass delivers it`
-    inlineRow.append(button)
+    button.title = title
+    button.addEventListener('mousedown', (event) => {
+      event.preventDefault()
+      emitPreferences({ ...preferences, scale: nextScale(preferences.scale, direction) })
+    })
+    sizeRow.append(button)
   }
-  inlineRow.prepend(boldButton, listButton)
 
-  popover.append(styleRow, inlineRow)
+  const familyRow = document.createElement('div')
+  familyRow.className = 'family-row'
+  const familyButtons = FONT_FAMILIES.map((family) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = family.label
+    button.dataset['family'] = family.id
+    button.style.fontFamily = family.stack
+    button.setAttribute('aria-label', `${family.label} typeface`)
+    button.addEventListener('mousedown', (event) => {
+      event.preventDefault()
+      emitPreferences({ ...preferences, family: family.id })
+    })
+    familyRow.append(button)
+    return button
+  })
+
+  function paintPreferenceUi(): void {
+    for (const button of themeButtons) {
+      button.classList.toggle('selected', button.dataset['theme'] === preferences.theme)
+    }
+    for (const button of familyButtons) {
+      button.classList.toggle('selected', button.dataset['family'] === preferences.family)
+    }
+  }
+  paintPreferenceUi()
+
+  popover.append(styleRow, inlineRow, familyRow, themeRow, sizeRow)
   formatButton.addEventListener('click', () => {
     const open = popover.classList.toggle('open')
     formatButton.classList.toggle('active', open)
   })
 
   editTools.append(formatButton)
+  for (const entry of TOOL_COMMANDS) {
+    editTools.append(
+      commandButton(
+        'edit-tool',
+        entry.label,
+        `<svg viewBox="0 0 24 24" aria-hidden="true">${entry.icon}</svg>`,
+        entry.command,
+        options.onCommand,
+      ),
+    )
+  }
   for (const entry of DEFERRED) {
     editTools.append(
       svgButton('edit-tool', entry.label, entry.icon, { disabled: true, owner: entry.owner }),

@@ -3,6 +3,8 @@ import { DocumentSession } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
 import type { EditorCommand } from './ui/window-chrome.js'
+import { DEFAULT_PREFERENCES, normalisePreferences, preferenceVariables } from './reader-preferences.js'
+import type { ReaderPreferences } from './reader-preferences.js'
 
 /**
  * The composition root shared by every shell (ADR-0001).
@@ -35,6 +37,8 @@ export interface AppComposition {
 export interface ComposeOptions {
   readonly ports: AppPorts
   readonly filePath: string
+  /** Where reader preferences are read from and written to. Defaults to localStorage. */
+  readonly preferenceStorage?: Pick<Storage, 'getItem' | 'setItem'>
   /** Debounce for save-on-pause. Zero disables the timer so tests drive save directly. */
   readonly autosaveMs?: number
 }
@@ -43,11 +47,30 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const { ports } = options
   const session = await DocumentSession.open(ports.file)
 
+  // Reader preferences are app state, never document content (D6). They are
+  // applied to the document root so one multiplier and one palette drive the
+  // whole page rather than any selection.
+  const storage = options.preferenceStorage ?? readPreferenceStorage()
+  let preferences = loadPreferences(storage)
+  applyPreferences(preferences)
+
   let editor: MilkdownEditor | undefined
   const chrome = createWindowChrome({
     fileName: session.name,
     filePath: options.filePath,
-    onCommand: (command: EditorCommand) => editor?.runCommand(command),
+    preferences,
+    onPreferences: (next) => {
+      preferences = next
+      applyPreferences(next)
+      savePreferences(storage, next)
+    },
+    onCommand: (command: EditorCommand) => {
+      if (command === 'convertToDiagram') {
+        void editor?.convertBlockToDiagram()
+        return
+      }
+      editor?.runCommand(command)
+    },
   })
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined
@@ -94,4 +117,44 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   })
 
   return { element: chrome.element, session, editor, save }
+}
+
+const PREFERENCES_KEY = 'simplemark.reader-preferences'
+
+function readPreferenceStorage(): Pick<Storage, 'getItem' | 'setItem'> {
+  // Private-browsing and sandboxed contexts throw on access rather than
+  // returning null, so a missing store must not take the editor down with it.
+  try {
+    return window.localStorage
+  } catch {
+    return { getItem: () => null, setItem: () => {} }
+  }
+}
+
+function loadPreferences(storage: Pick<Storage, 'getItem'>): ReaderPreferences {
+  try {
+    const raw = storage.getItem(PREFERENCES_KEY)
+    return raw === null ? DEFAULT_PREFERENCES : normalisePreferences(JSON.parse(raw))
+  } catch {
+    return DEFAULT_PREFERENCES
+  }
+}
+
+function savePreferences(
+  storage: Pick<Storage, 'setItem'>,
+  preferences: ReaderPreferences,
+): void {
+  try {
+    storage.setItem(PREFERENCES_KEY, JSON.stringify(preferences))
+  } catch {
+    // A preference that cannot be persisted is not worth failing an edit over.
+  }
+}
+
+function applyPreferences(preferences: ReaderPreferences): void {
+  const root = document.documentElement
+  root.dataset['readerTheme'] = preferences.theme
+  for (const [name, value] of Object.entries(preferenceVariables(preferences))) {
+    root.style.setProperty(name, value)
+  }
 }

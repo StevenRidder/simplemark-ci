@@ -7,10 +7,10 @@
 
 ## Context
 
-SimpleMark is one small desktop product. Its first proof is deliberately narrow: one Markdown file,
-one macOS window, Mermaid, and one local agent. Splitting that product into a monorepo of internal
-packages would add manifests, build graphs, version boundaries, and dependency ceremony before any
-component has an independent consumer or release.
+SimpleMark is one small product with web and native shells. Its first proof is deliberately narrow:
+one Markdown file, one product shell, Mermaid, and one local agent. Splitting that product into a
+monorepo of internal packages would add manifests, build graphs, version boundaries, and dependency
+ceremony before any component has an independent consumer or release.
 
 The opposite failure is equally damaging. Putting file I/O, Markdown fidelity, editor state,
 rendering, collaboration, MCP, agent control, and UI actions into one application module would make the code
@@ -77,21 +77,27 @@ adapters ──> application ──> domain
 - Tauri commands and MCP tools are thin transports into the same application API. Neither may edit
   editor state, future CRDT state, or files directly.
 
-### Browser development shell
+### Web and native shells
 
-The browser is an executable development shell for the same product, not a second implementation
-or a throwaway prototype. It may supply browser-specific implementations of application ports,
-such as the File System Access API or an in-memory fixture port. All document parsing, source
-preservation, transactions, editor integration, Mermaid rendering, toolbar commands, and UI
-components remain the same modules used by the Tauri build.
+The browser is a first-class shell for the same product, not a second implementation or a
+throwaway prototype. It may supply browser-specific implementations of application ports, such as
+the File System Access API, browser persistence, or an in-memory fixture port. All document
+parsing, source preservation, transactions, editor integration, Mermaid rendering, toolbar
+commands, and UI components remain the same modules used by the Tauri build.
+
+The web and native shells are equal participants when a document is live: both call the same
+`DocumentAuthorityPort`; neither owns a parallel document model. A hosted authority may serve web,
+native, and MCP clients, while exactly one authority-designated save leader materializes the
+portable Markdown projection. The native shell replaces only platform wiring where native
+capabilities are useful: open/save dialogs, atomic writes, external-change watching, and window
+integration.
 
 `docs/wireframe.html` is the visual specification and extraction source. Its tokens, typography,
 layout, toolbar, activity, and conversation states move into reusable `app/ui` and `app/styles`
 modules. Its inline demo state and scripted state-switching do not become product logic.
 
-The production Tauri entrypoint replaces only platform wiring: native open/save dialogs, atomic
-writes, external-change watching, and window integration. A feature is not accepted if it works
-only in `browser.ts` or requires a separate editor model in the native shell.
+A feature is not accepted if it works only in `browser.ts` or requires a separate editor model in
+the native shell.
 
 ### Module contracts
 

@@ -494,7 +494,8 @@ Public plugin API and sandbox · handwriting + OCR · iOS/iPad shell · graph vi
 | [`TECH-SPEC.md`](TECH-SPEC.md) | Universal paste — the five-level recognition ladder, the signed renderer catalog, sandboxed execution, and why pasted content may never choose what code runs |
 | [`RENDERERS.md`](RENDERERS.md) | Renderers vs embedded editors, the rule for choosing, and the v1 set: Mermaid, DOT, KaTeX, Shiki, Vega-Lite, Markmap |
 | [`POC.md`](POC.md) | The next executable target and its acceptance test |
-| [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) | MCP co-editing — the later cold-file semantic tool surface and revision-hash concurrency |
+| [`MCP-SERVER.md`](MCP-SERVER.md) | **The agent contract** — one tool surface for open and unopened notes, participants and capabilities, rebase concurrency, the fence, and attention rules |
+| [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) | MCP co-editing — safety posture and build rationale. Its §3–§4 tool surface is superseded by [`MCP-SERVER.md`](MCP-SERVER.md) |
 
 ---
 

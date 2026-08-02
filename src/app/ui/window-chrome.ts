@@ -297,6 +297,11 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   paintPreferenceUi()
 
   popover.append(styleRow, inlineRow, familyRow, themeRow, sizeRow)
+  // Suppress mousedown so opening the popover cannot move focus away from the
+  // editor. Every command inside it acts on the live selection, and a toolbar
+  // that quietly collapses your selection before running a command on it is a
+  // command that silently does nothing.
+  formatButton.addEventListener('mousedown', (event) => event.preventDefault())
   formatButton.addEventListener('click', () => {
     const open = popover.classList.toggle('open')
     formatButton.classList.toggle('active', open)

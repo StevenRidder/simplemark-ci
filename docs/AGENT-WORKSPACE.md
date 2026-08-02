@@ -2,9 +2,22 @@
 
 **The later cold-file MCP surface.** For the first live human-plus-agent proof, see [`POC.md`](POC.md).
 
-- **Status:** Draft 1 — designed for from day one, built after the local live POC
+- **Status:** Draft 1 — **§3–§4 superseded by [`MCP-SERVER.md`](MCP-SERVER.md)** and
+  [`ADR-0004`](decisions/0004-mcp-as-participant-client.md)
 - **Date:** 2026-08-01
 - **Companion to:** [`DESIGN.md`](DESIGN.md), [`TECH-SPEC.md`](TECH-SPEC.md), [`RENDERERS.md`](RENDERERS.md)
+
+> **Supersession record.** This document's cold-file tool surface was written for a single-process
+> notebook. [`ADR-0004`](decisions/0004-mcp-as-participant-client.md) replaced it with one surface
+> serving open and unopened notes alike: revision-hash compare-and-swap became `baseVersion` plus
+> rebase (§3 → [`MCP-SERVER.md`](MCP-SERVER.md) §5), content-hash anchors became opaque
+> authority-issued tokens (§3.1 → §6), and `patch_note`'s Markdown-source edits became structural
+> steps (§4.2 → §5.3). The §9.1 and §9.2 open questions are closed there.
+>
+> **What remains current:** §1.1's rule that agents never operate the editor UI (restated and
+> broadened), §5's safety posture, §6's human-facing surface, and §7–§8's build rationale. The §7
+> prerequisites — stable note ids and a revision exposed on read and write — are unchanged and
+> remain Phase 1 work.
 
 ---
 

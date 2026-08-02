@@ -13,6 +13,19 @@ import { expect, test } from '@playwright/test'
 
 const editor = '.milkdown .ProseMirror'
 
+/**
+ * Caret at the end of the document, via the editor's own focusEnd.
+ *
+ * Clicking a paragraph and pressing End is not equivalent: End stops at the end
+ * of a wrapped visual line, and a click can land on the Mermaid NodeView, which
+ * takes a node selection that silently swallows typing. Both produced
+ * intermittent failures that moved between tests.
+ */
+async function caretAtEnd(page: import('@playwright/test').Page) {
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await expect(page.locator(editor)).toBeFocused()
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => window.simplemark !== undefined)
@@ -86,8 +99,7 @@ test('typing flows through the application API and advances the document revisio
 })
 
 test('a formatting command reaches the document as Markdown', async ({ page }) => {
-  await page.locator(`${editor} p`).first().click()
-  await page.keyboard.press('End')
+  await caretAtEnd(page)
   await page.keyboard.type('bold me')
   for (let i = 0; i < 'bold me'.length; i += 1) {
     await page.keyboard.press('Shift+ArrowLeft')
@@ -301,7 +313,7 @@ test('GFM constructs render: tables, task lists, strikethrough', async ({ page }
 
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.bringToFront()
-  await page.locator(`${editor} p`).last().click()
+  await caretAtEnd(page)
   await page.evaluate((md) => navigator.clipboard.writeText(md), markdown)
 
   await page.keyboard.press('End')
@@ -334,7 +346,7 @@ test('GFM constructs render: tables, task lists, strikethrough', async ({ page }
 async function pasteAtEnd(page: import('@playwright/test').Page, text: string, html?: string) {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.bringToFront()
-  await page.locator(`${editor} p`).last().click()
+  await caretAtEnd(page)
   await page.evaluate(
     async ({ t, h }) => {
       if (h === undefined) {
@@ -437,8 +449,7 @@ test('undo after conversion restores the raw pasted text (§4.3)', async ({ page
 // EDITOR-1 shipped an editor where Cmd+Z did nothing. POC.md requires it, and
 // no test covered it because the suite only ever typed forwards.
 test('Cmd+Z undoes an ordinary edit', async ({ page }) => {
-  await page.locator(`${editor} p`).first().click()
-  await page.keyboard.press('End')
+  await caretAtEnd(page)
   await page.keyboard.type(' UNDO ME')
   await expect
     .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))

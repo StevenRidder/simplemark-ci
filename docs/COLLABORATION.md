@@ -189,6 +189,22 @@ the POC and should be implemented only after its day-of-use result is positive. 
 are a **candidate architecture, not accepted scope**; ADR-0002's authority-decision gate owns the
 choice between ProseMirror step authority, Yjs, or no multiplayer expansion.
 
+### 3.0 Web and native are equal clients
+
+SimpleMark is one product with a web shell and a native shell. Neither is a preview of the other,
+and neither gets a separate document model. When a note is live, both connect as participants to
+the same `DocumentAuthorityPort`, alongside invited MCP agents. The authority orders/rebases
+transactions and designates exactly one save leader to materialize the portable Markdown file.
+
+This makes a web-to-native handoff ordinary collaboration rather than import/export: open the same
+note in either shell and receive the same document version, presence, scopes, fences, activity, and
+control state. Browser persistence and native filesystem access are adapters, not competing
+sources of truth.
+
+Switchboard may host the surrounding Deliverable Review Room or join as an authenticated
+participant, but it is not the document authority, save leader, or agent-control authority. A Room
+may link to a SimpleMark note and pin an exported revision/evidence snapshot for acceptance review.
+
 ### 3.1 Transport: local first, relay only if you need one
 
 **Cheap for personal use is a requirement, not an aspiration.** The app bundles the collaboration service; you plus your local agents never leave the machine.
@@ -394,6 +410,13 @@ Explicitly **not** in v1: multi-agent debate loops, an elaborate lease protocol,
 
 **Invocation is manual.** An agent in the room is not a process looking for work; it is something you point at a thing.
 
+> **Clarified by [`MCP-SERVER.md`](MCP-SERVER.md) §10.2, not repealed.** This rule governs acting
+> **inside a human's attention**, which is what the CHI evidence above is about. It never governed
+> whether a document may exist. An agent asked to edit or create a note nobody has open may start an
+> authority for it — that starts a document, never a window: nothing appears, nothing scrolls,
+> nothing takes focus. Every constraint in this section applies unchanged the moment a human is
+> present. Opening is gated per vault by `agentMayOpenNotes: ask | allow | deny`, default `ask`.
+
 #### Interruption is enforced by the fence
 
 A stop is not a message. Every agent operation carries a run id and a generation; interrupting or redirecting bumps the generation, and an edit arriving from a superseded generation is **refused, not merged**. See [`SWITCHBOARD-KERNEL.md`](SWITCHBOARD-KERNEL.md) §2 — this is the one piece of machinery worth building before the first agent edit lands.
@@ -485,6 +508,15 @@ What actually softens is the *ownership* claim, not the *fidelity* claim: while 
 ---
 
 ## 7. MCP, revised for live documents
+
+> **Superseded by [`MCP-SERVER.md`](MCP-SERVER.md) and
+> [`ADR-0004`](decisions/0004-mcp-as-participant-client.md).** The two-surface split and the
+> `note_is_live` routing rule below are retired. An agent should be able to work in notes nobody has
+> open — that requirement stands — but it is met by **one** surface serving every note rather than by
+> routing between two. The instinct in this section that survives verbatim is the last one: an agent
+> names a kind from the renderer catalog rather than sending text that happens to sniff correctly.
+>
+> Retained for the reasoning; read the contract in [`MCP-SERVER.md`](MCP-SERVER.md).
 
 [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md)'s tool surface was designed for cold files. It stays — an agent should be able to work in notes nobody has open — and gains a live surface alongside it.
 

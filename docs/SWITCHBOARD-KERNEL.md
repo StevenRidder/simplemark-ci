@@ -179,4 +179,6 @@ Four of those five come straight from Switchboard's hard-won shape. None of them
 
 It already has agents, messages, execution identity, scope authority, and a live MCP surface — plus a fleet actually running against it. It is a reasonable place to **prototype the agent-room protocol** and find out what breaks, before any of it exists in SimpleMark.
 
-What it is not: a runtime dependency, a backend, or a starting codebase.
+What it is not: a runtime dependency, a backend, or a starting codebase. A Switchboard Deliverable
+Review Room may link to a SimpleMark note and pin an exported revision or evidence snapshot for
+review, but it never becomes a second document writer, save leader, or agent-control authority.

@@ -4,9 +4,11 @@ A lightweight, beautiful, local-first Markdown notebook that turns raw technical
 
 **The core promise:** paste common technical source or a document attachment, and SimpleMark makes it immediately useful — render it natively, preview it safely, or show it with the best available local viewer — **without losing the original.**
 
+![SimpleMark turns pasted Markdown, Mermaid, and SVG into editable rendered content](docs/assets/simplemark-paste-demo.gif)
+
 In practice: raw Mermaid, a raw `<svg>`, DOT, LaTeX, a chart spec, code, an ANSI capture all render natively, with no fence and no mode switch. A `.pptx` or `.pdf` previews as pages, with the file intact as an attachment. The Markdown on disk stays portable and yours.
 
-**Collaboration is optional and live.** Alone it is calm and fast, like Bear. Click *Collaborate* and someone joins this note. Click *Invite agent* and one works alongside you — visible, interruptible, redirectable. Live chat and anchored notes steer the work; explicit Stop and Redirect controls govern an agent run. Close the session and you have ordinary Markdown plus attachments in your folder.
+**Collaboration is optional and live.** Alone it is calm and fast, like Bear. Click *Collaborate* and someone joins this note. Click *Invite agent* and one works alongside you — visible, interruptible, redirectable. Live chat and anchored notes steer the work; explicit Stop and Redirect controls govern an agent run. The web app and native app are equal clients of the same document authority, so either can join the same note. Close the session and you have ordinary Markdown plus attachments in your folder.
 
 **No active session means no service, no cost, no overhead.** SimpleMark is a notebook that becomes multiplayer, not a workspace you have to enter.
 
@@ -21,7 +23,8 @@ Design stage. No code yet.
 - [`docs/SWITCHBOARD-KERNEL.md`](docs/SWITCHBOARD-KERNEL.md) — the four patterns borrowed from Switchboard, and the four deliberately not
 - [`docs/TECH-SPEC.md`](docs/TECH-SPEC.md) — universal paste: recognition ladder, renderer catalog, sandbox
 - [`docs/RENDERERS.md`](docs/RENDERERS.md) — renderers vs embedded editors, and the v1 set
-- [`docs/AGENT-WORKSPACE.md`](docs/AGENT-WORKSPACE.md) — MCP co-editing: you and an agent in one folder
+- [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) — the agent contract: one tool surface for notes whether or not they are open
+- [`docs/AGENT-WORKSPACE.md`](docs/AGENT-WORKSPACE.md) — MCP safety posture and build rationale; its tool surface is superseded above
 - [`docs/wireframe.html`](docs/wireframe.html) — interactive editor, agent, redirect/chat, and stop states (open in a browser)
 - [`docs/superpowers/plans/`](docs/superpowers/plans/) — the Phase 0–1 implementation plan
 - [`AGENTS.md`](AGENTS.md) — **contributors and agents start here** — boundaries, board, and the validation gate
@@ -79,9 +82,9 @@ components are product code from their first visible run.
 
 Days, not weeks. Nothing else starts until it resolves.
 
-If it passes, build only [`docs/POC.md`](docs/POC.md): one local Markdown file, one macOS
-window, Mermaid, and one agent participating in the same local document session. Remote peers,
-iCloud live sync, broad MCP access, multi-agent governance, renderer acquisition, and binary
+If it passes, build only [`docs/POC.md`](docs/POC.md): one local Markdown file, one product shell
+(web or native), Mermaid, and one agent participating in the same local document session. Remote
+peers, iCloud live sync, broad MCP access, multi-agent governance, renderer acquisition, and binary
 converters—and Yjs itself—are deliberately not part of that proof.
 
 The POC decides the next investment. A later notebook release can be a real ship on its own;

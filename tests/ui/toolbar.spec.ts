@@ -40,6 +40,10 @@ async function caretAtEnd(page: import('@playwright/test').Page) {
 async function selectWord(page: import('@playwright/test').Page, word: string) {
   await caretAtEnd(page)
   await page.keyboard.type(word)
+  // Wait for the word to actually be in the document. Selecting before the last
+  // keystroke lands shifts the selection off the word, and the command then
+  // applies to the wrong range — which failed intermittently under load.
+  await expect.poll(() => markdown(page)).toContain(word)
   for (let i = 0; i < word.length; i += 1) await page.keyboard.press('Shift+ArrowLeft')
 }
 

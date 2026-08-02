@@ -98,6 +98,61 @@ test('the numbered list button produces an ordered list', async ({ page }) => {
   await expect.poll(() => markdown(page)).toContain('1. first thing')
 })
 
+test.describe('everyday correction controls', () => {
+  for (const level of [1, 2, 3, 4, 5, 6] as const) {
+    test(`Heading ${level} creates a real H${level}`, async ({ page }) => {
+      const text = `heading level ${level}`
+      await caretAtEnd(page)
+      await page.keyboard.press('Enter')
+      await page.keyboard.type(text)
+      await page.getByRole('button', { name: 'Text formatting' }).click()
+      await page.getByRole('button', { name: `Heading ${level}` }).click()
+
+      await expect(page.locator(`${editor} h${level}`, { hasText: text })).toBeVisible()
+      await expect.poll(() => markdown(page)).toContain(`${'#'.repeat(level)} ${text}`)
+    })
+  }
+
+  test('quote, code block, and divider write normal Markdown structures', async ({ page }) => {
+    await caretAtEnd(page)
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('quoted correction')
+    await page.getByRole('button', { name: 'Text formatting' }).click()
+    await page.getByRole('button', { name: 'Quote' }).click()
+    await expect(page.locator(`${editor} blockquote`, { hasText: 'quoted correction' })).toBeVisible()
+
+    await caretAtEnd(page)
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('const portable = true')
+    await page.getByRole('button', { name: 'Code block' }).click()
+    await expect(page.locator(`${editor} pre`)).toBeVisible()
+
+    await caretAtEnd(page)
+    await page.getByRole('button', { name: 'Divider' }).click()
+    await expect(page.locator(`${editor} hr`)).toHaveCount(2)
+    await expect.poll(() => markdown(page)).toContain('---')
+  })
+
+  test('highlight, inline code, and link stay portable in the document', async ({ page }) => {
+    await selectWord(page, 'emphasized')
+    await page.getByRole('button', { name: 'Text formatting' }).click()
+    await page.getByRole('button', { name: 'Highlight' }).click()
+    await expect.poll(() => markdown(page)).toContain('==emphasized==')
+
+    await selectWord(page, 'identifier')
+    await page.getByRole('button', { name: 'Inline code' }).click()
+    await expect.poll(() => markdown(page)).toContain('`identifier`')
+
+    await caretAtEnd(page)
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('destination')
+    for (let i = 0; i < 'destination'.length; i += 1) await page.keyboard.press('Shift+ArrowLeft')
+    await page.once('dialog', (dialog) => dialog.accept('https://example.invalid/destination'))
+    await page.getByRole('button', { name: 'Link' }).click()
+    await expect.poll(() => markdown(page)).toContain('[destination](https://example.invalid/destination)')
+  })
+})
+
 test.describe('undo and redo', () => {
   test('the buttons undo and redo an edit', async ({ page }) => {
     await caretAtEnd(page)
@@ -209,6 +264,36 @@ test('convert to diagram turns a Mermaid paragraph into a rendered block', async
 
   await expect(page.locator('.diagram')).toHaveCount(2)
   await expect.poll(() => markdown(page)).toContain('```mermaid')
+
+  // A diagram at the terminal position remains a document, not an editing
+  // dead end. This creates a paragraph only when the reader asks for one.
+  await page.getByRole('button', { name: 'Click to keep writing' }).click()
+  await page.keyboard.type('continued after diagram')
+  await expect.poll(() => markdown(page)).toContain('continued after diagram')
+})
+
+test('the quiet gutter drag reorders document blocks through the editor transaction', async ({ page }) => {
+  const h1 = page.locator(`${editor} > h1`)
+  const h2 = page.locator(`${editor} > h2`)
+  await expect(h1).toHaveCount(1)
+  await expect(h2).toHaveCount(1)
+  const h1Box = await h1.boundingBox()
+  const h2Box = await h2.boundingBox()
+  expect(h1Box).not.toBeNull()
+  expect(h2Box).not.toBeNull()
+
+  // The handle is a six-dot visual in the left gutter. Dragging it moves the
+  // actual ProseMirror block, so the Markdown order changes too.
+  const gutterX = h2Box!.x - 16
+  await page.mouse.move(gutterX, h2Box!.y + 8)
+  await page.mouse.down()
+  await page.mouse.move(gutterX, h1Box!.y + 4, { steps: 6 })
+  await page.mouse.up()
+
+  await expect.poll(async () => {
+    const value = await markdown(page)
+    return value.indexOf('## The live document boundary') < value.indexOf('# The first useful proof')
+  }).toBe(true)
 })
 
 test('controls needing infrastructure stay disabled', async ({ page }) => {

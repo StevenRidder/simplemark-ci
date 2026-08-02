@@ -142,9 +142,10 @@ test('the Mermaid fence renders as a diagram and toggles to editable source', as
   await expect(diagram.locator('.diagram-label')).toHaveText('mermaid')
 
   await diagram.getByRole('button', { name: 'Edit source' }).click()
-  const source = diagram.locator('.diagram-source')
+  const source = page.locator('.diagram-source-sheet .diagram-source')
   await expect(source).toBeVisible()
   await expect(source).toHaveValue(/flowchart LR/)
+  await expect(page.locator('.diagram-source-sheet')).toHaveCSS('resize', 'both')
 
   // Editing the source updates the document through ProseMirror.
   await source.click()
@@ -159,7 +160,7 @@ test('the Mermaid fence renders as a diagram and toggles to editable source', as
 test('invalid diagram source fails visibly and keeps its source editable', async ({ page }) => {
   const diagram = page.locator('.diagram')
   await diagram.getByRole('button', { name: 'Edit source' }).click()
-  const source = diagram.locator('.diagram-source')
+  const source = page.locator('.diagram-source-sheet .diagram-source')
 
   await source.click()
   await source.press('ControlOrMeta+a')

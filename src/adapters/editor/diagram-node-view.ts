@@ -1,4 +1,5 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { Selection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 
 import type { DiagramRenderer } from '../../application/index.js'
@@ -27,6 +28,8 @@ export class DiagramNodeView implements NodeView {
   #renderToken = 0
 
   readonly #render: HTMLElement
+  readonly #sheet: HTMLElement
+  readonly #sheetHeader: HTMLElement
   readonly #textarea: HTMLTextAreaElement
   readonly #error: HTMLElement
   readonly #toggle: HTMLButtonElement
@@ -58,17 +61,24 @@ export class DiagramNodeView implements NodeView {
     this.#render = document.createElement('div')
     this.#render.className = 'diagram-render'
 
+    this.#sheet = document.createElement('section')
+    this.#sheet.className = 'diagram-source-sheet'
+    this.#sheet.hidden = true
+    this.#sheet.setAttribute('aria-label', 'Diagram source editor')
+
+    this.#sheetHeader = document.createElement('header')
+    this.#sheetHeader.className = 'diagram-source-header'
+    this.#sheetHeader.textContent = 'Mermaid source'
+
     this.#textarea = document.createElement('textarea')
     this.#textarea.className = 'diagram-source'
     this.#textarea.spellcheck = false
-    this.#textarea.hidden = true
     this.#textarea.value = node.textContent
     this.#textarea.addEventListener('input', () => this.#commitSource())
     this.#textarea.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         event.preventDefault()
         this.#setShowingSource(false)
-        this.view.focus()
       }
     })
 
@@ -76,7 +86,10 @@ export class DiagramNodeView implements NodeView {
     this.#error.className = 'diagram-error'
     this.#error.hidden = true
 
-    this.dom.append(label, this.#toggle, this.#render, this.#textarea, this.#error)
+    this.#sheet.append(this.#sheetHeader, this.#textarea)
+    document.body.append(this.#sheet)
+    this.dom.append(label, this.#toggle, this.#render, this.#error)
+    this.#sheetHeader.addEventListener('pointerdown', this.#beginDrag)
 
     // A rendered diagram bakes its colours into the SVG, so it does not follow
     // the theme the way CSS does. Without this, switching the system appearance
@@ -93,10 +106,63 @@ export class DiagramNodeView implements NodeView {
 
   #setShowingSource(showing: boolean): void {
     this.#showingSource = showing
-    this.#textarea.hidden = !showing
-    this.#render.hidden = showing
+    this.#sheet.hidden = !showing
     this.#toggle.textContent = showing ? 'Done' : 'Edit source'
-    if (showing) this.#textarea.focus()
+    if (showing) {
+      this.#placeSheet()
+      this.#textarea.focus()
+      return
+    }
+    this.#focusAfterBlock()
+  }
+
+  readonly #beginDrag = (event: PointerEvent): void => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const rect = this.#sheet.getBoundingClientRect()
+    const offsetX = event.clientX - rect.left
+    const offsetY = event.clientY - rect.top
+    const move = (moveEvent: PointerEvent): void => {
+      const next = this.#boundedSheetPosition(
+        moveEvent.clientX - offsetX,
+        moveEvent.clientY - offsetY,
+      )
+      this.#sheet.style.left = `${next.left}px`
+      this.#sheet.style.top = `${next.top}px`
+      this.#sheet.dataset['positioned'] = 'true'
+    }
+    const stop = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop, { once: true })
+  }
+
+  #placeSheet(): void {
+    if (this.#sheet.dataset['positioned'] === 'true') return
+    const rect = this.#sheet.getBoundingClientRect()
+    const next = this.#boundedSheetPosition((window.innerWidth - rect.width) / 2, 112)
+    this.#sheet.style.left = `${next.left}px`
+    this.#sheet.style.top = `${next.top}px`
+    this.#sheet.dataset['positioned'] = 'true'
+  }
+
+  #boundedSheetPosition(left: number, top: number): { left: number; top: number } {
+    const rect = this.#sheet.getBoundingClientRect()
+    return {
+      left: Math.max(12, Math.min(left, window.innerWidth - rect.width - 12)),
+      top: Math.max(12, Math.min(top, window.innerHeight - rect.height - 12)),
+    }
+  }
+
+  #focusAfterBlock(): void {
+    const pos = this.getPos()
+    if (pos === undefined) return
+    const after = pos + this.#node.nodeSize
+    const { state } = this.view
+    this.view.dispatch(state.tr.setSelection(Selection.near(state.doc.resolve(after), 1)).scrollIntoView())
+    this.view.focus()
   }
 
   /** Writes the textarea's content back through ProseMirror, never into the DOM. */
@@ -150,7 +216,7 @@ export class DiagramNodeView implements NodeView {
 
   /** Inner control activity is ours, not ProseMirror's. */
   stopEvent(event: Event): boolean {
-    return event.target === this.#textarea || event.target === this.#toggle
+    return event.target === this.#toggle || this.#sheet.contains(event.target as Node)
   }
 
   /** The rendered SVG is ours too; ProseMirror must not try to reconcile it. */
@@ -161,5 +227,7 @@ export class DiagramNodeView implements NodeView {
   destroy(): void {
     this.#renderToken += 1
     this.#scheme?.removeEventListener('change', this.#onSchemeChange)
+    this.#sheetHeader.removeEventListener('pointerdown', this.#beginDrag)
+    this.#sheet.remove()
   }
 }

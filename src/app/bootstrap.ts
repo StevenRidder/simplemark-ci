@@ -70,6 +70,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       applyPreferences(next)
       savePreferences(storage, next)
     },
+    onContinueWriting: () => editor?.continueAfterLastBlock(),
     onCommand: (command: EditorCommand) => {
       if (command === 'convertToDiagram') {
         void editor?.convertBlockToDiagram()

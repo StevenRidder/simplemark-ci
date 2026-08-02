@@ -212,10 +212,17 @@ button[disabled] {
 
 .style-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, 1fr);
   gap: 3px;
 }
 
+.heading-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+}
+
+.heading-row button,
 .style-row button,
 .inline-row button {
   border: 0;
@@ -227,6 +234,7 @@ button[disabled] {
 }
 
 .style-row button:hover:not([disabled]),
+.heading-row button:hover:not([disabled]),
 .inline-row button:hover:not([disabled]) {
   background: var(--soft);
 }
@@ -243,6 +251,34 @@ button[disabled] {
   border-top: 1px solid var(--line);
   margin-top: 6px;
   padding-top: 6px;
+}
+
+.heading-row + .style-row {
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.move-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.move-row button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 7px 8px;
+  color: var(--ink-2);
+  font-size: 11px;
+}
+
+.move-row button:hover:not([disabled]) {
+  background: var(--soft);
 }
 
 .inline-row button {
@@ -381,6 +417,27 @@ button[disabled] {
   padding: 68px 0 140px;
 }
 
+.continue-writing {
+  display: block;
+  width: min(680px, calc(100% - 64px));
+  margin: -98px auto 60px;
+  padding: 11px 14px;
+  border: 1px dashed transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-3);
+  text-align: left;
+  font: 12px/1.2 var(--sans);
+}
+
+.continue-writing:hover,
+.continue-writing:focus-visible {
+  border-color: var(--line);
+  background: var(--soft);
+  color: var(--ink-2);
+  outline: none;
+}
+
 .note-title {
   font: 700 calc(36px * var(--reader-scale)) / 1.15 var(--sans);
   letter-spacing: -0.035em;
@@ -397,6 +454,10 @@ button[disabled] {
    is reserved for titles and chrome, monospace for source (DESIGN.md §10.4). */
 .milkdown .ProseMirror {
   outline: none;
+  /* Reserve a real hit area for the quiet drag gutter. Keeping it inside the
+     editor root lets pointer events reach the reorder transaction without
+     stealing text selection from the page itself. */
+  padding-left: 26px;
   /* D6: family and size are document-level preferences, never per selection. */
   font: calc(18px * var(--reader-scale)) / 1.68 var(--reader-body);
   letter-spacing: -0.003em;
@@ -405,6 +466,39 @@ button[disabled] {
 
 .milkdown .ProseMirror > * {
   margin: 0 0 21px;
+}
+
+/* The handle is quiet until a block is the thing being corrected. The whole
+   block carries the native drag gesture so prose stays a single canvas rather
+   than gaining an editor sidebar or separate block mode. */
+.milkdown .ProseMirror > * {
+  position: relative;
+}
+
+.milkdown .ProseMirror > *::before {
+  position: absolute;
+  left: -22px;
+  top: 0.35em;
+  width: 10px;
+  height: 17px;
+  color: var(--ink-3);
+  content: '';
+  cursor: grab;
+  background-image: radial-gradient(circle, currentColor 1.1px, transparent 1.5px);
+  background-position: 0 0;
+  background-repeat: repeat-y;
+  background-size: 5px 5px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.milkdown .ProseMirror > *:hover::before,
+.milkdown .ProseMirror > *:focus-within::before {
+  opacity: 0.58;
+}
+
+.milkdown .ProseMirror > *:active::before {
+  cursor: grabbing;
 }
 
 .milkdown .ProseMirror h1 {
@@ -624,16 +718,55 @@ button[disabled] {
   height: auto;
 }
 
+.diagram-source-sheet {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: 460px;
+  height: 280px;
+  min-width: 320px;
+  min-height: 220px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  resize: both;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+  box-shadow: 0 18px 52px rgba(28, 25, 21, 0.24);
+}
+
+.diagram-source-sheet[hidden] {
+  display: none;
+}
+
+.diagram-source-header {
+  flex: 0 0 34px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--chrome);
+  color: var(--ink-2);
+  cursor: grab;
+  font: 600 11px/1.2 var(--sans);
+  user-select: none;
+}
+
+.diagram-source-header:active {
+  cursor: grabbing;
+}
+
 .diagram-source {
   width: 100%;
-  min-height: 132px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--paper);
+  min-height: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--ink);
   font: 12.5px/1.55 var(--mono);
   padding: 12px 14px;
-  resize: vertical;
+  resize: none;
   outline: none;
 }
 

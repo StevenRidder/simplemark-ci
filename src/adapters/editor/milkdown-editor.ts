@@ -5,8 +5,13 @@ import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
 import {
   codeBlockSchema,
   commonmark,
+  createCodeBlockCommand,
+  insertHrCommand,
   toggleEmphasisCommand,
+  toggleInlineCodeCommand,
+  toggleLinkCommand,
   toggleStrongCommand,
+  wrapInBlockquoteCommand,
   wrapInBulletListCommand,
   wrapInHeadingCommand,
   wrapInOrderedListCommand,
@@ -24,6 +29,12 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { DiagramRenderer } from '../../application/index.js'
 import { looksLikeMermaid, looksLikeSvg } from '../../domain/index.js'
 import { DiagramNodeView } from './diagram-node-view.js'
+import {
+  highlightInputRule,
+  highlightRemark,
+  highlightSchema,
+  toggleHighlightCommand,
+} from './highlight-mark.js'
 import { pasteSniffers } from './paste-sniffers.js'
 
 /**
@@ -44,10 +55,23 @@ import { pasteSniffers } from './paste-sniffers.js'
  */
 
 export type EditorCommandName =
-  | 'heading'
+  | 'heading1'
+  | 'heading2'
+  | 'heading3'
+  | 'heading4'
+  | 'heading5'
+  | 'heading6'
   | 'bold'
   | 'italic'
   | 'strikethrough'
+  | 'highlight'
+  | 'inlineCode'
+  | 'quote'
+  | 'codeBlock'
+  | 'divider'
+  | 'link'
+  | 'moveBlockUp'
+  | 'moveBlockDown'
   | 'bulletList'
   | 'orderedList'
   | 'taskList'
@@ -64,6 +88,8 @@ export interface MilkdownEditorOptions {
 }
 
 export class MilkdownEditor {
+  #blockDrag: { pointerId: number; source: number } | undefined
+
   private constructor(
     private readonly editor: Editor,
     private readonly renderer: DiagramRenderer,
@@ -91,6 +117,12 @@ export class MilkdownEditor {
         })
       })
       .use(commonmark)
+      // A visual-only mark would disappear after reopen. `==highlight==` is a
+      // small portable extension whose parser and serializer travel together.
+      .use(highlightRemark)
+      .use(highlightSchema)
+      .use(toggleHighlightCommand)
+      .use(highlightInputRule)
       // Tables, task lists, strikethrough, autolinks. DESIGN.md §6 specifies
       // commonmark + gfm, and §5 puts tables and task lists in portability
       // tier 1 — without this preset they have no schema at all (BUG-2).
@@ -116,7 +148,9 @@ export class MilkdownEditor {
       .use(diagramView)
       .create()
 
-    return new MilkdownEditor(editor, options.renderer)
+    const instance = new MilkdownEditor(editor, options.renderer)
+    instance.installBlockReordering()
+    return instance
   }
 
   /**
@@ -141,8 +175,47 @@ export class MilkdownEditor {
       case 'strikethrough':
         this.editor.action(callCommand(toggleStrikethroughCommand.key))
         return
-      case 'heading':
+      case 'highlight':
+        this.editor.action(callCommand(toggleHighlightCommand.key))
+        return
+      case 'inlineCode':
+        this.editor.action(callCommand(toggleInlineCodeCommand.key))
+        return
+      case 'quote':
+        this.editor.action(callCommand(wrapInBlockquoteCommand.key))
+        return
+      case 'codeBlock':
+        this.editor.action(callCommand(createCodeBlockCommand.key))
+        return
+      case 'divider':
+        this.editor.action(callCommand(insertHrCommand.key))
+        return
+      case 'link':
+        this.editLink()
+        return
+      case 'moveBlockUp':
+        this.moveCurrentBlock('up')
+        return
+      case 'moveBlockDown':
+        this.moveCurrentBlock('down')
+        return
+      case 'heading1':
+        this.editor.action(callCommand(wrapInHeadingCommand.key, 1))
+        return
+      case 'heading2':
         this.editor.action(callCommand(wrapInHeadingCommand.key, 2))
+        return
+      case 'heading3':
+        this.editor.action(callCommand(wrapInHeadingCommand.key, 3))
+        return
+      case 'heading4':
+        this.editor.action(callCommand(wrapInHeadingCommand.key, 4))
+        return
+      case 'heading5':
+        this.editor.action(callCommand(wrapInHeadingCommand.key, 5))
+        return
+      case 'heading6':
+        this.editor.action(callCommand(wrapInHeadingCommand.key, 6))
         return
       case 'bulletList':
         this.editor.action(callCommand(wrapInBulletListCommand.key))
@@ -179,6 +252,134 @@ export class MilkdownEditor {
       const { doc, tr } = view.state
       view.dispatch(tr.setSelection(Selection.atEnd(doc)).scrollIntoView())
       view.focus()
+    })
+  }
+
+  /**
+   * Starts a new paragraph after the final block only when the reader asks to
+   * continue. This avoids both a terminal diagram trapping the caret and an
+   * unsolicited source change merely from opening the document.
+   */
+  continueAfterLastBlock(): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const { doc, schema } = view.state
+      const paragraph = schema.nodes['paragraph']
+      if (paragraph === undefined) return
+      const insertAt = doc.content.size
+      const transaction = view.state.tr.insert(insertAt, paragraph.create())
+      view.dispatch(
+        transaction
+          .setSelection(Selection.near(transaction.doc.resolve(insertAt + 1)))
+          .scrollIntoView(),
+      )
+      view.focus()
+    })
+  }
+
+  /** A quiet gutter drag becomes one ordinary ProseMirror transaction. */
+  private installBlockReordering(): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dom.addEventListener('pointerdown', (event) => {
+        const block = this.blockAtY(view, event.clientY)
+        if (block === undefined) return
+        const rect = block.getBoundingClientRect()
+        // The narrow inside gutter is deliberately the only drag affordance.
+        // Keeping normal prose drags untouched preserves native text selection.
+        if (event.clientX < rect.left - 26 || event.clientX > rect.left - 6) return
+        event.preventDefault()
+        this.#blockDrag = { pointerId: event.pointerId, source: this.topLevelPosition(view, block) }
+        view.dom.setPointerCapture(event.pointerId)
+      })
+
+      view.dom.addEventListener('pointerup', (event) => {
+        const drag = this.#blockDrag
+        this.#blockDrag = undefined
+        if (drag === undefined || drag.pointerId !== event.pointerId) return
+        const target = this.blockAtY(view, event.clientY)
+        if (target === undefined) return
+        event.preventDefault()
+        const source = drag.source
+        const targetRect = target.getBoundingClientRect()
+        const insertBefore = event.clientY < targetRect.top + targetRect.height / 2
+        this.moveBlock(view, source, this.topLevelPosition(view, target), insertBefore)
+      })
+    })
+  }
+
+  private blockAtY(view: EditorView, y: number): HTMLElement | undefined {
+    const blocks = Array.from(view.dom.children).filter(
+      (child): child is HTMLElement => child instanceof HTMLElement,
+    )
+    return blocks.find((block) => {
+      const rect = block.getBoundingClientRect()
+      return y >= rect.top && y <= rect.bottom
+    })
+  }
+
+  /** `posAtDOM` in a text block points inside it; moves need its top-level edge. */
+  private topLevelPosition(view: EditorView, block: HTMLElement): number {
+    const position = view.posAtDOM(block, 0)
+    const resolved = view.state.doc.resolve(position)
+    return resolved.depth > 0 ? resolved.before(1) : position
+  }
+
+  private moveCurrentBlock(direction: 'up' | 'down'): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const source = view.state.selection.$from.depth > 0
+        ? view.state.selection.$from.before(1)
+        : view.state.selection.from
+      let previous: number | undefined
+      let next: number | undefined
+      let afterSource = false
+      view.state.doc.forEach((_node, offset) => {
+        if (offset === source) {
+          afterSource = true
+          return
+        }
+        if (!afterSource) previous = offset
+        else if (next === undefined) next = offset
+      })
+      const target = direction === 'up' ? previous : next
+      if (target === undefined) return
+      this.moveBlock(view, source, target, direction === 'up')
+    })
+  }
+
+  private moveBlock(view: EditorView, source: number, target: number, insertBefore: boolean): void {
+    if (source === target) return
+    const sourceNode = view.state.doc.nodeAt(source)
+    const targetNode = view.state.doc.nodeAt(target)
+    if (sourceNode === null || targetNode === null) return
+    const requestedPosition = insertBefore ? target : target + targetNode.nodeSize
+    const transaction = view.state.tr.delete(source, source + sourceNode.nodeSize)
+    const insertionPosition = transaction.mapping.map(
+      requestedPosition,
+      source < requestedPosition ? -1 : 1,
+    )
+    view.dispatch(transaction.insert(insertionPosition, sourceNode).scrollIntoView())
+  }
+
+  /** A deliberate link correction path: selection creates, replaces, or removes. */
+  private editLink(): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const { from, to } = view.state.selection
+      if (from === to) {
+        window.alert('Select text first, then choose Link.')
+        return
+      }
+
+      const href = window.prompt('Link address (leave blank to remove the link)', '')
+      if (href === null) return
+      if (href.trim() === '') {
+        const link = view.state.schema.marks['link']
+        if (link !== undefined) view.dispatch(view.state.tr.removeMark(from, to, link))
+        return
+      }
+      this.editor.action(callCommand(toggleLinkCommand.key, { href: href.trim() }))
     })
   }
 

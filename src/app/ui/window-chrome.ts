@@ -12,10 +12,23 @@
  */
 
 export type EditorCommand =
-  | 'heading'
+  | 'heading1'
+  | 'heading2'
+  | 'heading3'
+  | 'heading4'
+  | 'heading5'
+  | 'heading6'
   | 'bold'
   | 'italic'
   | 'strikethrough'
+  | 'highlight'
+  | 'inlineCode'
+  | 'quote'
+  | 'codeBlock'
+  | 'divider'
+  | 'link'
+  | 'moveBlockUp'
+  | 'moveBlockDown'
   | 'bulletList'
   | 'orderedList'
   | 'taskList'
@@ -35,6 +48,8 @@ export interface WindowChromeOptions {
   readonly onCommand: (command: EditorCommand) => void
   readonly preferences: ReaderPreferences
   readonly onPreferences: (next: ReaderPreferences) => void
+  /** Creates a paragraph after a terminal rendered block on explicit request. */
+  readonly onContinueWriting: () => void
   /**
    * Opens a real file (APP-1). Absent when the platform cannot: the control
    * then renders visibly disabled with the reason — never fake, never hidden.
@@ -221,17 +236,16 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   const popover = document.createElement('div')
   popover.className = 'format-popover'
 
+  const headingRow = document.createElement('div')
+  headingRow.className = 'heading-row'
+  for (const level of [1, 2, 3, 4, 5, 6] as const) {
+    headingRow.append(
+      commandButton('', `Heading ${level}`, `H${level}`, `heading${level}`, options.onCommand),
+    )
+  }
+
   const styleRow = document.createElement('div')
   styleRow.className = 'style-row'
-  const headingButton = document.createElement('button')
-  headingButton.type = 'button'
-  headingButton.textContent = 'Heading'
-  headingButton.addEventListener('mousedown', (event) => {
-    // The editor keeps focus and selection: a toolbar press must not move the
-    // caret before the command runs against it.
-    event.preventDefault()
-    options.onCommand('heading')
-  })
   const orderedButton = commandButton(
     '',
     'Numbered list',
@@ -239,7 +253,19 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     'orderedList',
     options.onCommand,
   )
-  styleRow.append(headingButton, orderedButton)
+  styleRow.append(
+    orderedButton,
+    commandButton('', 'Quote', 'Quote', 'quote', options.onCommand),
+    commandButton('', 'Code block', 'Code block', 'codeBlock', options.onCommand),
+    commandButton('', 'Divider', 'Divider', 'divider', options.onCommand),
+  )
+
+  const moveRow = document.createElement('div')
+  moveRow.className = 'move-row'
+  moveRow.append(
+    commandButton('', 'Move block up', 'Move up', 'moveBlockUp', options.onCommand),
+    commandButton('', 'Move block down', 'Move down', 'moveBlockDown', options.onCommand),
+  )
 
   const inlineRow = document.createElement('div')
   inlineRow.className = 'inline-row'
@@ -247,6 +273,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     commandButton('', 'Bold', '<b>B</b>', 'bold', options.onCommand),
     commandButton('', 'Italic', '<i>I</i>', 'italic', options.onCommand),
     commandButton('', 'Strikethrough', '<s>S</s>', 'strikethrough', options.onCommand),
+    commandButton('', 'Highlight', '<mark>H</mark>', 'highlight', options.onCommand),
+    commandButton('', 'Inline code', '&lt;/&gt;', 'inlineCode', options.onCommand),
+    commandButton('', 'Link', 'Link', 'link', options.onCommand),
     commandButton('', 'Bullet list', '\u2022', 'bulletList', options.onCommand),
   )
 
@@ -321,7 +350,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   }
   paintPreferenceUi()
 
-  popover.append(styleRow, inlineRow, familyRow, themeRow, sizeRow)
+  popover.append(headingRow, styleRow, inlineRow, moveRow, familyRow, themeRow, sizeRow)
   // Suppress mousedown so opening the popover cannot move focus away from the
   // editor. Every command inside it acts on the live selection, and a toolbar
   // that quietly collapses your selection before running a command on it is a
@@ -378,7 +407,15 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   editorSection.className = 'editor'
   const page = document.createElement('article')
   page.className = 'page'
-  editorSection.append(page)
+  const continueWriting = document.createElement('button')
+  continueWriting.type = 'button'
+  continueWriting.className = 'continue-writing'
+  continueWriting.textContent = 'Click to keep writing'
+  continueWriting.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    options.onContinueWriting()
+  })
+  editorSection.append(page, continueWriting)
 
   windowEl.append(titlebar, editorSection)
   stage.append(windowEl)

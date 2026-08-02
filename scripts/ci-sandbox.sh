@@ -100,13 +100,15 @@ Usage: scripts/ci-sandbox.sh <command> [options] [branch]
 
 Commands:
   setup                 Verify $CI_REPO exists and add git remote '$CI_REMOTE'
-  push [--no-wait]      Push <branch> (default: current), dispatch workflows, wait for Actions
+  push [--no-wait]      Push <branch>, dispatch, wait; on green the sandbox copy
+       [--keep]         is deleted automatically (--keep retains it)
   wait                  Wait for in-progress Actions on <branch> (default: current)
   status                Print recent Actions conclusions for <branch> (default: current)
   prove                 Stamp the canonical status after the exact SHA passed the sandbox
   doctor                Verify repo/remote/workflow/baseline/branch wiring
   protect-main          Require the sandbox status before canonical main can move
   delete                Delete <branch> from the CI sandbox remote
+  prune                 Delete every sandbox branch except main (all are ephemeral)
   sync-main             Push local main to the CI sandbox (refresh baseline after merges)
   refresh-main          Fetch canonical main, then sync it to the CI sandbox
   open-pr               Push/wait on sandbox, push canonical, stamp, then open the PR
@@ -317,11 +319,12 @@ wait_for_runs() {
 }
 
 cmd_push() {
-  local wait=1 dispatch=1 branch=""
+  local wait=1 dispatch=1 keep=0 branch=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --no-wait) wait=0; shift ;;
       --no-dispatch) dispatch=0; shift ;;
+      --keep) keep=1; shift ;;
       -h|--help) usage; exit 0 ;;
       *) branch="$(resolve_branch "$1")"; shift ;;
     esac
@@ -356,6 +359,16 @@ cmd_push() {
       wait_for_runs "$branch" "" "" 1
     fi
     maybe_stamp_existing_canonical_branch "$branch"
+    # Terminal cleanup, the Switchboard way (external_ci_mirror.py's
+    # _cleanup_terminal_mirror_branch): once the run is terminal and the proof
+    # is stamped on the canonical SHA, the sandbox copy has served its purpose.
+    # A failed wait dies above, so a red branch stays put for inspection —
+    # `prune` sweeps those. main is the dispatch baseline and never deleted.
+    if [ "$keep" = 0 ] && [ "$branch" != "main" ]; then
+      echo "ci-sandbox: run terminal, proof stamped — deleting ephemeral $CI_REPO:$branch"
+      git -C "$ROOT" push "$CI_REMOTE" --delete "$branch" \
+        || echo "ci-sandbox: WARNING: cleanup push failed; run 'scripts/ci-sandbox.sh prune' later"
+    fi
   else
     echo "ci-sandbox: pushed; check $(actions_url "$branch")"
   fi
@@ -606,6 +619,27 @@ cmd_delete() {
   git -C "$ROOT" push "$CI_REMOTE" --delete "$branch"
 }
 
+# Sweep every ephemeral branch off the sandbox. Everything except main is by
+# definition disposable: push auto-deletes on green, so anything left over is a
+# red run someone finished inspecting or a branch pushed before auto-cleanup.
+cmd_prune() {
+  need_tools; repo_root; ensure_remote
+  local refs branch count=0
+  refs="$({ GIT_TERMINAL_PROMPT=0 git -C "$ROOT" ls-remote "$CI_REMOTE_URL" 'refs/heads/*' 2>/dev/null || true; } \
+    | awk '{print $2}' | sed 's|refs/heads/||' | grep -v '^main$' || true)"
+  if [ -z "$refs" ]; then
+    echo "ci-sandbox: nothing to prune — only main on $CI_REPO"
+    return 0
+  fi
+  while IFS= read -r branch; do
+    [ -n "$branch" ] || continue
+    echo "ci-sandbox: pruning $CI_REPO:$branch"
+    git -C "$ROOT" push "$CI_REMOTE" --delete "$branch"
+    count=$((count + 1))
+  done <<< "$refs"
+  echo "ci-sandbox: pruned $count ephemeral branch(es); $CI_REPO holds main only"
+}
+
 cmd_sync_main() {
   need_tools; repo_root; ensure_repo; ensure_remote
   local sha
@@ -670,6 +704,7 @@ main() {
     doctor) cmd_doctor "$@" ;;
     protect-main) cmd_protect_main "$@" ;;
     delete) cmd_delete "$@" ;;
+    prune) cmd_prune "$@" ;;
     sync-main) cmd_sync_main "$@" ;;
     refresh-main) cmd_refresh_main "$@" ;;
     open-pr) cmd_open_pr "$@" ;;

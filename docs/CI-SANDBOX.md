@@ -76,10 +76,20 @@ required status, and open the PR — one command:
 scripts/ci-sandbox.sh open-pr claude/FOUNDATION-1-scaffold
 ```
 
-After the PR merges, refresh the baseline and drop the ephemeral branch:
+Sandbox branches are terminal-scoped, the same rule Switchboard's
+`external_ci_mirror.py` enforces with `_cleanup_terminal_mirror_branch`: once the
+run is terminal and the proof is stamped on the canonical SHA, the sandbox copy is
+deleted automatically by `push`. A red run stays put for inspection; sweep leftovers
+with:
 
 ```bash
-scripts/ci-sandbox.sh refresh-main && scripts/ci-sandbox.sh delete claude/FOUNDATION-1-scaffold
+scripts/ci-sandbox.sh prune     # delete every sandbox branch except main
+```
+
+After the PR merges, refresh the dispatch baseline:
+
+```bash
+scripts/ci-sandbox.sh refresh-main
 ```
 
 ## Why `workflow_dispatch` is mandatory

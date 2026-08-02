@@ -3,6 +3,7 @@ import { DocumentSession } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
 import type { EditorCommand } from './ui/window-chrome.js'
+import type { WindowChrome } from './ui/window-chrome.js'
 import { DEFAULT_PREFERENCES, normalisePreferences, preferenceVariables } from './reader-preferences.js'
 import type { ReaderPreferences } from './reader-preferences.js'
 
@@ -41,6 +42,8 @@ export interface ComposeOptions {
   readonly preferenceStorage?: Pick<Storage, 'getItem' | 'setItem'>
   /** Debounce for save-on-pause. Zero disables the timer so tests drive save directly. */
   readonly autosaveMs?: number
+  /** Honest confirmation for platforms that save a downloaded replacement. */
+  readonly saveSuccessMessage?: string
   /** Platform hook for opening a real file; absent when the platform cannot. */
   readonly onOpenFile?: () => void
   /** Shown on the disabled open control when onOpenFile is absent. */
@@ -59,11 +62,25 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   applyPreferences(preferences)
 
   let editor: MilkdownEditor | undefined
-  const chrome = createWindowChrome({
+  let chrome: WindowChrome
+  let saveTimer: ReturnType<typeof setTimeout> | undefined
+  const autosaveMs = options.autosaveMs ?? 900
+  const save = async (): Promise<void> => {
+    clearTimeout(saveTimer)
+    const result = await session.save()
+    if (result.ok) {
+      chrome.setStatus('saved', options.saveSuccessMessage)
+      return
+    }
+    chrome.setStatus('error', `Not saved — ${result.reason}`)
+  }
+
+  chrome = createWindowChrome({
     fileName: session.name,
     filePath: options.filePath,
     onOpenFile: options.onOpenFile,
     openFileUnavailableReason: options.openFileUnavailableReason,
+    onSave: () => void save(),
     preferences,
     onPreferences: (next) => {
       preferences = next
@@ -79,20 +96,6 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       editor?.runCommand(command)
     },
   })
-
-  let saveTimer: ReturnType<typeof setTimeout> | undefined
-  const autosaveMs = options.autosaveMs ?? 900
-
-  const save = async (): Promise<void> => {
-    clearTimeout(saveTimer)
-    const result = await session.save()
-    if (result.ok) {
-      chrome.setStatus('saved')
-      return
-    }
-    // A failed write is never allowed to look like a successful one.
-    chrome.setStatus('error', `Not saved — ${result.reason}`)
-  }
 
   editor = await MilkdownEditor.mount({
     mount: chrome.editorHost,

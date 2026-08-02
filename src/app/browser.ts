@@ -2,6 +2,7 @@ import { CompositeRenderer } from '../adapters/renderers/composite-renderer.js'
 import { MermaidRenderer } from '../adapters/renderers/mermaid-renderer.js'
 import { SvgRenderer } from '../adapters/renderers/svg-renderer.js'
 import { BrowserFilePort } from '../adapters/filesystem/browser-file-port.js'
+import { BrowserUploadFilePort } from '../adapters/filesystem/browser-upload-file-port.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import type { FilePort } from '../application/index.js'
 import { composeApp } from './bootstrap.js'
@@ -71,25 +72,25 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
 async function mount(
   root: HTMLElement,
   file: FilePort,
-  options: { filePath: string },
+  options: { filePath: string; autosaveMs?: number; saveSuccessMessage?: string },
 ): Promise<AppComposition> {
-  const supported = BrowserFilePort.isSupported()
+  const canWriteOriginal = BrowserFilePort.isSupported()
+  let app: AppComposition
 
-  const app = await composeApp({
+  app = await composeApp({
     ports: {
       file,
       // One port, several renderers. DOT, KaTeX, Vega-Lite and Markmap join here.
       diagrams: new CompositeRenderer([new MermaidRenderer(), new SvgRenderer()]),
     },
     filePath: options.filePath,
-    ...(supported
-      ? {
-          onOpenFile: () => void openRealFile(root, app),
-        }
-      : {
-          openFileUnavailableReason:
-            'Open file — this browser has no File System Access API; use Chrome, Edge, or the macOS app',
-        }),
+    ...(options.autosaveMs === undefined ? {} : { autosaveMs: options.autosaveMs }),
+    ...(options.saveSuccessMessage === undefined ? {} : { saveSuccessMessage: options.saveSuccessMessage }),
+    // Every modern browser can read an ordinary file. Chrome and Edge retain
+    // its handle for in-place save; Safari opens the same file but downloads a
+    // replacement on explicit Save because the web platform never exposes the
+    // original path for writing.
+    onOpenFile: () => void openRealFile(root, app, canWriteOriginal),
   })
 
   root.replaceChildren(app.element)
@@ -98,9 +99,13 @@ async function mount(
 }
 
 /** Picks a real Markdown file and rebuilds the composition around it. */
-async function openRealFile(root: HTMLElement, previous: AppComposition): Promise<void> {
-  const port = new BrowserFilePort(() =>
-    window.showOpenFilePicker!({
+async function openRealFile(
+  root: HTMLElement,
+  previous: AppComposition,
+  canWriteOriginal: boolean,
+): Promise<void> {
+  const port: FilePort = canWriteOriginal
+    ? new BrowserFilePort(() => window.showOpenFilePicker!({
       types: [
         {
           description: 'Markdown',
@@ -109,8 +114,8 @@ async function openRealFile(root: HTMLElement, previous: AppComposition): Promis
       ],
       excludeAcceptAllOption: false,
       multiple: false,
-    }).then((handles) => handles[0]!),
-  )
+    }).then((handles) => handles[0]!))
+    : new BrowserUploadFilePort(pickMarkdownUpload, downloadMarkdown)
 
   let name: string
   try {
@@ -124,7 +129,53 @@ async function openRealFile(root: HTMLElement, previous: AppComposition): Promis
 
   await previous.save()
   await previous.editor.destroy()
-  await mount(root, port, { filePath: name })
+  await mount(root, port, canWriteOriginal
+    ? { filePath: name }
+    : {
+        filePath: 'Safari/browser copy · Save downloads a replacement',
+        autosaveMs: 0,
+        saveSuccessMessage: `Downloaded ${name} — replace the original file when ready`,
+      })
+}
+
+/** Safari and Firefox can pick a local Markdown file even without file handles. */
+function pickMarkdownUpload(): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.md,.markdown,text/markdown,text/plain'
+    input.className = 'browser-file-picker'
+    input.tabIndex = -1
+    document.body.append(input)
+
+    const finish = (result: File | DOMException): void => {
+      input.remove()
+      if (result instanceof File) resolve(result)
+      else reject(result)
+    }
+    input.addEventListener('change', () => {
+      const file = input.files?.item(0)
+      finish(file ?? new DOMException('The user aborted a request.', 'AbortError'))
+    }, { once: true })
+    input.addEventListener('cancel', () => {
+      finish(new DOMException('The user aborted a request.', 'AbortError'))
+    }, { once: true })
+    input.click()
+  })
+}
+
+/** A Safari save is explicitly a downloaded portable `.md` copy, never a fake write. */
+function downloadMarkdown(name: string, bytes: Uint8Array): void {
+  const url = URL.createObjectURL(new Blob([new Uint8Array(bytes) as Uint8Array<ArrayBuffer>], {
+    type: 'text/markdown;charset=utf-8',
+  }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.append(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 declare global {

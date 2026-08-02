@@ -26,7 +26,7 @@ export class BrowserFilePort implements FilePort {
 
   /** Whether this browser exposes the File System Access API at all. */
   static isSupported(target: object = globalThis): boolean {
-    return 'showOpenFilePicker' in target
+    return typeof (target as { showOpenFilePicker?: unknown }).showOpenFilePicker === 'function'
   }
 
   async open(): Promise<OpenedDocument> {

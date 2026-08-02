@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { BrowserFilePort } from '../../src/adapters/filesystem/browser-file-port.js'
+import { BrowserUploadFilePort } from '../../src/adapters/filesystem/browser-upload-file-port.js'
 
 /**
  * The File System Access API is not present in the test runtime, so the port
@@ -42,6 +43,11 @@ function fakeHandle(name: string, initial: Uint8Array) {
 const BYTES = new TextEncoder().encode('# A real note\n\nwith bytes that must not change\n')
 
 describe('BrowserFilePort', () => {
+  it('requires a callable native picker, not merely a defined property', () => {
+    expect(BrowserFilePort.isSupported({ showOpenFilePicker: undefined })).toBe(false)
+    expect(BrowserFilePort.isSupported({ showOpenFilePicker: () => Promise.resolve([]) })).toBe(true)
+  })
+
   it('opens the picked file with its exact bytes', async () => {
     const { handle } = fakeHandle('note.md', BYTES)
     const port = new BrowserFilePort(async () => handle as unknown as FileSystemFileHandle)
@@ -90,5 +96,26 @@ describe('BrowserFilePort', () => {
     const port = new BrowserFilePort(async () => handle as unknown as FileSystemFileHandle)
 
     await expect(port.save('fsa:0', BYTES)).rejects.toThrow(/unknown handle/)
+  })
+})
+
+describe('BrowserUploadFilePort', () => {
+  it('opens an ordinary picked file and saves an explicitly downloaded replacement', async () => {
+    const file = new File([BYTES as BlobPart], 'safari-note.md', { type: 'text/markdown' })
+    const downloaded: Array<{ name: string; bytes: Uint8Array }> = []
+    const port = new BrowserUploadFilePort(
+      async () => file,
+      (name, bytes) => downloaded.push({ name, bytes }),
+    )
+
+    const opened = await port.open()
+    const next = new TextEncoder().encode('# Downloaded replacement\n')
+    await port.save(opened.handle, next)
+
+    expect(opened.name).toBe('safari-note.md')
+    expect([...opened.bytes]).toEqual([...BYTES])
+    expect(downloaded).toHaveLength(1)
+    expect(downloaded[0]!.name).toBe('safari-note.md')
+    expect([...downloaded[0]!.bytes]).toEqual([...next])
   })
 })

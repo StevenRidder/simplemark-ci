@@ -37,6 +37,7 @@ test('renders the approved wireframe chrome', async ({ page }) => {
   await expect(page.locator('.titlebar .lights i')).toHaveCount(3)
   await expect(page.locator('.filename')).toContainText('architecture.md')
   await expect(page.locator('.status')).toHaveAttribute('data-state', 'saved')
+  await expect(page.getByRole('button', { name: 'Save file' })).toBeEnabled()
 
   // Typography is the wireframe's, not the browser's default.
   const bodyFont = await page.locator(editor).evaluate((el) => getComputedStyle(el).fontFamily)
@@ -115,6 +116,11 @@ test('typing flows through the application API and advances the document revisio
 test('a formatting command reaches the document as Markdown', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.type('bold me')
+  // Under a loaded CI worker the final keystroke can arrive after the next
+  // selection key. Wait for the document transaction before selecting it.
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('bold me')
   for (let i = 0; i < 'bold me'.length; i += 1) {
     await page.keyboard.press('Shift+ArrowLeft')
   }

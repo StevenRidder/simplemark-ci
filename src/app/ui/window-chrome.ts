@@ -57,6 +57,8 @@ export interface WindowChromeOptions {
   readonly onOpenFile?: (() => void) | undefined
   /** Why onOpenFile is absent, shown on the disabled control. */
   readonly openFileUnavailableReason?: string | undefined
+  /** Saves the current document without moving focus away from the canvas. */
+  readonly onSave: () => void
 }
 
 export interface WindowChrome {
@@ -213,6 +215,19 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   openButton.innerHTML =
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5a1 1 0 0 1 1-1h5l2 3h7a1 1 0 0 1 1 1v3"/><path d="M4 19l2.5-8H22l-2.7 8Z"/></svg>'
   left.append(openButton)
+
+  const saveButton = document.createElement('button')
+  saveButton.type = 'button'
+  saveButton.className = 'tool save-file'
+  saveButton.setAttribute('aria-label', 'Save file')
+  saveButton.title = 'Save file'
+  saveButton.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l3 3v13H5Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>'
+  saveButton.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    options.onSave()
+  })
+  left.append(saveButton)
 
   const filename = document.createElement('div')
   filename.className = 'filename'

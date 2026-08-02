@@ -601,6 +601,14 @@ button[disabled] {
   vertical-align: top;
 }
 
+/* A deliberate row/column selection stays visible long enough to apply one
+   ordinary Markdown mark. It is not a spreadsheet range editor. */
+.milkdown .ProseMirror .selectedCell {
+  background: color-mix(in srgb, var(--accent) 14%, var(--paper)) !important;
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--accent) 68%, transparent),
+    inset 0 -2px 0 color-mix(in srgb, var(--accent) 68%, transparent);
+}
+
 /* Width drag handles are a reader affordance. They only change the live table
    layout; ordinary GFM intentionally carries no column-width property. */
 .milkdown .ProseMirror .column-resize-handle {

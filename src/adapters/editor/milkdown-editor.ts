@@ -32,6 +32,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Selection } from '@milkdown/kit/prose/state'
 import {
   addRowAfter,
+  CellSelection,
   deleteColumn,
   deleteRow,
   deleteTable,
@@ -358,20 +359,21 @@ export class MilkdownEditor {
     menu.hidden = true
     menu.setAttribute('aria-label', 'Table options')
 
-    // This menu is for ordinary correction, not table administration. More
-    // powerful operations remain implemented below for a future deliberate
-    // surface, but never turn a reader's table into a cockpit by default.
+    // The menu stays document-like, but carries the normal table corrections a
+    // person expects from Bear/Obsidian: structure, a visible row/column
+    // selection for formatting, and moving the table as one document block.
     const groups: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
       ['Rows', [
         ['rowBefore', 'Row above'], ['rowAfter', 'Row below'],
-        ['deleteRow', 'Delete row'],
+        ['selectRow', 'Select row'], ['deleteRow', 'Delete row'],
       ]],
       ['Columns', [
         ['colBefore', 'Column left'], ['colAfter', 'Column right'],
-        ['deleteColumn', 'Delete column'],
+        ['selectColumn', 'Select column'], ['deleteColumn', 'Delete column'],
       ]],
       ['Column', [['alignLeft', 'Align left'], ['alignCenter', 'Align center'], ['alignRight', 'Align right']]],
-      ['Table', [['deleteTable', 'Delete table']]],
+      ['Style', [['boldSelection', 'Bold selected cells']]],
+      ['Table', [['moveTableUp', 'Move table up'], ['moveTableDown', 'Move table down'], ['deleteTable', 'Delete table']]],
     ]
     for (const [label, actions] of groups) {
       const group = document.createElement('div')
@@ -527,6 +529,21 @@ export class MilkdownEditor {
     if (button !== undefined && button !== null) button.disabled = !enabled
   }
 
+  /** Uses ProseMirror's native cell selection, so marks apply to whole cells. */
+  private selectTableCells(view: EditorView, kind: 'row' | 'column'): void {
+    const cell = this.#activeTableCell
+    const row = cell?.parentElement
+    if (cell === undefined || !(row instanceof HTMLTableRowElement)) return
+    // CellSelection expects the position before a cell, which is the cell's
+    // offset inside its row — not a text position inside that cell.
+    const beforeCell = view.posAtDOM(row, cell.cellIndex)
+    const $cell = view.state.doc.resolve(beforeCell)
+    const selection = kind === 'row'
+      ? CellSelection.rowSelection($cell)
+      : CellSelection.colSelection($cell)
+    view.dispatch(view.state.tr.setSelection(selection))
+  }
+
   private moveActiveRow(view: EditorView, direction: -1 | 1): void {
     const row = this.#activeTableCell?.parentElement
     if (!(row instanceof HTMLTableRowElement)) return
@@ -565,6 +582,14 @@ export class MilkdownEditor {
   }
 
   private runTableAction(action: string): void {
+    if (action === 'moveTableUp') {
+      this.moveCurrentBlock('up')
+      return
+    }
+    if (action === 'moveTableDown') {
+      this.moveCurrentBlock('down')
+      return
+    }
     this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
       if (!isInTable(view.state)) return
@@ -587,6 +612,15 @@ export class MilkdownEditor {
           break
         case 'deleteColumn':
           deleteColumn(view.state, view.dispatch.bind(view))
+          break
+        case 'selectRow':
+          this.selectTableCells(view, 'row')
+          break
+        case 'selectColumn':
+          this.selectTableCells(view, 'column')
+          break
+        case 'boldSelection':
+          this.editor.action(callCommand(toggleStrongCommand.key))
           break
         case 'moveRowUp':
           this.moveActiveRow(view, -1)

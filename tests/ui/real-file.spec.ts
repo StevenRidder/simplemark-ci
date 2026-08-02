@@ -169,14 +169,38 @@ test('cancelling the picker leaves the current document untouched', async ({ pag
   await expect(page.locator(`${EDITOR} h1`)).toContainText('The first useful proof')
 })
 
-test('a browser without the API gets an honestly disabled control', async ({ page }) => {
+test('a browser without the native API offers the Safari-compatible open fallback', async ({ page }) => {
   await page.addInitScript(() => {
-    delete (window as { showOpenFilePicker?: unknown }).showOpenFilePicker
+    Object.defineProperty(window, 'showOpenFilePicker', { configurable: true, value: undefined })
   })
   await page.goto('/')
   await page.waitForFunction(() => window.simplemark !== undefined)
 
   const button = page.getByRole('button', { name: 'Open file' })
-  await expect(button).toBeDisabled()
-  await expect(button).toHaveAttribute('title', /File System Access/)
+  await expect(button).toBeEnabled()
+  await expect(button).toHaveAttribute('title', 'Open a Markdown file')
+})
+
+test('the Safari fallback opens a file and saves an explicitly downloaded replacement', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'showOpenFilePicker', { configurable: true, value: undefined })
+  })
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: 'Open file' }).click()
+  await (await chooser).setFiles({
+    name: 'safari-note.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# Safari document\n\nOpened without a native file handle.\n'),
+  })
+  await expect(page.locator('.filename')).toContainText('safari-note.md')
+  await expect(page.locator('.filename')).toContainText('Save downloads a replacement')
+  await expect(page.locator(`${EDITOR} h1`)).toContainText('Safari document')
+
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save file' }).click()
+  expect((await download).suggestedFilename()).toBe('safari-note.md')
+  await expect(page.locator('.status')).toContainText('Downloaded safari-note.md')
 })

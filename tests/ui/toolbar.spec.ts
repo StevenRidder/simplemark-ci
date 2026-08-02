@@ -180,6 +180,37 @@ test('a table column can be width-dragged without width metadata entering Markdo
   expect(await markdown(page)).not.toContain('colwidth')
 })
 
+test('table controls select cells, bold them portably, and move the table as one block', async ({ page }) => {
+  await caretAtEnd(page)
+  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Table' }).click()
+
+  const table = page.locator(`${editor} table`)
+  const dataCells = table.locator('td')
+  expect(await dataCells.count()).toBeGreaterThanOrEqual(2)
+  await dataCells.nth(0).click()
+  await page.keyboard.type('North')
+  await dataCells.nth(1).click()
+  await page.keyboard.type('Revenue')
+
+  await dataCells.nth(0).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Select row' }).click()
+  expect(await table.locator('.selectedCell').count()).toBe(
+    await table.locator('tr').nth(1).locator('td').count(),
+  )
+  await (await openTableOptions(page)).getByRole('button', { name: 'Bold selected cells' }).click()
+  await expect.poll(() => markdown(page)).toContain('**North**')
+  await expect.poll(() => markdown(page)).toContain('**Revenue**')
+
+  await (await openTableOptions(page)).getByRole('button', { name: 'Select column' }).click()
+  await expect(table.locator('.selectedCell')).toHaveCount(await table.locator('tr').count())
+
+  const before = await markdown(page)
+  const tableBefore = before.indexOf('**North**')
+  await (await openTableOptions(page)).getByRole('button', { name: 'Move table up' }).click()
+  await expect.poll(async () => (await markdown(page)).indexOf('**North**')).toBeLessThan(tableBefore)
+})
+
 test('advanced table administration stays out of the reader menu', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')

@@ -4,7 +4,9 @@ A lightweight, beautiful, local-first Markdown notebook that turns raw technical
 
 **The core promise:** paste common technical source or a document attachment, and SimpleMark makes it immediately useful — render it natively, preview it safely, or show it with the best available local viewer — **without losing the original.**
 
-![SimpleMark turns pasted Markdown, Mermaid, and SVG into editable rendered content](docs/assets/simplemark-paste-demo.gif)
+![Typing in SimpleMark, then pasting Markdown, Mermaid and raw SVG — each recognised and rendered on paste, with the diagram source edited live](docs/assets/simplemark-demo.gif)
+
+*Recorded from the running app in one unbroken session — no cuts. Regenerate with `npm run demo` while `npm run dev` is up.*
 
 In practice: raw Mermaid, a raw `<svg>`, DOT, LaTeX, a chart spec, code, an ANSI capture all render natively, with no fence and no mode switch. A `.pptx` or `.pdf` previews as pages, with the file intact as an attachment. The Markdown on disk stays portable and yours.
 

@@ -28,10 +28,15 @@ export type DocumentCommandId =
   // Inline emphasis
   | 'bold'
   | 'italic'
+  | 'underline'
   | 'strikethrough'
   | 'highlight'
   | 'inlineCode'
+  | 'footnote'
+  | 'inlineMath'
+  | 'mathBlock'
   | 'link'
+  | 'wikiLink'
   // Lists
   | 'bulletList'
   | 'orderedList'
@@ -94,6 +99,7 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
 
   bold: { id: 'bold', label: 'Bold', target: 'editor', accelerator: 'CmdOrCtrl+B' },
   italic: { id: 'italic', label: 'Italic', target: 'editor', accelerator: 'CmdOrCtrl+I' },
+  underline: { id: 'underline', label: 'Underline', target: 'editor', accelerator: 'CmdOrCtrl+U' },
   strikethrough: {
     id: 'strikethrough',
     label: 'Strikethrough',
@@ -102,7 +108,11 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   },
   highlight: { id: 'highlight', label: 'Highlight', target: 'editor', accelerator: 'CmdOrCtrl+Shift+H' },
   inlineCode: { id: 'inlineCode', label: 'Inline Code', target: 'editor', accelerator: 'CmdOrCtrl+E' },
+  footnote: { id: 'footnote', label: 'Footnote', target: 'editor' },
+  inlineMath: { id: 'inlineMath', label: 'Math', target: 'editor' },
+  mathBlock: { id: 'mathBlock', label: 'Math Block', target: 'editor' },
   link: { id: 'link', label: 'Link…', target: 'editor', accelerator: 'CmdOrCtrl+K' },
+  wikiLink: { id: 'wikiLink', label: 'Wiki Link', target: 'editor' },
 
   bulletList: { id: 'bulletList', label: 'Bulleted List', target: 'editor', accelerator: 'CmdOrCtrl+Shift+8' },
   orderedList: { id: 'orderedList', label: 'Numbered List', target: 'editor', accelerator: 'CmdOrCtrl+Shift+9' },
@@ -180,16 +190,21 @@ export const MENUS: readonly MenuSpec[] = [
         },
         'bold',
         'italic',
+        'underline',
         'strikethrough',
         'highlight',
         'inlineCode',
+        'footnote',
+        'inlineMath',
         'link',
+        'wikiLink',
       ],
       [
         { label: 'List', items: ['bulletList', 'orderedList', 'taskList'] },
         'table',
         'quote',
         'codeBlock',
+        'mathBlock',
         'divider',
       ],
       ['insertAsset', 'convertToDiagram'],

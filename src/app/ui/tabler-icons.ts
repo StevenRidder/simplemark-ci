@@ -16,6 +16,7 @@ export type TablerIconName =
   | 'dots-vertical'
   | 'folder'
   | 'folder-plus'
+  | 'grip-vertical'
   | 'heading'
   | 'highlight'
   | 'italic'
@@ -51,6 +52,8 @@ const paths: Record<TablerIconName, string> = {
     '<path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/>',
   'folder-plus':
     '<path d="M12 19h-7a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v3.5"/><path d="M16 19h6M19 16v6"/>',
+  'grip-vertical':
+    '<circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>',
   heading: '<path d="M7 12h10M7 5v14M17 5v14M15 19h4M15 5h4M5 19h4M5 5h4"/>',
   highlight:
     '<path d="M3 19h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/><path d="M12.5 5.5l4 4M4.5 13.5l4 4M21 15v4h-8l4 -4l4 0"/>',

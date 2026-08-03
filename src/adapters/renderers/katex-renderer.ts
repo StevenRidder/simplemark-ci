@@ -17,7 +17,7 @@ import type { DiagramRenderer, RenderedDiagram } from '../../application/index.j
  * so the returned HTML is inert without a further sanitising pass.
  */
 export class KatexRenderer implements DiagramRenderer {
-  readonly languages = ['math', 'latex', 'tex'] as const
+  readonly languages = ['math', 'math-inline', 'latex', 'tex'] as const
 
   async render(language: string, source: string): Promise<RenderedDiagram> {
     if (!this.languages.includes(language as 'math')) {
@@ -29,13 +29,15 @@ export class KatexRenderer implements DiagramRenderer {
 
     try {
       const html = katex.renderToString(trimmed, {
-        displayMode: true,
+        displayMode: language !== 'math-inline',
         throwOnError: true,
         trust: false,
         strict: false,
         output: 'html',
       })
-      return { ok: true, markup: `<div class="math-block">${html}</div>` }
+      return language === 'math-inline'
+        ? { ok: true, markup: html }
+        : { ok: true, markup: `<div class="math-block">${html}</div>` }
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     }

@@ -360,6 +360,13 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
   const highlightGlyph = `${tablerIcon('highlight', 'styles-glyph-highlight')}${disclosureGlyph}`
   const assetGlyph = tablerIcon('photo', 'styles-glyph-asset')
   const moreGlyph = tablerIcon('dots-vertical', 'styles-glyph-more')
+  const dragHandle = document.createElement('button')
+  dragHandle.type = 'button'
+  dragHandle.className = 'styles-drag-handle'
+  dragHandle.innerHTML = tablerIcon('grip-vertical')
+  dragHandle.setAttribute('aria-label', 'Move formatting palette')
+  dragHandle.title = 'Drag to move · double-click to reset'
+  dragHandle.addEventListener('click', (event) => event.preventDefault())
 
   const headers = menu('Headers', headerGlyph, (panel) => {
     for (const level of [1, 2, 3, 4, 5, 6] as const) {
@@ -401,14 +408,14 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
     // Bear's exact primary menu. Unsupported source formats remain visible but
     // honestly disabled rather than silently acquiring proprietary Markdown.
     panel.append(
-      unavailable('Underline', 'ordinary Markdown has no underline mark'),
+      command('Underline', 'underline'),
       command('Strikethrough', 'strikethrough'),
-      unavailable('Footnote', 'footnote insertion is not in this build'),
+      command('Footnote', 'footnote'),
       command('Code', 'inlineCode'),
       command('Code Block', 'codeBlock'),
-      unavailable('Math', 'inline math insertion is not in this build'),
-      unavailable('Math Block', 'math block insertion is not in this build'),
-      unavailable('Wiki Link', 'wiki-link source is not in this build'),
+      command('Math', 'inlineMath'),
+      command('Math Block', 'mathBlock'),
+      command('Wiki Link', 'wikiLink'),
       separator(),
     )
     // When space collapses these are the controls removed from the main row.
@@ -465,6 +472,7 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
   // Exact product order: the visual hierarchy stays stable even while narrow
   // windows move the low-frequency end of the row into More.
   bar.append(
+    dragHandle,
     headers,
     command('Todo', 'taskList', 'styles-control styles-bar-overflow styles-todo', todoGlyph),
     lists,
@@ -493,7 +501,14 @@ function installStylesBarDragging(
 ): void {
   const margin = 8
   let position = initial
-  let drag: { pointerId: number; offsetX: number; offsetY: number } | undefined
+  let drag: {
+    pointerId: number
+    offsetX: number
+    offsetY: number
+    startX: number
+    startY: number
+    moved: boolean
+  } | undefined
 
   const clamp = (value: number, minimum: number, maximum: number): number =>
     Math.min(Math.max(value, minimum), Math.max(minimum, maximum))
@@ -530,14 +545,25 @@ function installStylesBarDragging(
   }
 
   bar.addEventListener('pointerdown', (event) => {
-    // Buttons and open menus retain ordinary formatting behaviour. The quiet
-    // material around and between them is the drag handle.
-    if (event.button !== 0 || event.target !== bar) return
+    // A real grip replaces the two-pixel background sliver that was
+    // technically draggable but impossible to discover or reliably grab.
+    const target = event.target instanceof Element ? event.target.closest('.styles-drag-handle') : null
+    if (event.button !== 0 || target === null) return
+    if (event.detail >= 2) {
+      position = undefined
+      paint()
+      onChange(undefined)
+      event.preventDefault()
+      return
+    }
     const bounds = bar.getBoundingClientRect()
     drag = {
       pointerId: event.pointerId,
       offsetX: event.clientX - bounds.left,
       offsetY: event.clientY - bounds.top,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
     }
     bar.setPointerCapture(event.pointerId)
     bar.classList.add('is-dragging')
@@ -546,28 +572,37 @@ function installStylesBarDragging(
 
   bar.addEventListener('pointermove', (event) => {
     if (drag?.pointerId !== event.pointerId) return
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return
+    drag.moved = true
     position = positionFromPointer(event.clientX, event.clientY)
     paint()
   })
 
   const finish = (event: PointerEvent): void => {
     if (drag?.pointerId !== event.pointerId) return
-    position = positionFromPointer(event.clientX, event.clientY)
+    const moved = drag.moved
+    if (moved) position = positionFromPointer(event.clientX, event.clientY)
     bar.releasePointerCapture(event.pointerId)
     drag = undefined
     bar.classList.remove('is-dragging')
-    paint()
-    onChange(position)
+    if (moved) {
+      paint()
+      onChange(position)
+    }
   }
   bar.addEventListener('pointerup', finish)
   bar.addEventListener('pointercancel', finish)
 
-  bar.addEventListener('dblclick', (event) => {
-    if (event.target !== bar) return
+  const reset = (event: Event): void => {
     position = undefined
     paint()
     onChange(undefined)
-  })
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  // Pointer capture can retarget the second click to the palette itself, so
+  // listen in capture phase rather than depending on the SVG child target.
+  bar.addEventListener('dblclick', reset, true)
 
   // A restored ratio may be outside the usable centre range after the side
   // panes or window size change. Repaint converts it through CSS; the next

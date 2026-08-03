@@ -34,8 +34,8 @@ describe('GraphvizRenderer', () => {
 describe('KatexRenderer', () => {
   const renderer = new KatexRenderer()
 
-  it('claims math, latex and tex', () => {
-    expect([...renderer.languages]).toEqual(['math', 'latex', 'tex'])
+  it('claims display and inline math, latex and tex', () => {
+    expect([...renderer.languages]).toEqual(['math', 'math-inline', 'latex', 'tex'])
   })
 
   it('typesets a formula to KaTeX markup', async () => {
@@ -48,6 +48,13 @@ describe('KatexRenderer', () => {
   it('typesets a multi-line environment', async () => {
     const result = await renderer.render('math', '\\begin{aligned} a &= b \\\\ c &= d \\end{aligned}')
     expect(result.ok).toBe(true)
+  })
+
+  it('typesets inline math without a display wrapper', async () => {
+    const result = await renderer.render('math-inline', 'x+y')
+    if (!result.ok) throw new Error(result.message)
+    expect(result.markup).toContain('class="katex"')
+    expect(result.markup).not.toContain('math-block')
   })
 
   it('fails visibly on a bad formula rather than rendering red source', async () => {

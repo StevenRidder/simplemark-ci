@@ -28,6 +28,8 @@ import {
   insertTableCommand,
   setAlignCommand,
   toggleStrikethroughCommand,
+  footnoteDefinitionSchema,
+  footnoteReferenceSchema,
 } from '@milkdown/kit/preset/gfm'
 import { $useKeymap, $view, callCommand, getMarkdown } from '@milkdown/kit/utils'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -61,6 +63,9 @@ import { findKey, findPlugin } from './find.js'
 import type { FindState } from './find.js'
 import { calloutRemark, calloutSchema } from './callout.js'
 import { mathBlockSchema, mathRemark } from './math-block.js'
+import { inlineMathSchema, InlineMathNodeView } from './inline-math.js'
+import { toggleUnderlineCommand, underlineRemark, underlineSchema } from './underline-mark.js'
+import { wikiLinkSchema, wikiRemark } from './wiki-link.js'
 import { pasteSniffers } from './paste-sniffers.js'
 
 /**
@@ -89,13 +94,18 @@ export type EditorCommandName =
   | 'heading6'
   | 'bold'
   | 'italic'
+  | 'underline'
   | 'strikethrough'
   | 'highlight'
   | 'inlineCode'
+  | 'footnote'
+  | 'inlineMath'
+  | 'mathBlock'
   | 'quote'
   | 'codeBlock'
   | 'divider'
   | 'link'
+  | 'wikiLink'
   | 'moveBlockUp'
   | 'moveBlockDown'
   | 'bulletList'
@@ -145,6 +155,10 @@ export class MilkdownEditor {
       return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
         new DiagramNodeView(node, view, getPos, options.renderer)
     })
+    const inlineMathView = $view(inlineMathSchema.node, () => {
+      return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
+        new InlineMathNodeView(node, view, getPos, options.renderer)
+    })
     const imageView = $view(imageSchema.node, () => {
       return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
         new AssetImageNodeView(node, view, getPos)
@@ -165,6 +179,9 @@ export class MilkdownEditor {
       .use(highlightSchema)
       .use(toggleHighlightCommand)
       .use(highlightInputRule)
+      .use(underlineRemark)
+      .use(underlineSchema)
+      .use(toggleUnderlineCommand)
       // Tables, task lists, strikethrough, autolinks. DESIGN.md §6 specifies
       // commonmark + gfm, and §5 puts tables and task lists in portability
       // tier 1 — without this preset they have no schema at all (BUG-2).
@@ -200,11 +217,15 @@ export class MilkdownEditor {
       .use(codeHighlightPlugin(options.renderer.languages))
       .use(findPlugin)
       .use(mathRemark)
+      .use(inlineMathSchema)
       .use(mathBlockSchema)
+      .use(wikiRemark)
+      .use(wikiLinkSchema)
       .use(calloutRemark)
       .use(calloutSchema)
       .use(diagramView)
       .use(mathView)
+      .use(inlineMathView)
       .use(imageView)
       .create()
 
@@ -272,6 +293,9 @@ export class MilkdownEditor {
       case 'italic':
         this.editor.action(callCommand(toggleEmphasisCommand.key))
         return
+      case 'underline':
+        this.editor.action(callCommand(toggleUnderlineCommand.key))
+        return
       case 'strikethrough':
         this.editor.action(callCommand(toggleStrikethroughCommand.key))
         return
@@ -280,6 +304,15 @@ export class MilkdownEditor {
         return
       case 'inlineCode':
         this.editor.action(callCommand(toggleInlineCodeCommand.key))
+        return
+      case 'footnote':
+        this.insertFootnote()
+        return
+      case 'inlineMath':
+        this.insertInlineAtom('inline_math', 'value', 'x')
+        return
+      case 'mathBlock':
+        this.insertMathBlock()
         return
       case 'quote':
         this.editor.action(callCommand(wrapInBlockquoteCommand.key))
@@ -292,6 +325,9 @@ export class MilkdownEditor {
         return
       case 'link':
         this.editLink()
+        return
+      case 'wikiLink':
+        this.insertWikiLink()
         return
       case 'moveBlockUp':
         this.moveCurrentBlock('up')
@@ -853,6 +889,80 @@ export class MilkdownEditor {
       source < requestedPosition ? -1 : 1,
     )
     view.dispatch(transaction.insert(insertionPosition, sourceNode).scrollIntoView())
+  }
+
+  /** Replaces the current selection with one portable atomic inline node. */
+  private insertInlineAtom(nodeName: string, attribute: string, fallback: string): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const type = view.state.schema.nodes[nodeName]
+      if (type === undefined) return
+      const { from, to } = view.state.selection
+      const selected = view.state.doc.textBetween(from, to, ' ').trim()
+      const value = selected === '' ? fallback : selected
+      const transaction = view.state.tr.replaceSelectionWith(type.create({ [attribute]: value }))
+      view.dispatch(transaction.scrollIntoView())
+      view.focus()
+    })
+  }
+
+  /** Inserts `[^n]` and its editable, standard Markdown definition together. */
+  private insertFootnote(): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const reference = footnoteReferenceSchema.type(ctx)
+      const definition = footnoteDefinitionSchema.type(ctx)
+      const paragraph = view.state.schema.nodes['paragraph']
+      if (paragraph === undefined) return
+
+      const labels = new Set<string>()
+      view.state.doc.descendants((node) => {
+        if (node.type === reference || node.type === definition) labels.add(String(node.attrs['label'] ?? ''))
+      })
+      let number = 1
+      while (labels.has(String(number))) number += 1
+      const label = String(number)
+      const { from, to } = view.state.selection
+      const selected = view.state.doc.textBetween(from, to, ' ').trim()
+      const body = selected === '' ? 'Footnote' : selected
+
+      let transaction = view.state.tr.replaceSelectionWith(reference.create({ label }))
+      const definitionNode = definition.create(
+        { label },
+        paragraph.create(undefined, view.state.schema.text(body)),
+      )
+      transaction = transaction.insert(transaction.doc.content.size, definitionNode)
+      view.dispatch(transaction.scrollIntoView())
+      view.focus()
+    })
+  }
+
+  /** A selected formula becomes a rendered `$$` display block. */
+  private insertMathBlock(): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const type = mathBlockSchema.type(ctx)
+      const { from, to } = view.state.selection
+      const selected = view.state.doc.textBetween(from, to, '\n').trim()
+      const source = selected === '' ? 'x = y' : selected
+      const node = type.create({ language: 'math' }, view.state.schema.text(source))
+      view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
+      view.focus()
+    })
+  }
+
+  /** Stores a note link as `[[target]]`; the renderer resolves it as `target.md`. */
+  private insertWikiLink(): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const type = wikiLinkSchema.type(ctx)
+      const { from, to } = view.state.selection
+      const selected = view.state.doc.textBetween(from, to, ' ').trim()
+      const label = selected === '' ? 'New Note' : selected
+      const target = label.replace(/\.md$/iu, '')
+      view.dispatch(view.state.tr.replaceSelectionWith(type.create({ target, label })).scrollIntoView())
+      view.focus()
+    })
   }
 
   /** A deliberate link correction path: selection creates, replaces, or removes. */

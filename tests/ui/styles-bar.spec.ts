@@ -27,7 +27,7 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
       ? item.getAttribute('aria-label')
       : item.querySelector('button')?.getAttribute('aria-label')),
   )).resolves.toEqual([
-    'Headers', 'Todo', 'Lists', 'Bold', 'Italic', 'Highlight', 'Link', 'Tables', 'Insert image or link file', 'More',
+    'Move formatting palette', 'Headers', 'Todo', 'Lists', 'Bold', 'Italic', 'Highlight', 'Link', 'Tables', 'Insert image or link file', 'More',
   ])
 
   const geometry = await bar.evaluate((element) => {
@@ -48,9 +48,9 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
     position: 'absolute',
     bottom: '18px',
     radius: '11px',
-    size: [385, 33],
+    size: [405, 33],
     buttonSizes: [
-      [39, 29], [31, 29], [39, 29], [31, 29], [31, 29],
+      [17, 29], [39, 29], [31, 29], [39, 29], [31, 29], [31, 29],
       [39, 29], [31, 29], [31, 29], [31, 29], [31, 29],
     ],
   })
@@ -86,7 +86,7 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
   await expect(bar).toBeVisible()
 })
 
-test('every styles-bar menu mirrors Bear while unsupported Markdown stays honest', async ({ page }) => {
+test('every styles-bar menu mirrors Bear and every More command is available', async ({ page }) => {
   const bar = page.getByLabel('Styles bar')
   const headersTrigger = bar.getByRole('button', { name: 'Headers', exact: true })
 
@@ -129,11 +129,96 @@ test('every styles-bar menu mirrors Bear while unsupported Markdown stays honest
       'Underline', 'Strikethrough', 'Footnote', 'Code', 'Code Block', 'Math', 'Math Block',
       'Wiki Link', 'Hide styles bar',
     ])
-  await expect(more.getByRole('button', { name: 'Underline' })).toBeDisabled()
-  await expect(more.getByRole('button', { name: 'Strikethrough' })).toBeEnabled()
+  for (const name of ['Underline', 'Strikethrough', 'Footnote', 'Code', 'Code Block', 'Math', 'Math Block', 'Wiki Link']) {
+    await expect(more.getByRole('button', { name, exact: true })).toBeEnabled()
+  }
 
   await page.locator('.workspace-library-head').click()
   await expect(bar.locator('.styles-menu.open')).toHaveCount(0)
+})
+
+test('every More formatting command changes portable Markdown', async ({ page }) => {
+  let bar = page.getByLabel('Styles bar', { exact: true })
+  const choose = async (name: string): Promise<void> => {
+    await bar.getByRole('button', { name: 'More', exact: true }).click()
+    await bar.locator('.styles-menu.open').getByRole('button', { name, exact: true }).click()
+  }
+  const reset = async (): Promise<void> => {
+    await page.reload()
+    await page.waitForFunction(() => window.simplemark !== undefined)
+    bar = page.getByLabel('Styles bar', { exact: true })
+  }
+
+  await selectNewWord(page, 'underlined')
+  await choose('Underline')
+  await expect.poll(() => markdown(page)).toContain('<u>underlined</u>')
+  await expect(page.locator(`${editor} u`, { hasText: 'underlined' })).toBeVisible()
+
+  await reset()
+  await selectNewWord(page, 'struck')
+  await choose('Strikethrough')
+  await expect.poll(() => markdown(page)).toContain('~~struck~~')
+
+  await reset()
+  await selectNewWord(page, 'footnote body')
+  await choose('Footnote')
+  await expect.poll(() => markdown(page)).toContain('[^1]')
+  await expect.poll(() => markdown(page)).toContain('[^1]: footnote body')
+  await expect(page.locator(`${editor} sup[data-type="footnote_reference"]`)).toBeVisible()
+
+  await reset()
+  await selectNewWord(page, 'inline code')
+  await choose('Code')
+  await expect.poll(() => markdown(page)).toContain('`inline code`')
+
+  await reset()
+  await selectNewWord(page, 'x+y')
+  await choose('Math')
+  await expect.poll(() => markdown(page)).toContain('$$x+y$$')
+  await expect(page.locator(`${editor} .inline-math .katex`)).toBeVisible()
+
+  await reset()
+  await selectNewWord(page, 'Related Note')
+  await choose('Wiki Link')
+  await expect.poll(() => markdown(page)).toContain('[[Related Note]]')
+  await expect(page.locator(`${editor} a.wiki-link`, { hasText: 'Related Note' })).toBeVisible()
+
+  await reset()
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await choose('Code Block')
+  await expect.poll(() => markdown(page)).toContain('```')
+
+  await reset()
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await choose('Math Block')
+  await expect.poll(() => markdown(page)).toContain('$$\nx = y\n$$')
+  await expect(page.locator(`${editor} .math-block .katex`).last()).toBeVisible()
+})
+
+test('More-command Markdown reopens as rendered, editable content', async ({ page }) => {
+  const note = '# Loaded\n\n<u>underlined</u> and $$x+y$$ and [[Related Note]] with note[^1].\n\n[^1]: body\n'
+  await page.addInitScript((content: string) => {
+    window.showOpenFilePicker = async () => {
+      const root = await navigator.storage.getDirectory()
+      const handle = await root.getFileHandle('styles-note.md', { create: true })
+      const writable = await handle.createWritable()
+      await writable.write(content)
+      await writable.close()
+      return [handle]
+    }
+  }, note)
+  await page.reload()
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await page.getByRole('button', { name: 'Open file' }).click()
+
+  await expect(page.locator(`${editor} u`, { hasText: 'underlined' })).toBeVisible()
+  await expect(page.locator(`${editor} .inline-math .katex`)).toBeVisible()
+  await expect(page.locator(`${editor} a.wiki-link`, { hasText: 'Related Note' })).toBeVisible()
+  await expect(page.locator(`${editor} sup[data-type="footnote_reference"]`)).toBeVisible()
+  await expect.poll(() => markdown(page)).toContain('<u>underlined</u>')
+  await expect.poll(() => markdown(page)).toContain('$$x+y$$')
+  await expect.poll(() => markdown(page)).toContain('[[Related Note]]')
+  await expect.poll(() => markdown(page)).toContain('[^1]: body')
 })
 
 test('the styles-bar preference survives reload without changing source', async ({ page }) => {
@@ -155,8 +240,10 @@ test('the styles bar can move, remembers its place, and resets to the wireframe 
   const surfaceBox = await surface.boundingBox()
   if (before === null || surfaceBox === null) throw new Error('Expected visible palette and document pane')
 
-  // Grab the quiet left inset, never a formatting button.
-  await page.mouse.move(before.x + 2, before.y + before.height / 2)
+  const grip = bar.getByRole('button', { name: 'Move formatting palette' })
+  const gripBox = await grip.boundingBox()
+  if (gripBox === null) throw new Error('Expected a visible palette grip')
+  await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2)
   await page.mouse.down()
   await page.mouse.move(surfaceBox.x + surfaceBox.width * 0.72, surfaceBox.y + 120)
   await page.mouse.up()
@@ -175,7 +262,8 @@ test('the styles bar can move, remembers its place, and resets to the wireframe 
   expect(Math.abs(restored.x - moved.x)).toBeLessThan(2)
   expect(Math.abs(restored.y - moved.y)).toBeLessThan(2)
 
-  await page.mouse.dblclick(restored.x + 2, restored.y + restored.height / 2)
+  const restoredGrip = page.getByRole('button', { name: 'Move formatting palette' })
+  await restoredGrip.dblclick()
   const resetStyle = await page.getByLabel('Styles bar').evaluate((element) => ({
     bottom: getComputedStyle(element).bottom,
     placed: element.classList.contains('is-placed'),

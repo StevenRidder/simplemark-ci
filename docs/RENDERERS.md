@@ -208,9 +208,12 @@ opens rendered and saves back unchanged.
 dollars as inline math and silently mangles the sentence. Requiring `$$` keeps
 prose with prices as prose — there is a test for exactly that line.
 
-**Not included:** inline `$x$` inside a paragraph. It needs a ProseMirror inline
-node and input rules on top of the remark extension, and it belongs to EDITOR-9
-alongside footnotes and callouts.
+**Inline math is explicit, not guessed.** The More menu turns the current
+selection into a first-class inline node stored as `$$x$$`. The double-dollar
+form is deliberate: ordinary prices remain prose, the same source reopens as
+math, and a double-click returns to the formula source. Footnotes use ordinary
+`[^n]` references and definitions; underline uses portable inline `<u>` HTML;
+wiki links stay readable as `[[Note]]` and resolve to a relative `Note.md`.
 
 ## 4.7 Borrowed from livemark
 

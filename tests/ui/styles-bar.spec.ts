@@ -86,7 +86,7 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
   await expect(bar).toBeVisible()
 })
 
-test('every styles-bar menu mirrors Bear and every More command is available', async ({ page }) => {
+test('every styles-bar menu mirrors Bear and every visible command is available', async ({ page }) => {
   const bar = page.getByLabel('Styles bar')
   const headersTrigger = bar.getByRole('button', { name: 'Headers', exact: true })
 
@@ -110,9 +110,9 @@ test('every styles-bar menu mirrors Bear and every More command is available', a
     .resolves.toEqual(['List', 'Ordered List', 'Block Quote', 'Todo›', 'Callout›', 'Separator'])
   await lists.locator('.styles-nested-trigger').filter({ hasText: 'Todo' }).hover()
   await expect(lists.getByRole('button', { name: 'Todo', exact: true })).toHaveCount(2)
-  await expect(lists.getByRole('button', { name: 'Mark as Completed' })).toBeDisabled()
+  await expect(lists.getByRole('button', { name: 'Mark as Completed' })).toBeEnabled()
   await lists.locator('.styles-nested-trigger').filter({ hasText: 'Callout' }).hover()
-  await expect(lists.getByRole('button', { name: 'Caution' })).toBeDisabled()
+  await expect(lists.getByRole('button', { name: 'Caution' })).toBeEnabled()
 
   await bar.getByRole('button', { name: 'Highlight', exact: true }).click()
   const highlight = bar.locator('.styles-menu.open')
@@ -120,7 +120,9 @@ test('every styles-bar menu mirrors Bear and every More command is available', a
     'Default', 'Green', 'Red', 'Blue', 'Yellow', 'Purple',
   ])
   await expect(highlight.getByRole('button', { name: 'Default' })).toBeEnabled()
-  await expect(highlight.getByRole('button', { name: 'Green' })).toBeDisabled()
+  for (const name of ['Default', 'Green', 'Red', 'Blue', 'Yellow', 'Purple']) {
+    await expect(highlight.getByRole('button', { name })).toBeEnabled()
+  }
 
   await bar.getByRole('button', { name: 'More', exact: true }).click()
   const more = bar.locator('.styles-menu.open')
@@ -135,6 +137,153 @@ test('every styles-bar menu mirrors Bear and every More command is available', a
 
   await page.locator('.workspace-library-head').click()
   await expect(bar.locator('.styles-menu.open')).toHaveCount(0)
+})
+
+test('Todo, Callout, and every highlighter item perform persistent edits', async ({ page }) => {
+  let bar = page.getByLabel('Styles bar', { exact: true })
+  const chooseListNested = async (group: string, item: string): Promise<void> => {
+    await bar.getByRole('button', { name: 'Lists', exact: true }).click()
+    const menu = bar.locator('.styles-menu.open')
+    await menu.locator('.styles-nested-trigger').filter({ hasText: group }).hover()
+    await menu.locator('.styles-nested-menu').getByRole('button', { name: item, exact: true }).click()
+  }
+  const reset = async (): Promise<void> => {
+    await page.reload()
+    await page.waitForFunction(() => window.simplemark !== undefined)
+    bar = page.getByLabel('Styles bar', { exact: true })
+  }
+
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('finish parity')
+  await bar.getByRole('button', { name: 'Todo', exact: true }).click()
+  await expect.poll(() => markdown(page)).toMatch(/[*-] \[ \] finish parity/)
+  await chooseListNested('Todo', 'Mark as Completed')
+  await expect.poll(() => markdown(page)).toMatch(/[*-] \[x\] finish parity/)
+  await chooseListNested('Todo', 'Toggle')
+  await expect.poll(() => markdown(page)).toMatch(/[*-] \[ \] finish parity/)
+  await chooseListNested('Todo', 'Mark as Completed')
+  await chooseListNested('Todo', 'Mark as Incomplete')
+  await expect.poll(() => markdown(page)).toMatch(/[*-] \[ \] finish parity/)
+
+  for (const [name, type] of [
+    ['Note', 'note'], ['Tip', 'tip'], ['Important', 'important'],
+    ['Warning', 'warning'], ['Caution', 'caution'],
+  ] as const) {
+    await reset()
+    await page.evaluate(() => window.simplemark!.editor.focusEnd())
+    await page.keyboard.press('Enter')
+    await page.keyboard.type(`portable ${type}`)
+    await chooseListNested('Callout', name)
+    await expect.poll(() => markdown(page)).toContain(`> [!${type.toUpperCase()}]`)
+    await expect(page.locator(`${editor} .callout-${type}`)).toContainText(`portable ${type}`)
+  }
+
+  for (const [name, source, color] of [
+    ['Default', '==marked==', 'default'],
+    ['Green', '=={green}marked==', 'green'],
+    ['Red', '=={red}marked==', 'red'],
+    ['Blue', '=={blue}marked==', 'blue'],
+    ['Yellow', '=={yellow}marked==', 'yellow'],
+    ['Purple', '=={purple}marked==', 'purple'],
+  ] as const) {
+    await reset()
+    await selectNewWord(page, 'marked')
+    await bar.getByRole('button', { name: 'Highlight', exact: true }).click()
+    await bar.locator('.styles-menu.open').getByRole('button', { name, exact: true }).click()
+    await expect.poll(() => markdown(page)).toContain(source)
+    await expect(page.locator(`${editor} mark[data-highlight-color="${color}"]`)).toContainText('marked')
+  }
+})
+
+test('every heading, primary list, inline, object, and hide control performs its action', async ({ page }) => {
+  let bar = page.getByLabel('Styles bar', { exact: true })
+  const reset = async (): Promise<void> => {
+    await page.reload()
+    await page.waitForFunction(() => window.simplemark !== undefined)
+    bar = page.getByLabel('Styles bar', { exact: true })
+  }
+  const freshLine = async (text: string): Promise<void> => {
+    await page.evaluate(() => window.simplemark!.editor.focusEnd())
+    await page.keyboard.press('Enter')
+    await page.keyboard.type(text)
+  }
+
+  for (let level = 1; level <= 6; level += 1) {
+    await reset()
+    await freshLine(`heading ${level}`)
+    await bar.getByRole('button', { name: 'Headers', exact: true }).click()
+    await bar.locator('.styles-menu.open').getByRole('button', { name: `Heading ${level}` }).click()
+    await expect.poll(() => markdown(page)).toMatch(new RegExp(`^${'#'.repeat(level)} heading ${level}$`, 'm'))
+    await expect(page.locator(`${editor} h${level}`, { hasText: `heading ${level}` })).toBeVisible()
+  }
+
+  for (const [name, text, source] of [
+    ['List', 'bullet item', /[*-] bullet item/],
+    ['Ordered List', 'numbered item', /1\. numbered item/],
+    ['Block Quote', 'quoted item', /> quoted item/],
+  ] as const) {
+    await reset()
+    await freshLine(text)
+    await bar.getByRole('button', { name: 'Lists', exact: true }).click()
+    await bar.locator('.styles-menu.open').getByRole('button', { name, exact: true }).click()
+    await expect.poll(() => markdown(page)).toMatch(source)
+  }
+
+  await reset()
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await bar.getByRole('button', { name: 'Lists', exact: true }).click()
+  await bar.locator('.styles-menu.open').getByRole('button', { name: 'Separator' }).click()
+  await expect.poll(() => markdown(page)).toMatch(/\n\*\*\*\n/)
+
+  await reset()
+  await selectNewWord(page, 'italic text')
+  await bar.getByRole('button', { name: 'Italic', exact: true }).click()
+  await expect.poll(() => markdown(page)).toContain('*italic text*')
+
+  await reset()
+  await selectNewWord(page, 'linked text')
+  page.once('dialog', (dialog) => void dialog.accept('https://example.com/reference'))
+  await bar.getByRole('button', { name: 'Link', exact: true }).click()
+  await expect.poll(() => markdown(page)).toContain('[linked text](https://example.com/reference)')
+
+  await reset()
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await bar.getByRole('button', { name: 'Tables', exact: true }).click()
+  await expect(page.locator(`${editor} table`)).toBeVisible()
+  await expect.poll(() => markdown(page)).toMatch(/\| :----- \| :----- \| :----- \|/)
+
+  const beforeHide = await markdown(page)
+  await page.getByRole('button', { name: 'Text formatting' }).click()
+  await page.getByRole('button', { name: 'Hide styles bar', exact: true }).click()
+  await expect(bar).toBeHidden()
+  await expect.poll(() => markdown(page)).toBe(beforeHide)
+})
+
+test('Move Completed to Bottom reorders only the active task list', async ({ page }) => {
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.evaluate(() => navigator.clipboard.writeText('- [x] done first\n- [ ] open second\n- [x] done third'))
+  await page.keyboard.press('ControlOrMeta+v')
+  await expect.poll(() => markdown(page)).toMatch(/[*-] \[x\] done third/)
+  await page.locator(`${editor} li p`, { hasText: 'done third' }).click({ position: { x: 70, y: 8 } })
+  await page.keyboard.press('End')
+
+  const bar = page.getByLabel('Styles bar', { exact: true })
+  await bar.getByRole('button', { name: 'Lists', exact: true }).click()
+  const menu = bar.locator('.styles-menu.open')
+  await menu.locator('.styles-nested-trigger').filter({ hasText: 'Todo' }).hover()
+  await menu.locator('.styles-nested-menu').getByRole('button', { name: 'Move Completed to Bottom' }).click()
+
+  await expect.poll(async () => {
+    const current = await markdown(page)
+    return current.indexOf('open second') < current.indexOf('done first')
+      && current.indexOf('done first') < current.indexOf('done third')
+  }).toBe(true)
+  const source = await markdown(page)
+  expect(source.indexOf('open second')).toBeLessThan(source.indexOf('done first'))
+  expect(source.indexOf('done first')).toBeLessThan(source.indexOf('done third'))
 })
 
 test('every More formatting command changes portable Markdown', async ({ page }) => {
@@ -195,8 +344,8 @@ test('every More formatting command changes portable Markdown', async ({ page })
   await expect(page.locator(`${editor} .math-block .katex`).last()).toBeVisible()
 })
 
-test('More-command Markdown reopens as rendered, editable content', async ({ page }) => {
-  const note = '# Loaded\n\n<u>underlined</u> and $$x+y$$ and [[Related Note]] with note[^1].\n\n[^1]: body\n'
+test('bar-created portable extensions reopen as rendered, editable content', async ({ page }) => {
+  const note = '# Loaded\n\n<u>underlined</u> and $$x+y$$ and [[Related Note]] with note[^1] and =={green}green==.\n\n> [!TIP]\n> Portable callout.\n\n- [x] Finished\n\n[^1]: body\n'
   await page.addInitScript((content: string) => {
     window.showOpenFilePicker = async () => {
       const root = await navigator.storage.getDirectory()
@@ -215,10 +364,16 @@ test('More-command Markdown reopens as rendered, editable content', async ({ pag
   await expect(page.locator(`${editor} .inline-math .katex`)).toBeVisible()
   await expect(page.locator(`${editor} a.wiki-link`, { hasText: 'Related Note' })).toBeVisible()
   await expect(page.locator(`${editor} sup[data-type="footnote_reference"]`)).toBeVisible()
+  await expect(page.locator(`${editor} mark[data-highlight-color="green"]`)).toContainText('green')
+  await expect(page.locator(`${editor} .callout-tip`)).toContainText('Portable callout.')
+  await expect(page.locator(`${editor} li[data-checked="true"]`)).toContainText('Finished')
   await expect.poll(() => markdown(page)).toContain('<u>underlined</u>')
   await expect.poll(() => markdown(page)).toContain('$$x+y$$')
   await expect.poll(() => markdown(page)).toContain('[[Related Note]]')
   await expect.poll(() => markdown(page)).toContain('[^1]: body')
+  await expect.poll(() => markdown(page)).toContain('=={green}green==')
+  await expect.poll(() => markdown(page)).toContain('> [!TIP]')
+  await expect.poll(() => markdown(page)).toContain('- [x] Finished')
 })
 
 test('the styles-bar preference survives reload without changing source', async ({ page }) => {

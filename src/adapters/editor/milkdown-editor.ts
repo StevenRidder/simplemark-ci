@@ -32,7 +32,9 @@ import {
   footnoteReferenceSchema,
 } from '@milkdown/kit/preset/gfm'
 import { $useKeymap, $view, callCommand, getMarkdown } from '@milkdown/kit/utils'
+import { Fragment } from '@milkdown/kit/prose/model'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { toggleMark } from '@milkdown/kit/prose/commands'
 import { Selection } from '@milkdown/kit/prose/state'
 import {
   addRowAfter,
@@ -52,6 +54,8 @@ import { looksLikeMermaid, looksLikeSvg } from '../../domain/index.js'
 import { AssetImageNodeView } from './asset-image-node-view.js'
 import { DiagramNodeView } from './diagram-node-view.js'
 import {
+  HIGHLIGHT_COLOURS,
+  type HighlightColour,
   highlightInputRule,
   highlightRemark,
   highlightSchema,
@@ -97,6 +101,11 @@ export type EditorCommandName =
   | 'underline'
   | 'strikethrough'
   | 'highlight'
+  | 'highlightGreen'
+  | 'highlightRed'
+  | 'highlightBlue'
+  | 'highlightYellow'
+  | 'highlightPurple'
   | 'inlineCode'
   | 'footnote'
   | 'inlineMath'
@@ -111,6 +120,15 @@ export type EditorCommandName =
   | 'bulletList'
   | 'orderedList'
   | 'taskList'
+  | 'toggleTask'
+  | 'completeTask'
+  | 'incompleteTask'
+  | 'moveCompletedTasks'
+  | 'calloutNote'
+  | 'calloutTip'
+  | 'calloutImportant'
+  | 'calloutWarning'
+  | 'calloutCaution'
   | 'table'
   | 'undo'
   | 'redo'
@@ -300,7 +318,22 @@ export class MilkdownEditor {
         this.editor.action(callCommand(toggleStrikethroughCommand.key))
         return
       case 'highlight':
-        this.editor.action(callCommand(toggleHighlightCommand.key))
+        this.setHighlight('default')
+        return
+      case 'highlightGreen':
+        this.setHighlight('green')
+        return
+      case 'highlightRed':
+        this.setHighlight('red')
+        return
+      case 'highlightBlue':
+        this.setHighlight('blue')
+        return
+      case 'highlightYellow':
+        this.setHighlight('yellow')
+        return
+      case 'highlightPurple':
+        this.setHighlight('purple')
         return
       case 'inlineCode':
         this.editor.action(callCommand(toggleInlineCodeCommand.key))
@@ -361,6 +394,33 @@ export class MilkdownEditor {
         return
       case 'taskList':
         this.toggleTaskList()
+        return
+      case 'toggleTask':
+        this.setTaskState('toggle')
+        return
+      case 'completeTask':
+        this.setTaskState(true)
+        return
+      case 'incompleteTask':
+        this.setTaskState(false)
+        return
+      case 'moveCompletedTasks':
+        this.moveCompletedTasks()
+        return
+      case 'calloutNote':
+        this.setCallout('note')
+        return
+      case 'calloutTip':
+        this.setCallout('tip')
+        return
+      case 'calloutImportant':
+        this.setCallout('important')
+        return
+      case 'calloutWarning':
+        this.setCallout('warning')
+        return
+      case 'calloutCaution':
+        this.setCallout('caution')
         return
       case 'table':
         this.editor.action(callCommand(insertTableCommand.key))
@@ -1086,6 +1146,83 @@ export class MilkdownEditor {
         )
         return
       }
+    })
+  }
+
+  /** Applies a persistent highlight colour using readable `=={colour}text==` source. */
+  private setHighlight(color: HighlightColour): void {
+    if (!HIGHLIGHT_COLOURS.includes(color)) return
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const command = toggleMark(highlightSchema.type(ctx), { color })
+      command(view.state, view.dispatch)
+      view.focus()
+    })
+  }
+
+  /** Changes the task under the caret; outside a task this deliberately does nothing. */
+  private setTaskState(state: boolean | 'toggle'): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const { $from } = view.state.selection
+      for (let depth = $from.depth; depth > 0; depth -= 1) {
+        const node = $from.node(depth)
+        if (node.type.name !== 'list_item' || node.attrs['checked'] == null) continue
+        const checked = state === 'toggle' ? !Boolean(node.attrs['checked']) : state
+        view.dispatch(view.state.tr.setNodeMarkup($from.before(depth), undefined, { ...node.attrs, checked }))
+        view.focus()
+        return
+      }
+    })
+  }
+
+  /** Stable-partitions the current task list so unfinished work remains first. */
+  private moveCompletedTasks(): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const candidates: Array<{ node: ProseNode; pos: number }> = []
+      view.state.doc.descendants((node, pos) => {
+        if (!['bullet_list', 'ordered_list'].includes(node.type.name)) return
+        const hasTasks = node.content.content.some((item) => item.attrs['checked'] != null)
+        if (hasTasks) candidates.push({ node, pos })
+      })
+      const selection = view.state.selection.from
+      const active = candidates.filter(({ node, pos }) => selection >= pos && selection <= pos + node.nodeSize).at(-1)
+        ?? (candidates.length === 1 ? candidates[0] : undefined)
+      if (active === undefined) return
+      const items: ProseNode[] = []
+      active.node.forEach((item) => items.push(item))
+      const ordered = [
+        ...items.filter((item) => item.attrs['checked'] !== true),
+        ...items.filter((item) => item.attrs['checked'] === true),
+      ]
+      if (ordered.every((item, index) => item === items[index])) return
+      const replacement = active.node.copy(Fragment.fromArray(ordered))
+      const transaction = view.state.tr.replaceWith(
+        active.pos,
+        active.pos + active.node.nodeSize,
+        replacement,
+      )
+      view.dispatch(transaction.setSelection(Selection.near(transaction.doc.resolve(active.pos + 2))))
+      view.focus()
+    })
+  }
+
+  /** Wraps the current top-level block in a GitHub-compatible callout, or rethemes an existing one. */
+  private setCallout(calloutType: 'note' | 'tip' | 'important' | 'warning' | 'caution'): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const { $from } = view.state.selection
+      if ($from.depth < 1) return
+      const node = $from.node(1)
+      const from = $from.before(1)
+      const type = calloutSchema.type(ctx)
+      const replacement = node.type === type
+        ? type.create({ ...node.attrs, calloutType }, node.content, node.marks)
+        : type.create({ calloutType }, Fragment.from(node))
+      const transaction = view.state.tr.replaceWith(from, from + node.nodeSize, replacement)
+      view.dispatch(transaction.setSelection(Selection.near(transaction.doc.resolve(from + 2))))
+      view.focus()
     })
   }
 

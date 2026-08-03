@@ -382,16 +382,20 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
       nestedMenu('Todo', (todo) => {
         todo.append(
           command('Todo', 'taskList'),
-          unavailable('Toggle', 'task completion commands are not in this build'),
-          unavailable('Mark as Completed', 'task completion commands are not in this build'),
-          unavailable('Mark as Incomplete', 'task completion commands are not in this build'),
-          unavailable('Move Completed to Bottom', 'task reordering is not in this build'),
+          command('Toggle', 'toggleTask'),
+          command('Mark as Completed', 'completeTask'),
+          command('Mark as Incomplete', 'incompleteTask'),
+          command('Move Completed to Bottom', 'moveCompletedTasks'),
         )
       }),
       nestedMenu('Callout', (callout) => {
-        for (const kind of ['Note', 'Tip', 'Important', 'Warning', 'Caution']) {
-          callout.append(unavailable(kind, 'portable callout source is not defined yet'))
-        }
+        callout.append(
+          command('Note', 'calloutNote'),
+          command('Tip', 'calloutTip'),
+          command('Important', 'calloutImportant'),
+          command('Warning', 'calloutWarning'),
+          command('Caution', 'calloutCaution'),
+        )
       }),
       command('Separator', 'divider'),
     )
@@ -399,14 +403,18 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
   lists.classList.add('styles-menu-wide', 'styles-menu-lists')
   const highlight = menu('Highlight', highlightGlyph, (panel) => {
     panel.append(command('Default', 'highlight'))
-    for (const colour of ['Green', 'Red', 'Blue', 'Yellow', 'Purple']) {
-      panel.append(unavailable(colour, 'Markdown highlight colours are not portable'))
-    }
+    panel.append(
+      command('Green', 'highlightGreen'),
+      command('Red', 'highlightRed'),
+      command('Blue', 'highlightBlue'),
+      command('Yellow', 'highlightYellow'),
+      command('Purple', 'highlightPurple'),
+    )
   })
   highlight.classList.add('styles-menu-wide', 'styles-menu-highlight')
   const more = menu('More', moreGlyph, (panel) => {
-    // Bear's exact primary menu. Unsupported source formats remain visible but
-    // honestly disabled rather than silently acquiring proprietary Markdown.
+    // Bear's exact primary menu. Every visible item routes through the shared
+    // command registry; there are no decorative or web-only controls.
     panel.append(
       command('Underline', 'underline'),
       command('Strikethrough', 'strikethrough'),

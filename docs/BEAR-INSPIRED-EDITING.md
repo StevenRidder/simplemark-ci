@@ -165,18 +165,38 @@ insert one.
 
 ### SimpleMark styles bar
 
-Implement the following initial subset, in Bear's observed order:
+Implement the following bar, in Bear's observed order:
 
 ```text
 Headers | Todo | Lists | Bold | Italic | Highlight | Link | Tables | Image/File | More
 ```
 
-Default `==highlight==` is portable and enabled. Colour highlights, underline, wiki links, callouts,
-footnotes, math insertion, dates, and rich attachments remain visible but disabled until their
-Markdown storage and byte-preserving edit paths are specified. This matches Bear's discoverable
-disabled-state behavior without inventing proprietary source. The bar is optional and remembers the
-user's local preference. On narrow windows it collapses lower-priority controls into **More** rather
-than wrapping onto a second row.
+No item in this bar is decorative. Default highlight uses `==text==`; colour highlights use the
+readable extension `=={green}text==`; callouts use GitHub's `> [!TYPE]` blockquote syntax; todos use
+GFM task items; and More uses portable Markdown or inline HTML where Markdown has no equivalent.
+The bar is optional and remembers the user's local preference. On narrow windows it collapses
+lower-priority controls into **More** rather than wrapping onto a second row.
+
+### Verified Bear-parity matrix
+
+The Bear macOS style bar and Format menu were inspected as the behavioral oracle. SimpleMark keeps
+Bear's order and result while routing every item through the shared command registry:
+
+| Surface | Items exercised | Durable result |
+|---|---|---|
+| Headers | Heading 1 through Heading 6 | `#` through `######` |
+| Todo | Todo, Toggle, Complete, Incomplete, completed-last | GFM `- [ ]` / `- [x]` |
+| Lists | List, ordered list, block quote, separator | CommonMark/GFM |
+| Callout | Note, Tip, Important, Warning, Caution | GitHub `> [!TYPE]` |
+| Inline | Bold, italic, link | CommonMark |
+| Highlight | Default, green, red, blue, yellow, purple | `==text==` / `=={color}text==` |
+| Object | Table, Image/File | GFM table and portable relative reference |
+| More | Underline, strike, footnote, code, code block, math, math block, wiki link | Portable source that reopens rendered |
+| Palette | Hide, show, drag, persist, double-click reset | Local UI preference; source unchanged |
+
+Automated UI coverage must click the bar item itself—not call the editor adapter directly—and assert
+both rendered output and serialized Markdown. The installed Tauri build is then checked manually for
+the native menu dispatch, picker, palette movement, and hide/show behavior.
 
 The macOS menu and styles bar must call the same application commands. The browser and Tauri shells
 must render the same bar and table behavior; Tauri supplies native menu wiring, not a second editor.

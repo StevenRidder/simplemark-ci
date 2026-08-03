@@ -31,6 +31,11 @@ export type DocumentCommandId =
   | 'underline'
   | 'strikethrough'
   | 'highlight'
+  | 'highlightGreen'
+  | 'highlightRed'
+  | 'highlightBlue'
+  | 'highlightYellow'
+  | 'highlightPurple'
   | 'inlineCode'
   | 'footnote'
   | 'inlineMath'
@@ -41,6 +46,15 @@ export type DocumentCommandId =
   | 'bulletList'
   | 'orderedList'
   | 'taskList'
+  | 'toggleTask'
+  | 'completeTask'
+  | 'incompleteTask'
+  | 'moveCompletedTasks'
+  | 'calloutNote'
+  | 'calloutTip'
+  | 'calloutImportant'
+  | 'calloutWarning'
+  | 'calloutCaution'
   // Blocks and objects
   | 'table'
   | 'insertAsset'
@@ -108,6 +122,11 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
     accelerator: 'CmdOrCtrl+Shift+X',
   },
   highlight: { id: 'highlight', label: 'Highlight', target: 'editor', accelerator: 'CmdOrCtrl+Shift+H' },
+  highlightGreen: { id: 'highlightGreen', label: 'Green', target: 'editor' },
+  highlightRed: { id: 'highlightRed', label: 'Red', target: 'editor' },
+  highlightBlue: { id: 'highlightBlue', label: 'Blue', target: 'editor' },
+  highlightYellow: { id: 'highlightYellow', label: 'Yellow', target: 'editor' },
+  highlightPurple: { id: 'highlightPurple', label: 'Purple', target: 'editor' },
   inlineCode: { id: 'inlineCode', label: 'Inline Code', target: 'editor', accelerator: 'CmdOrCtrl+E' },
   footnote: { id: 'footnote', label: 'Footnote', target: 'editor' },
   inlineMath: { id: 'inlineMath', label: 'Math', target: 'editor' },
@@ -118,6 +137,15 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   bulletList: { id: 'bulletList', label: 'Bulleted List', target: 'editor', accelerator: 'CmdOrCtrl+Shift+8' },
   orderedList: { id: 'orderedList', label: 'Numbered List', target: 'editor', accelerator: 'CmdOrCtrl+Shift+9' },
   taskList: { id: 'taskList', label: 'Todo', target: 'editor', accelerator: 'CmdOrCtrl+Shift+T' },
+  toggleTask: { id: 'toggleTask', label: 'Toggle', target: 'editor' },
+  completeTask: { id: 'completeTask', label: 'Mark as Completed', target: 'editor' },
+  incompleteTask: { id: 'incompleteTask', label: 'Mark as Incomplete', target: 'editor' },
+  moveCompletedTasks: { id: 'moveCompletedTasks', label: 'Move Completed to Bottom', target: 'editor' },
+  calloutNote: { id: 'calloutNote', label: 'Note', target: 'editor' },
+  calloutTip: { id: 'calloutTip', label: 'Tip', target: 'editor' },
+  calloutImportant: { id: 'calloutImportant', label: 'Important', target: 'editor' },
+  calloutWarning: { id: 'calloutWarning', label: 'Warning', target: 'editor' },
+  calloutCaution: { id: 'calloutCaution', label: 'Caution', target: 'editor' },
 
   table: { id: 'table', label: 'Table', target: 'editor' },
   insertAsset: { id: 'insertAsset', label: 'Insert Image…', target: 'shell' },
@@ -195,7 +223,7 @@ export const MENUS: readonly MenuSpec[] = [
         'italic',
         'underline',
         'strikethrough',
-        'highlight',
+        { label: 'Highlighter', items: ['highlight', 'highlightGreen', 'highlightRed', 'highlightBlue', 'highlightYellow', 'highlightPurple'] },
         'inlineCode',
         'footnote',
         'inlineMath',
@@ -203,7 +231,8 @@ export const MENUS: readonly MenuSpec[] = [
         'wikiLink',
       ],
       [
-        { label: 'List', items: ['bulletList', 'orderedList', 'taskList'] },
+        { label: 'List', items: ['bulletList', 'orderedList', 'taskList', 'toggleTask', 'completeTask', 'incompleteTask', 'moveCompletedTasks'] },
+        { label: 'Callout', items: ['calloutNote', 'calloutTip', 'calloutImportant', 'calloutWarning', 'calloutCaution'] },
         'table',
         'quote',
         'codeBlock',

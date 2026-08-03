@@ -63,6 +63,25 @@ test('a selected non-image is a normal portable Markdown link', async ({ page })
   await expect(page.locator(`${editor} a`, { hasText: 'Decision PDF' })).toHaveAttribute('href', 'assets/decision.pdf')
 })
 
+test('the floating Image/File button runs the same portable picker path', async ({ page }) => {
+  const answers = ['assets/style-bar.png', 'Style bar image']
+  const answerPrompt = (dialog: import('@playwright/test').Dialog): void => {
+    void dialog.accept(answers.shift() ?? '')
+  }
+  page.on('dialog', answerPrompt)
+  const chooser = page.waitForEvent('filechooser')
+  try {
+    await page.getByLabel('Styles bar').getByRole('button', { name: 'Insert image or link file' }).click()
+    await (await chooser).setFiles({
+      name: 'style-bar.png', mimeType: 'image/png', buffer: Buffer.from('not-an-image'),
+    })
+    await expect.poll(() => answers.length).toBe(0)
+    await expect.poll(() => markdown(page)).toContain('![Style bar image](assets/style-bar.png)')
+  } finally {
+    page.off('dialog', answerPrompt)
+  }
+})
+
 test('clicking a rendered web link opens it instead of only moving the caret', async ({ page }) => {
   await page.evaluate(() => {
     const opened: string[] = []

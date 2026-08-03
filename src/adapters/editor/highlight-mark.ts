@@ -21,10 +21,15 @@ import type {
 } from 'mdast-util-from-markdown'
 import type { Parent, PhrasingContent } from 'mdast'
 import type { Processor } from 'unified'
+import { visit } from 'unist-util-visit'
+
+export const HIGHLIGHT_COLOURS = ['default', 'green', 'red', 'blue', 'yellow', 'purple'] as const
+export type HighlightColour = (typeof HIGHLIGHT_COLOURS)[number]
 
 declare module 'mdast' {
   interface Highlight extends Omit<Parent, 'children'> {
     type: 'highlight'
+    color?: HighlightColour
     children: PhrasingContent[]
   }
 
@@ -181,10 +186,16 @@ const withoutHighlight: ConstructName[] = [
   'titleApostrophe',
 ]
 
-function serializeHighlight(node: { children: unknown[] }, _: Parent, state: MarkdownState, info: Info): string {
+function serializeHighlight(
+  node: { children: unknown[]; color?: HighlightColour },
+  _: Parent,
+  state: MarkdownState,
+  info: Info,
+): string {
   const tracker = state.createTracker(info)
   const exit = state.enter(highlight as never)
-  let value = tracker.move('==')
+  const color = HIGHLIGHT_COLOURS.includes(node.color ?? 'default') ? (node.color ?? 'default') : 'default'
+  let value = tracker.move(color === 'default' ? '==' : `=={${color}}`)
   value += tracker.move(
     state.containerPhrasing(node as never, {
       before: value,
@@ -197,7 +208,7 @@ function serializeHighlight(node: { children: unknown[] }, _: Parent, state: Mar
   return value
 }
 
-function highlightRemarkPlugin(this: Processor): void {
+function highlightRemarkPlugin(this: Processor): ((tree: Parent) => void) {
   const data = this.data() as Record<string, unknown>
   const add = (field: string, value: unknown): void => {
     const existing = data[field]
@@ -209,17 +220,32 @@ function highlightRemarkPlugin(this: Processor): void {
     unsafe: [{ character: '=', inConstruct: 'phrasing', notInConstruct: withoutHighlight }],
     handlers: { [highlight]: serializeHighlight } as never,
   })
+  return (tree) => {
+    visit(tree, highlight, (node: { children?: PhrasingContent[]; color?: HighlightColour }) => {
+      const first = node.children?.[0]
+      if (first?.type !== 'text') return
+      const match = /^\{(green|red|blue|yellow|purple)\}/.exec(first.value)
+      if (match === null) return
+      node.color = match[1] as HighlightColour
+      first.value = first.value.slice(match[0].length)
+      if (first.value === '') node.children?.shift()
+    })
+  }
 }
 
 export const highlightRemark = $remark('simplemarkHighlightRemark', () => highlightRemarkPlugin)
 
 export const highlightSchema = $markSchema('highlight', () => ({
-  parseDOM: [{ tag: 'mark' }],
-  toDOM: () => ['mark', 0],
+  attrs: { color: { default: 'default' } },
+  parseDOM: [{
+    tag: 'mark',
+    getAttrs: (dom) => ({ color: (dom as HTMLElement).dataset['highlightColor'] ?? 'default' }),
+  }],
+  toDOM: (mark) => ['mark', { 'data-highlight-color': mark.attrs['color'] ?? 'default' }, 0],
   parseMarkdown: {
     match: (node) => node.type === highlight,
     runner: (state, node, markType) => {
-      state.openMark(markType)
+      state.openMark(markType, { color: (node as { color?: HighlightColour }).color ?? 'default' })
       state.next(node.children)
       state.closeMark(markType)
     },
@@ -227,7 +253,7 @@ export const highlightSchema = $markSchema('highlight', () => ({
   toMarkdown: {
     match: (mark) => mark.type.name === highlight,
     runner: (state, mark) => {
-      state.withMark(mark, highlight)
+      state.withMark(mark, highlight, undefined, { color: mark.attrs['color'] ?? 'default' })
     },
   },
 }))

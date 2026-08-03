@@ -204,7 +204,10 @@ button[disabled] {
    It is deliberately a shell control, never a rich-text representation. */
 .styles-bar {
   position: absolute;
-  z-index: 19;
+  /* The nested Callout/Todo menus extend beyond the palette. Keep the entire
+     palette stack above the editor hit layer so a visible submenu can never
+     be intercepted by the document underneath it. */
+  z-index: 60;
   left: 50%;
   bottom: 18px;
   display: flex;
@@ -2675,3 +2678,18 @@ section.editor::-webkit-scrollbar {
 .milkdown .ProseMirror .callout-important { --callout-accent: #a3599e; }
 .milkdown .ProseMirror .callout-warning { --callout-accent: var(--accent); }
 .milkdown .ProseMirror .callout-caution { --callout-accent: #c4554d; }
+
+/* Bear exposes six highlighter choices. The colour is document state, not a
+   decoration: the mark carries data-highlight-color and serialises to the
+   readable `=={colour}text==` extension used by the editor adapter. */
+.milkdown .ProseMirror mark {
+  color: inherit;
+  background: #f6dc83;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.milkdown .ProseMirror mark[data-highlight-color='green'] { background: #bfe4bd; }
+.milkdown .ProseMirror mark[data-highlight-color='red'] { background: #f2b8b5; }
+.milkdown .ProseMirror mark[data-highlight-color='blue'] { background: #b8d8f1; }
+.milkdown .ProseMirror mark[data-highlight-color='yellow'] { background: #f6dc83; }
+.milkdown .ProseMirror mark[data-highlight-color='purple'] { background: #d8c1e8; }

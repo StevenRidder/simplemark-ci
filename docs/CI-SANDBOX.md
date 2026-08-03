@@ -114,12 +114,40 @@ After the PR merges, refresh the dispatch baseline:
 scripts/ci-sandbox.sh refresh-main
 ```
 
+The commands above are the loop, not the whole interface. Run the script with no
+arguments for the full list — `wait`, `status`, `sync-main`, and `delete` are not
+described here on purpose, because a second copy of a command list is a copy that
+goes stale:
+
+```bash
+scripts/ci-sandbox.sh
+```
+
 ## Why `workflow_dispatch` is mandatory
 
 `ci-sandbox.sh push` dispatches each workflow in `SANDBOX_WORKFLOWS` by name and
 then gates on `workflow_dispatch` runs whose `headSha` equals the exact local SHA.
 A workflow without `workflow_dispatch:` can never be dispatched, so the proof never
 completes and `prove` refuses to stamp. `ci-sandbox.sh doctor` fails on this.
+
+## Why only `verify.yml` is dispatched here
+
+`SANDBOX_WORKFLOWS` defaults to `verify.yml` alone, even though
+[`.github/workflows/native-testbuild.yml`](../.github/workflows/native-testbuild.yml)
+also lives on `main`. That is deliberate, and it is not a gap waiting to be filled.
+
+Actions artifacts are readable by anyone who can read the repository, and this
+sandbox is public. [`docs/RELEASE-CONTRACT.md`](RELEASE-CONTRACT.md) §2 requires
+pull-request installers to stay private to repository collaborators, so the native
+build runs on the **canonical** repo through its own `pull_request` trigger and
+never here. Adding it to `SANDBOX_WORKFLOWS` would publish unsigned installers to
+anyone who asked for them.
+
+The trade is explicit: those four native legs are the one part of SimpleMark's CI
+that does spend private Actions minutes, because free minutes and private artifacts
+are not available at the same time. Nothing else about the sandbox path changes —
+`verify.yml` is still what `prove` reads, and the native build is not a required
+status for landing.
 
 ## Current state
 

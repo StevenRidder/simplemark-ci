@@ -45,7 +45,7 @@ export class SvgRenderer implements DiagramRenderer {
         return { ok: false, message: 'Sanitisation removed the <svg> root element' }
       }
 
-      return { ok: true, svg: clean }
+      return { ok: true, markup: clean }
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     }

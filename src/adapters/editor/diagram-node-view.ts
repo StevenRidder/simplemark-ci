@@ -191,7 +191,7 @@ export class DiagramNodeView implements NodeView {
     if (token !== this.#renderToken) return
 
     if (result.ok) {
-      this.#render.innerHTML = result.svg
+      this.#render.innerHTML = result.markup
       this.#error.hidden = true
       return
     }

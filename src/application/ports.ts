@@ -71,11 +71,14 @@ export interface AssetReferencePort {
 
 /** The outcome of rendering diagram source. Failure is a value, never a throw. */
 export type RenderedDiagram =
-  | { readonly ok: true; readonly svg: string }
+  | { readonly ok: true; readonly markup: string }
   | { readonly ok: false; readonly message: string }
 
 /**
- * Turns diagram source into safe, embeddable SVG.
+ * Turns block source into safe, embeddable markup — SVG for diagram
+ * languages, sanitised HTML for the paste-exhaust renderers (ANSI, diff,
+ * JSON, file trees). One contract either way: validate, then return inert
+ * markup or a message; never throw.
  *
  * A port rather than a direct import so the editor adapter never depends on
  * Mermaid: adapters do not import one another (ADR-0001 §Enforcement 3), and

@@ -67,7 +67,7 @@ export class MermaidRenderer implements DiagramRenderer {
       // render() has a chance to leave orphaned nodes in the document.
       await mermaid.parse(trimmed)
       const { svg } = await mermaid.render(`simplemark-diagram-${(renderSequence += 1)}`, trimmed)
-      return { ok: true, svg }
+      return { ok: true, markup: svg }
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     }

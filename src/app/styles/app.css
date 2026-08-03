@@ -1365,4 +1365,55 @@ section.editor {
 .milkdown .ProseMirror .sm-find-active {
   outline: 2px solid var(--accent);
   outline-offset: 0;
+
+/* ---- paste-exhaust cards (RENDERERS.md, the exhaust tier) ---- */
+
+.text-card {
+  margin: 0;
+  padding: 14px 16px;
+  font: 0.82rem/1.55 ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+}
+
+/* ANSI: the 8 + bright foregrounds, muted like a calm terminal. */
+.ansi-1 { font-weight: 700; }
+.ansi-2 { opacity: 0.65; }
+.ansi-3 { font-style: italic; }
+.ansi-4 { text-decoration: underline; }
+.ansi-30, .ansi-90 { color: var(--ink-3); }
+.ansi-31, .ansi-91 { color: #c4554d; }
+.ansi-32, .ansi-92 { color: #4d8a57; }
+.ansi-33, .ansi-93 { color: var(--accent); }
+.ansi-34, .ansi-94 { color: #4a76b8; }
+.ansi-35, .ansi-95 { color: #a3599e; }
+.ansi-36, .ansi-96 { color: #3d8f8a; }
+.ansi-37, .ansi-97 { color: var(--ink); }
+
+/* Diff: whole-line tinting, readable in both themes. */
+.diff-line { display: block; padding: 0 6px; }
+.diff-add { background: color-mix(in srgb, #4d8a57 14%, transparent); color: var(--ink); }
+.diff-del { background: color-mix(in srgb, #c4554d 13%, transparent); color: var(--ink); }
+.diff-hunk { color: var(--accent); }
+.diff-file { color: var(--ink-2); font-weight: 600; }
+
+/* JSON: a quiet foldable tree. */
+.json-card { font-size: 0.82rem; }
+.json-card details { margin-left: 0; }
+.json-card details details { margin-left: 1.1em; }
+.json-card summary { cursor: pointer; color: var(--ink-2); }
+.json-row { margin-left: 1.1em; }
+.json-key { color: var(--accent); }
+.json-str { color: #4d8a57; }
+.json-lit { color: #4a76b8; }
+
+/* Stack traces: first line visible, frames folded. */
+.stack-card summary { cursor: pointer; font-weight: 600; color: #c4554d; }
+.stack-card pre {
+  margin: 6px 0 0;
+  font: inherit;
+  color: var(--ink-2);
+  white-space: pre-wrap;
 }

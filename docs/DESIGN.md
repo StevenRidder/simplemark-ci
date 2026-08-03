@@ -357,16 +357,21 @@ The governing rule: **failures are visible and local.** No silent fallbacks, no 
 
 ## 10. Wireframe
 
-Interactive version: [`wireframe.html`](wireframe.html) — open it in a browser. Its document canvas,
-typography, reader controls, and rendered-block treatment remain useful. Its **AI working**,
+Interactive versions: [`wireframe.html`](wireframe.html) retains the richer lifecycle exploration;
+[`wireframe-bear.html`](wireframe-bear.html) is the current single-canvas direction: it borrows Bear's
+quiet window chrome and warm reading treatment without adopting a permanent library, note list, or
+inspector. Its top formatting strip is present by request, but the page remains the primary surface.
+The original wireframe's **AI working**,
 **Redirecting**, and **Stopped** states illustrate a later capability and are not the first product
 surface under [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md).
 
 ### 10.1 Main window
 
 The POC is one document window. Opening a file goes directly to the page. Reader preferences and
-file actions live in restrained window chrome; correction controls appear only around selected
-content. There is no permanent authoring toolbar in the initial reading state.
+file actions live in restrained window chrome. A single narrow formatting strip remains at the top
+by explicit product choice: it contains only real, everyday document commands (heading level,
+emphasis, lists, checklist, table, link, and technical-block insertion). It is not a second pane,
+mode switcher, or an excuse to expose every implementation capability.
 
 There is no agent pane, activity sidebar, file tree, workspace chooser, model picker, or chat panel.
 The first integration is the watched file: an external agent changes it and the rendered document
@@ -405,7 +410,24 @@ Every extension-rendered block shares one frame, so a future third-party block i
 
 **Resolved by [`ADR-0003`](decisions/0003-rendered-block-frame.md)** during the first UI pass (EDITOR-1): the frame stays, and the block bar's controls fade in on hover or focus rather than sitting there permanently.
 
-### 10.3 Paste sequence
+### 10.3 Block movement and continuation
+
+Every top-level document block has a quiet six-dot drag handle that appears on hover or focus.
+Dragging that handle reorders blocks; it does not turn the page into a permanent page-builder. A
+visible insertion position exists between every two blocks and after the last block. Clicking there,
+pressing Enter at a block boundary, or navigating by keyboard must create or focus an ordinary
+writable paragraph outside embedded source, diagram, table, or code NodeViews.
+
+This is a correctness rule as much as an editing convenience: a terminal diagram or other rendered
+block may never trap the caret or cause a subsequent paste to modify its underlying source. The
+document must always have a usable continuation point.
+
+The contextual source sheet for a rendered block opens over the current viewport and can be dragged
+or resized out of the way. It has usable minimum and viewport bounds, and its editor grows with the
+sheet. It is temporary, remains attached to exactly one block, and closes back to the rendered
+document; it is not a persistent inspector panel.
+
+### 10.4 Paste sequence
 
 ```mermaid
 flowchart TB
@@ -424,7 +446,7 @@ flowchart TB
   VIEW --> UNDO(["⌘Z restores the raw pasted text"])
 ```
 
-### 10.4 Visual identity
+### 10.5 Visual identity
 
 Warm paper and restrained amber keep the notebook familiar without impersonating Bear or Apple
 Notes. Agent presence has a separate violet token so scope and attribution are recognizable without

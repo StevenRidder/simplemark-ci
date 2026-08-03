@@ -1,6 +1,7 @@
 import { CompositeRenderer } from '../adapters/renderers/composite-renderer.js'
 import { MermaidRenderer } from '../adapters/renderers/mermaid-renderer.js'
 import { SvgRenderer } from '../adapters/renderers/svg-renderer.js'
+import { TextCardRenderer } from '../adapters/renderers/text-card-renderer.js'
 import { BrowserFilePort } from '../adapters/filesystem/browser-file-port.js'
 import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
 import { BrowserUploadFilePort } from '../adapters/filesystem/browser-upload-file-port.js'
@@ -85,7 +86,7 @@ async function mount(
       file,
       assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
       // One port, several renderers. DOT, KaTeX, Vega-Lite and Markmap join here.
-      diagrams: new CompositeRenderer([new MermaidRenderer(), new SvgRenderer()]),
+      diagrams: new CompositeRenderer([new MermaidRenderer(), new SvgRenderer(), new TextCardRenderer()]),
     },
     filePath: options.filePath,
     ...(options.autosaveMs === undefined ? {} : { autosaveMs: options.autosaveMs }),

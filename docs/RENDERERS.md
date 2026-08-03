@@ -145,6 +145,35 @@ In Bear, Obsidian, or GitHub that is a picture with a caption. In SimpleMark it 
 
 ---
 
+## 4.5 The paste-exhaust tier (shipped)
+
+The output formats of AI and terminal work. Not diagram languages — the daily
+exhaust of working with agents: spreadsheet grids, diffs, terminal captures,
+JSON dumps, file trees, stack traces. Every one has an unambiguous §4.2
+signature, so all are magic-paste, and all render through `TextCardRenderer`
+(sanitised HTML through the same `DiagramRenderer` contract — validate, then
+inert markup or a message).
+
+| Paste | Signature | Stored as | Renders as |
+|---|---|---|---|
+| **Excel/Sheets cells** | rectangular TSV in `text/plain` | a real GFM table | table — content, not a card |
+| **Unified diff** | `diff --git` or `@@ -n,n +n,n @@` | ` ```diff ` fence | red/green review view |
+| **ANSI capture** | SGR escape codes | ` ```ansi ` fence | coloured terminal card |
+| **JSON** | parses to object/array | ` ```json ` fence | collapsible tree |
+| **File tree** | ≥2 lines of `├──`/`└──` | ` ```tree ` fence | monospace card |
+| **Stack trace** | `at fn (file:n:n)` / `Traceback` | ` ```stacktrace ` fence | folded behind line 1 |
+
+Priorities slot into the §4.2 chain: svg-in-html 30 > svg 20 > **ansi 19 >
+diff 18** (coloured git output carries both signatures; the escape codes are
+the more specific claim) > **tree 14 > stacktrace 12** > mermaid 10 > **json
+8** (anything both JSON and something more specific should never fall through
+to the generic tree). TSV is not a sniffer — it converts through the Markdown
+path into real document content.
+
+The rule that keeps this honest is unchanged (§4.4): a signature hit converts
+only when validation passes, one ⌘Z restores the raw pasted text, and prose is
+never claimed.
+
 ## 5. Later: the second tier
 
 Deferred, in rough order of likely value.

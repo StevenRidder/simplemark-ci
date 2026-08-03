@@ -8,9 +8,16 @@ import { $prose } from '@milkdown/kit/utils'
 
 import {
   isStandaloneBlockPaste,
+  looksLikeAnsi,
+  looksLikeDiff,
+  looksLikeFileTree,
+  looksLikeJson,
   looksLikeMermaid,
+  looksLikeStackTrace,
   looksLikeSvg,
+  looksLikeTsv,
   svgInHtml,
+  tsvToMarkdownTable,
 } from '../../domain/index.js'
 import type { DiagramRenderer } from '../../application/index.js'
 
@@ -66,6 +73,37 @@ const SNIFFERS: readonly Sniffer[] = [
     id: 'mermaid',
     priority: 10,
     claim: (text: string) => (looksLikeMermaid(text) ? { language: 'mermaid', source: text.trim() } : null),
+  },
+  // The paste-exhaust tier: the output formats of AI and terminal work.
+  // ANSI outranks diff because coloured git output carries both signatures,
+  // and the escape codes are the more specific claim.
+  {
+    id: 'ansi',
+    priority: 19,
+    claim: (text: string) => (looksLikeAnsi(text) ? { language: 'ansi', source: text } : null),
+  },
+  {
+    id: 'diff',
+    priority: 18,
+    claim: (text: string) => (looksLikeDiff(text) ? { language: 'diff', source: text } : null),
+  },
+  {
+    id: 'file-tree',
+    priority: 14,
+    claim: (text: string) => (looksLikeFileTree(text) ? { language: 'tree', source: text } : null),
+  },
+  {
+    id: 'stack-trace',
+    priority: 12,
+    claim: (text: string) =>
+      looksLikeStackTrace(text) ? { language: 'stacktrace', source: text } : null,
+  },
+  // Below Mermaid: anything both parseable as JSON and claimed by a more
+  // specific sniffer should never reach here.
+  {
+    id: 'json',
+    priority: 8,
+    claim: (text: string) => (looksLikeJson(text) ? { language: 'json', source: text.trim() } : null),
   },
 ].sort((a, b) => b.priority - a.priority)
 
@@ -145,8 +183,15 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
             : null
 
           if (claimed === null) {
-            // §4.2: prefer text/plain over the HTML flavour.
             if (text.trim() === '') return false
+            // The Excel/Sheets clipboard is TSV in text/plain. It becomes a
+            // real GFM table — content, not a card — so it goes through the
+            // Markdown path rather than a renderer.
+            if (standalone && looksLikeTsv(text)) {
+              insertMarkdown(view, tsvToMarkdownTable(text))
+              return true
+            }
+            // §4.2: prefer text/plain over the HTML flavour.
             insertMarkdown(view, text)
             return true
           }

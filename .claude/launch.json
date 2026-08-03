@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5273
+    },
+    {
+      "name": "simplemark-editor7",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", ".worktrees/EDITOR-7", "run", "dev"],
+      "port": 5273
     }
   ]
 }

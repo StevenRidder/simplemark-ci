@@ -18,3 +18,12 @@ export {
 export type { ByteDifference } from './source/byte-diff.js'
 export type { SourceBlock, SourceMap } from './source/source-map.js'
 export type { PasteCandidate } from './paste/recognition.js'
+export {
+  looksLikeAnsi,
+  looksLikeDiff,
+  looksLikeFileTree,
+  looksLikeJson,
+  looksLikeStackTrace,
+  looksLikeTsv,
+  tsvToMarkdownTable,
+} from './paste/exhaust.js'

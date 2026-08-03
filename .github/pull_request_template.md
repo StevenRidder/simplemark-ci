@@ -11,10 +11,10 @@ Task:
 ## Evidence
 
 - [ ] `bash scripts/simplemark_ci.sh` passed locally
-- [ ] `scripts/ci-sandbox.sh` ran the full gate on the exact SHA in this PR
-- [ ] `simplemark-ci/full-suite` is green on the head commit
+- [ ] `gate` is green on the head commit
+- [ ] Queued to merge — the merge queue runs the full scope on the landing commit
 
-<!-- Paste the sandbox Actions run URL. -->
+<!-- Optional: if you proved the SHA on the sandbox first, paste that Actions run URL. -->
 
 ## Architecture check
 

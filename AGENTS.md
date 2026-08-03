@@ -115,12 +115,22 @@ Nothing in `src-tauri/` may hold a document rule, so a native-only regression is
 a transport bug by construction; the shared modules the gate does cover are the
 same ones the native shell loads.
 
-CI runs on a public sandbox to keep Actions minutes free. See
-[`docs/CI-SANDBOX.md`](docs/CI-SANDBOX.md); the whole branch loop is:
+The branch loop is an ordinary push and PR against the canonical repo:
 
 ```bash
-scripts/ci-sandbox.sh open-pr <branch>
+git push -u origin <branch> && gh pr create --base main
 ```
+
+`.github/workflows/verify.yml` runs [`scripts/simplemark_ci.sh`](scripts/simplemark_ci.sh)
+and publishes the **`gate`** status — the only context canonical `main` requires.
+A pull request runs the fast admission scope; GitHub's native merge queue then runs
+the full scope on the merge-group commit that actually lands. Queue the PR once
+`gate` is green and the queue owns the rest.
+
+The public sandbox remains available for proving a SHA before spending canonical
+minutes, and `verify.yml` keeps `workflow_dispatch` so it can. It is optional, not
+the loop — see [`docs/CI-SANDBOX.md`](docs/CI-SANDBOX.md), and note that
+`ci-sandbox.sh protect-main` would overwrite the required `gate` context.
 
 ## Where information belongs
 

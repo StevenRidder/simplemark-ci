@@ -21,7 +21,13 @@ are ephemeral, and it can never prove Done. Only a merge on the canonical repo c
 |---|---|---|---|
 | Switchboard | `6th-Element-Labs/projectplanner` | `6th-Element-Labs/projectplanner-ci` | `Switchboard CI / VM gate` |
 | Helm | `StevenRidder/Helm` | `StevenRidder/helm-ci` | `helm-ci/full-suite` |
-| SimpleMark | `6th-Element-Labs/simplemark` | `StevenRidder/simplemark-ci` | `simplemark-ci/full-suite` |
+| SimpleMark | `6th-Element-Labs/simplemark` | `StevenRidder/simplemark-ci` | `gate` |
+
+> **SimpleMark no longer gates on the sandbox status.** Canonical `main` requires
+> `gate`, published by `.github/workflows/verify.yml` running on the canonical repo,
+> and landing is owned by GitHub's native merge queue. `simplemark-ci/full-suite` is
+> still what `ci-sandbox.sh` stamps, but nothing requires it. The sandbox is now an
+> optional pre-PR proof, not the gate.
 
 Switchboard uses the stricter variant: the canonical dispatcher mirrors an exact
 SHA to a disposable `ci/**` tag and invokes a workflow that lives on the sandbox's
@@ -45,11 +51,10 @@ Then wire the local checkout and seed the sandbox baseline:
 scripts/ci-sandbox.sh setup && scripts/ci-sandbox.sh refresh-main
 ```
 
-Finally, make the sandbox result binding on canonical `main`:
-
-```bash
-scripts/ci-sandbox.sh protect-main
-```
+> **Do not run `scripts/ci-sandbox.sh protect-main` on SimpleMark.** It PUTs
+> `required_status_checks.contexts = ["simplemark-ci/full-suite"]` on canonical
+> `main`, which would replace the required `gate` context and break the merge-queue
+> gate. It remains correct for a project whose sandbox status *is* the required one.
 
 ## Typical branch loop
 
@@ -69,12 +74,22 @@ Prove the checkout is wired correctly:
 scripts/ci-sandbox.sh doctor
 ```
 
-Push to the sandbox, wait for green, push the exact SHA to canonical, stamp the
-required status, and open the PR — one command:
+Then push and open the PR against canonical. The `gate` check runs there, and the
+merge queue runs the full scope on the commit that lands:
+
+```bash
+git push -u origin claude/FOUNDATION-1-scaffold && gh pr create --base main
+```
+
+To spend sandbox minutes instead of canonical ones, prove the SHA first. This
+pushes to the sandbox, waits for green, pushes the exact SHA to canonical, stamps
+`simplemark-ci/full-suite`, and opens the PR — one command:
 
 ```bash
 scripts/ci-sandbox.sh open-pr claude/FOUNDATION-1-scaffold
 ```
+
+That stamped status is evidence only; `gate` is still what `main` requires.
 
 Sandbox branches are terminal-scoped, the same rule Switchboard's
 `external_ci_mirror.py` enforces with `_cleanup_terminal_mirror_branch`: once the
@@ -108,8 +123,12 @@ completes and `prove` refuses to stamp. `ci-sandbox.sh doctor` fails on this.
 
 ## Current state
 
-The gate is wired and deliberately **red**: `scripts/simplemark_ci.sh` fails with
-`package.json is missing` because the product package does not exist yet. It goes
-green when `FOUNDATION-1` (Scaffold the reusable SimpleMark product modules) lands
-the single root TypeScript package with `typecheck`, `test`, and `check:boundaries`
-scripts, per [ADR-0001](decisions/0001-single-product-modular-architecture.md).
+The gate is green. `FOUNDATION-1` landed the single root TypeScript package with
+`typecheck`, `test`, and `check:boundaries` per
+[ADR-0001](decisions/0001-single-product-modular-architecture.md), so
+`scripts/simplemark_ci.sh` runs the real suite rather than failing with
+`package.json is missing`.
+
+Landing is owned by the canonical `gate` check and the native merge queue. The
+sandbox path still works and is still worth using to keep private Actions minutes
+down, but it no longer decides whether a PR can merge.

@@ -4,9 +4,12 @@ import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
 import { createFindBar } from './ui/find-bar.js'
 import type { EditorCommand } from './ui/window-chrome.js'
+import { COMMANDS } from '../application/index.js'
+import type { DocumentCommandId } from '../application/index.js'
 import type { WindowChrome } from './ui/window-chrome.js'
 import type { SaveState } from './ui/window-chrome.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
+import type { WorkspaceMode } from './ui/window-chrome.js'
 import { DEFAULT_PREFERENCES, normalisePreferences, preferenceVariables } from './reader-preferences.js'
 import type { ReaderPreferences } from './reader-preferences.js'
 
@@ -39,6 +42,18 @@ export interface AppComposition {
   save(): Promise<void>
   /** Shows a truthful platform or file-reference limitation in the shell. */
   setStatus(state: SaveState, message: string): void
+  /**
+   * Runs any command in the shared registry.
+   *
+   * The macOS menubar is built from that registry and dispatches here, which is
+   * what makes the menubar a complete command surface without owning a second
+   * copy of the editing rules (application/commands.ts).
+   */
+  run(command: DocumentCommandId): void
+  /** Whether the optional styles bar is showing, for the View menu checkmark. */
+  stylesBarVisible(): boolean
+  /** Current availability and checkmark state for any shared command surface. */
+  commandState(command: DocumentCommandId): { readonly enabled: boolean; readonly checked: boolean }
 }
 
 export interface ComposeOptions {
@@ -50,7 +65,11 @@ export interface ComposeOptions {
   readonly autosaveMs?: number
   /** Honest confirmation for platforms that save a downloaded replacement. */
   readonly saveSuccessMessage?: string
-  /** Default for the optional in-window formatting strip when no preference exists. */
+  /**
+   * Whether the optional styles bar starts visible when nothing is stored yet.
+   * The native shell passes `false`: its menubar already carries every command,
+   * so the bar would open as pure duplication.
+   */
   readonly stylesBarDefault?: boolean
   /** Platform hook for opening a real file; absent when the platform cannot. */
   readonly onOpenFile?: () => void
@@ -58,6 +77,8 @@ export interface ComposeOptions {
   readonly openFileUnavailableReason?: string
   /** Shared navigation supplied by the platform composition root. */
   readonly workspace?: WorkspaceOptions
+  /** Which platform owns the application chrome around the shared workspace. */
+  readonly chromeMode?: 'web' | 'macos'
 }
 
 const STYLES_BAR_KEY = 'simplemark.styles-bar-visible'
@@ -70,12 +91,101 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   // applied to the document root so one multiplier and one palette drive the
   // whole page rather than any selection.
   const storage = options.preferenceStorage ?? readPreferenceStorage()
+  const stylesBarKey = `${STYLES_BAR_KEY}.${options.chromeMode ?? 'web'}`
   let preferences = loadPreferences(storage)
-  let stylesBarVisible = loadStylesBarVisible(storage, options.stylesBarDefault ?? true)
+  let stylesBarVisible = loadStylesBarVisible(storage, stylesBarKey, options.stylesBarDefault ?? true)
   applyPreferences(preferences)
 
   let editor: MilkdownEditor | undefined
   let chrome: WindowChrome
+  /**
+   * Routes a registry id to whoever executes it (application/commands.ts).
+   *
+   * This is the single dispatch both shells share: the web toolbar, the styles
+   * bar, and the macOS menubar all arrive here, so a command can never mean two
+   * different things in two shells. Adding a surface is wiring; adding a
+   * command is a registry entry plus one case.
+  */
+  function runCommand(id: DocumentCommandId): void {
+    if (!commandState(id).enabled) return
+    if (COMMANDS[id].target === 'editor') {
+      // Async and interactive, so it cannot be a plain forwarded command.
+      if (id === 'convertToDiagram') {
+        void editor?.convertBlockToDiagram()
+        return
+      }
+      editor?.runCommand(id as Parameters<MilkdownEditor['runCommand']>[0])
+      return
+    }
+
+    switch (id) {
+      case 'openFile':
+        options.onOpenFile?.()
+        return
+      case 'openFolder':
+        return
+      case 'newNote':
+        options.workspace?.onCreateNote?.()
+        return
+      case 'save':
+        void save()
+        return
+      case 'insertAsset':
+        void insertAsset()
+        return
+      case 'find':
+        findBar.open()
+        return
+      case 'contents':
+        chrome.openContents()
+        return
+      case 'toggleStylesBar':
+        chrome.toggleStylesBar()
+        return
+      case 'showAllPanes':
+        chrome.setWorkspaceMode('all')
+        return
+      case 'showNotesAndEditor':
+        chrome.setWorkspaceMode('notes')
+        return
+      case 'showEditorOnly':
+        chrome.setWorkspaceMode('editor')
+        return
+      case 'togglePinned':
+        options.workspace?.onTogglePinned?.(options.workspace.activeNoteId)
+        return
+    }
+  }
+
+  function commandState(id: DocumentCommandId): { enabled: boolean; checked: boolean } {
+    const modeFor = (command: DocumentCommandId): WorkspaceMode | undefined => {
+      if (command === 'showAllPanes') return 'all'
+      if (command === 'showNotesAndEditor') return 'notes'
+      if (command === 'showEditorOnly') return 'editor'
+      return undefined
+    }
+    const requestedMode = modeFor(id)
+    if (requestedMode !== undefined) {
+      return {
+        enabled: options.workspace !== undefined,
+        checked: options.workspace !== undefined && chrome.workspaceMode() === requestedMode,
+      }
+    }
+    if (id === 'openFolder') return { enabled: false, checked: false }
+    if (id === 'openFile') return { enabled: options.onOpenFile !== undefined, checked: false }
+    if (id === 'insertAsset') return { enabled: ports.assets !== undefined, checked: false }
+    if (id === 'newNote') return { enabled: options.workspace?.onCreateNote !== undefined, checked: false }
+    if (id === 'togglePinned') {
+      const active = options.workspace?.notes.find((note) => note.id === options.workspace?.activeNoteId)
+      return {
+        enabled: options.workspace?.onTogglePinned !== undefined && active !== undefined,
+        checked: active?.pinned ?? false,
+      }
+    }
+    if (id === 'toggleStylesBar') return { enabled: true, checked: chrome.stylesBarVisible() }
+    return { enabled: true, checked: false }
+  }
+
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   const autosaveMs = options.autosaveMs ?? 900
   const save = async (): Promise<void> => {
@@ -89,6 +199,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   }
 
   chrome = createWindowChrome({
+    chromeMode: options.chromeMode ?? 'web',
     fileName: session.name,
     filePath: options.filePath,
     onOpenFile: options.onOpenFile,
@@ -101,7 +212,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     stylesBarVisible,
     onStylesBarVisibleChange: (visible) => {
       stylesBarVisible = visible
-      saveStylesBarVisible(storage, visible)
+      saveStylesBarVisible(storage, stylesBarKey, visible)
     },
     preferences,
     onPreferences: (next) => {
@@ -115,13 +226,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     // holds document state.
     getOutline: () => editor?.outline() ?? [],
     onNavigate: (pos) => editor?.navigateToHeading(pos),
-    onCommand: (command: EditorCommand) => {
-      if (command === 'convertToDiagram') {
-        void editor?.convertBlockToDiagram()
-        return
-      }
-      editor?.runCommand(command)
-    },
+    onCommand: (command: EditorCommand) => runCommand(command),
   })
 
   editor = await MilkdownEditor.mount({
@@ -183,6 +288,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 
   return {
     element: chrome.element,
+    run: runCommand,
+    stylesBarVisible: () => chrome.stylesBarVisible(),
+    commandState,
     session,
     editor,
     save,
@@ -191,18 +299,26 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 }
 
 /** A shell preference, never part of the Markdown document. */
-function loadStylesBarVisible(storage: Pick<Storage, 'getItem'>, fallback: boolean): boolean {
+function loadStylesBarVisible(
+  storage: Pick<Storage, 'getItem'>,
+  key: string,
+  fallback: boolean,
+): boolean {
   try {
-    const saved = storage.getItem(STYLES_BAR_KEY)
+    const saved = storage.getItem(key)
     return saved === null ? fallback : saved === 'true'
   } catch {
     return fallback
   }
 }
 
-function saveStylesBarVisible(storage: Pick<Storage, 'setItem'>, visible: boolean): void {
+function saveStylesBarVisible(
+  storage: Pick<Storage, 'setItem'>,
+  key: string,
+  visible: boolean,
+): void {
   try {
-    storage.setItem(STYLES_BAR_KEY, String(visible))
+    storage.setItem(key, String(visible))
   } catch {
     // The app remains usable in private or restricted storage contexts.
   }

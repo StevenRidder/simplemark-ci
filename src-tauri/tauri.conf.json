@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SimpleMark",
+  "version": "0.0.0",
+  "identifier": "app.simplemark.desktop",
+  "build": {
+    "devUrl": "http://localhost:5273",
+    "frontendDist": "../dist",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "url": "tauri.html",
+        "title": "SimpleMark",
+        "width": 1120,
+        "height": 780,
+        "minWidth": 620,
+        "minHeight": 460,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": ["icons/icon.icns"],
+    "category": "Productivity",
+    "shortDescription": "The beautiful living document for AI work",
+    "copyright": "Apache-2.0"
+  }
+}

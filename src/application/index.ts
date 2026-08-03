@@ -22,3 +22,12 @@ export type {
   ApplyResult,
   SaveResult,
 } from './document-session.js'
+export { COMMANDS, MENUS, menuCommandIds } from './commands.js'
+export type {
+  DocumentCommandId,
+  CommandDefinition,
+  CommandTarget,
+  CommandSubmenu,
+  MenuEntry,
+  MenuSpec,
+} from './commands.js'

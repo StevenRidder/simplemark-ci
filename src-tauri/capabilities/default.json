@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window may open a file picker and call SimpleMark's own four commands. No filesystem, shell, or network permission is granted: every file touch goes through this crate's audited commands.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open"]
+}

@@ -11,31 +11,17 @@
  * explicit: unsupported controls are absent or disabled, never fake.
  */
 
-export type EditorCommand =
-  | 'heading1'
-  | 'heading2'
-  | 'heading3'
-  | 'heading4'
-  | 'heading5'
-  | 'heading6'
-  | 'bold'
-  | 'italic'
-  | 'strikethrough'
-  | 'highlight'
-  | 'inlineCode'
-  | 'quote'
-  | 'codeBlock'
-  | 'divider'
-  | 'link'
-  | 'moveBlockUp'
-  | 'moveBlockDown'
-  | 'bulletList'
-  | 'orderedList'
-  | 'taskList'
-  | 'table'
-  | 'undo'
-  | 'redo'
-  | 'convertToDiagram'
+import type { DocumentCommandId } from '../../application/index.js'
+
+/**
+ * The shell's command vocabulary is the shared registry's, not its own.
+ *
+ * Every surface here — toolbar, popovers, styles bar — emits an id the macOS
+ * menubar also emits, so the two shells cannot drift apart. A command exists in
+ * `application/commands.ts` or it does not exist (native-first: the menubar is
+ * the complete surface, these are shortcuts over the same ids).
+ */
+export type EditorCommand = DocumentCommandId
 
 import {
   FONT_FAMILIES,
@@ -50,6 +36,8 @@ import type { ReaderPreferences } from '../reader-preferences.js'
 export type SaveState = 'saved' | 'dirty' | 'error'
 
 export interface WindowChromeOptions {
+  /** macOS supplies the app menu and window furniture; web supplies neither. */
+  readonly chromeMode: 'web' | 'macos'
   readonly fileName: string
   readonly filePath: string
   readonly onCommand: (command: EditorCommand) => void
@@ -97,16 +85,27 @@ export interface WorkspaceOptions {
   readonly name: string
   readonly notes: readonly WorkspaceNote[]
   readonly activeNoteId: string
-  readonly onSelectNote: (id: string) => void
-  readonly onCreateNote: () => void
-  readonly onTogglePinned: (id: string) => void
+  readonly onSelectNote?: (id: string) => void
+  readonly onCreateNote?: () => void
+  readonly onTogglePinned?: (id: string) => void
 }
+
+export type WorkspaceMode = 'all' | 'notes' | 'editor'
 
 export interface WindowChrome {
   readonly element: HTMLElement
   /** The node the editor mounts into. */
   readonly editorHost: HTMLElement
   setStatus(state: SaveState, message?: string): void
+  /**
+   * Shell-level commands the registry routes here, so the macOS menubar drives
+   * the same surfaces the toolbar does rather than reimplementing them.
+   */
+  toggleStylesBar(): void
+  stylesBarVisible(): boolean
+  openContents(): void
+  setWorkspaceMode(mode: WorkspaceMode): void
+  workspaceMode(): WorkspaceMode
 }
 
 /** A toolbar button that runs an editor command without stealing the selection. */
@@ -320,6 +319,7 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
 }
 
 export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
+  const isMacOS = options.chromeMode === 'macos'
   const stage = document.createElement('div')
   stage.className = 'stage'
 
@@ -330,6 +330,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // ---- title bar ----
   const titlebar = document.createElement('header')
   titlebar.className = 'titlebar'
+  titlebar.classList.toggle('native-editor-head', isMacOS)
 
   const left = document.createElement('div')
   left.className = 'left'
@@ -721,15 +722,26 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   right.append(status)
 
   const workWithAi = document.createElement('button')
-  workWithAi.className = 'join'
+  workWithAi.className = isMacOS ? 'tool work-with-ai' : 'join'
   workWithAi.type = 'button'
-  workWithAi.textContent = 'Work with AI'
+  workWithAi.textContent = isMacOS ? '✦' : 'Work with AI'
+  workWithAi.setAttribute('aria-label', 'Work with AI')
   workWithAi.disabled = true
   workWithAi.title = 'Work with AI — not in this build; the live-agent deliverable delivers it'
   right.append(workWithAi)
   for (const entry of TRAILING) {
     const button = svgButton('tool', entry.label, entry.icon, { disabled: true, owner: entry.owner })
     right.append(button)
+  }
+  if (isMacOS) {
+    right.append(
+      svgButton(
+        'tool',
+        'Document information',
+        '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
+        { disabled: true, owner: 'a later release' },
+      ),
+    )
   }
 
   const stylesBar = createStylesBar(options)
@@ -740,18 +752,20 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     stylesBarToggle.textContent = stylesBar.hidden ? 'Show styles bar' : 'Hide styles bar'
   }
   paintStylesBarToggle()
-  stylesBarToggle.addEventListener('mousedown', (event) => event.preventDefault())
-  stylesBarToggle.addEventListener('click', () => {
+  const toggleStylesBar = (): void => {
     const visible = stylesBar.hidden
     stylesBar.hidden = !visible
     options.onStylesBarVisibleChange(visible)
     paintStylesBarToggle()
-  })
+  }
+  stylesBarToggle.addEventListener('mousedown', (event) => event.preventDefault())
+  stylesBarToggle.addEventListener('click', toggleStylesBar)
   // The same tiny View/Format affordance restores a deliberately hidden bar;
   // hiding it can never strand the user without a way back.
   popover.append(stylesBarToggle)
 
-  titlebar.append(left, filename, editTools, right)
+  if (isMacOS) titlebar.append(filename, right)
+  else titlebar.append(left, filename, editTools, right)
 
   // ---- editor host ----
   const editorSection = document.createElement('section')
@@ -772,6 +786,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   documentSurface.className = 'document-surface'
   documentSurface.append(stylesBar, editorSection)
 
+  let setWorkspaceMode = (_mode: WorkspaceMode): void => {}
+  let getWorkspaceMode = (): WorkspaceMode => 'editor'
+
   if (options.workspace === undefined) {
     windowEl.append(titlebar, documentSurface)
   } else {
@@ -782,9 +799,19 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const folders = document.createElement('aside')
     folders.className = 'workspace-folders'
     folders.setAttribute('aria-label', 'Library')
+    const workspaceHeader = document.createElement('div')
+    workspaceHeader.className = 'workspace-library-head'
     const workspaceName = document.createElement('div')
     workspaceName.className = 'workspace-name'
     workspaceName.textContent = workspace.name
+    const libraryOptions = document.createElement('button')
+    libraryOptions.type = 'button'
+    libraryOptions.className = 'library-action'
+    libraryOptions.setAttribute('aria-label', 'Sidebar options')
+    libraryOptions.textContent = '•••'
+    libraryOptions.disabled = true
+    libraryOptions.title = 'Sidebar options — available when a real folder catalog is connected'
+    workspaceHeader.append(workspaceName, libraryOptions)
 
     let noteFilter: 'all' | 'pinned' = 'all'
     let sortMode: 'modified' | 'title' = 'modified'
@@ -830,7 +857,22 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     folderRoot.innerHTML = `<span aria-hidden="true">⌄</span><span>${workspace.name}</span><span class="folder-count">${workspace.notes.length}</span>`
     folderRoot.disabled = true
     libraryRows.append(allNotes, untagged, todo, today, pinned, trash, folderLabel, folderRoot)
-    folders.append(workspaceName, libraryRows)
+    const libraryFooter = document.createElement('div')
+    libraryFooter.className = 'workspace-library-footer'
+    const sync = document.createElement('button')
+    sync.type = 'button'
+    sync.setAttribute('aria-label', 'Folder sync status')
+    sync.textContent = '↻'
+    sync.disabled = true
+    sync.title = 'Folder sync — available when a real folder catalog is connected'
+    const settings = document.createElement('button')
+    settings.type = 'button'
+    settings.setAttribute('aria-label', 'Settings')
+    settings.textContent = '⚙'
+    settings.disabled = true
+    settings.title = 'Settings — not in this build'
+    libraryFooter.append(sync, settings)
+    folders.append(workspaceHeader, libraryRows, libraryFooter)
 
     const noteList = document.createElement('aside')
     noteList.className = 'workspace-notes'
@@ -854,7 +896,12 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       'New note',
       '<path d="M12 20H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9"/><path d="m14 14 6-6-4-4-6 6-1 5 5-1Z"/>',
     )
-    newNoteButton.addEventListener('click', () => workspace.onCreateNote())
+    if (workspace.onCreateNote === undefined) {
+      newNoteButton.disabled = true
+      newNoteButton.title = 'New Note — available when a real folder catalog is connected'
+    } else {
+      newNoteButton.addEventListener('click', () => workspace.onCreateNote?.())
+    }
 
     const searchWrap = document.createElement('div')
     searchWrap.className = 'notes-search-wrap'
@@ -960,7 +1007,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         const updated = document.createElement('time')
         updated.textContent = note.updatedLabel
         select.append(title, preview, updated)
-        select.addEventListener('click', () => workspace.onSelectNote(note.id))
+        if (workspace.onSelectNote !== undefined) {
+          select.addEventListener('click', () => workspace.onSelectNote?.(note.id))
+        }
         const pin = document.createElement('button')
         pin.type = 'button'
         pin.className = 'note-pin'
@@ -969,7 +1018,12 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         pin.innerHTML =
           '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 4 6 6-3 1-4 4-1 5-2-2-6 2 2-6-2-2 5-1 4-4Z"/></svg>'
         pin.classList.toggle('pinned', note.pinned)
-        pin.addEventListener('click', () => workspace.onTogglePinned(note.id))
+        if (workspace.onTogglePinned === undefined) {
+          pin.disabled = true
+          pin.title = 'Pin — available when a real folder catalog is connected'
+        } else {
+          pin.addEventListener('click', () => workspace.onTogglePinned?.(note.id))
+        }
         item.append(select, pin)
         noteItems.append(item)
       }
@@ -1059,18 +1113,35 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     paintNotes()
     noteList.append(notesHeader, notesMenu, noteItems)
 
+    const applyWorkspaceMode = (mode: WorkspaceMode): void => {
+      workspaceBody.dataset['layout'] = mode
+      workspaceBody.classList.toggle('navigation-hidden', mode === 'editor')
+      documentListButton.classList.toggle('active', mode !== 'all')
+    }
+    setWorkspaceMode = applyWorkspaceMode
+    getWorkspaceMode = () => workspaceBody.dataset['layout'] as WorkspaceMode
+    applyWorkspaceMode('all')
     documentListButton.addEventListener('click', () => {
-      workspaceBody.classList.toggle('navigation-hidden')
-      documentListButton.classList.toggle('active', workspaceBody.classList.contains('navigation-hidden'))
+      applyWorkspaceMode(getWorkspaceMode() === 'editor' ? 'all' : 'editor')
     })
     workspaceBody.append(folders, noteList, documentSurface)
-    windowEl.append(titlebar, workspaceBody)
+    if (isMacOS) {
+      documentSurface.prepend(titlebar)
+      windowEl.append(workspaceBody)
+    } else {
+      windowEl.append(titlebar, workspaceBody)
+    }
   }
   stage.append(windowEl)
 
   return {
     element: stage,
     editorHost: page,
+    toggleStylesBar,
+    stylesBarVisible: () => !stylesBar.hidden,
+    openContents: () => contentsButton.click(),
+    setWorkspaceMode: (mode) => setWorkspaceMode(mode),
+    workspaceMode: () => getWorkspaceMode(),
     setStatus(state, message) {
       status.dataset['state'] = state
       status.textContent =

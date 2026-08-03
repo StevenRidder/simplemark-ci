@@ -102,6 +102,19 @@ bash scripts/simplemark_ci.sh
 For documentation-only changes, at minimum run `git diff --check` and verify local
 Markdown links when changing document paths.
 
+The macOS shell is **not** covered by that gate. CI runs on Linux, where no Apple
+toolchain exists, so a native step there could never mean what it says. Changes
+under `src-tauri/` are proven locally and the result recorded as task evidence:
+
+```bash
+npm run test:native      # cargo test — the Rust boundary's own contract
+npm run build:native     # a real .app bundle
+```
+
+Nothing in `src-tauri/` may hold a document rule, so a native-only regression is
+a transport bug by construction; the shared modules the gate does cover are the
+same ones the native shell loads.
+
 CI runs on a public sandbox to keep Actions minutes free. See
 [`docs/CI-SANDBOX.md`](docs/CI-SANDBOX.md); the whole branch loop is:
 

@@ -1,0 +1,40 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SimpleMark">
+  <!--
+    Warm paper and one restrained amber mark — the DESIGN.md §10.4 identity,
+    familiar without impersonating Bear or Apple Notes. A page with text lines
+    and a single amber rule: the document is the product, the accent is the
+    smallest possible signal of the work happening on it.
+  -->
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffefa" />
+      <stop offset="1" stop-color="#f3efe4" />
+    </linearGradient>
+    <!-- User space, not the default object bounding box: a horizontal line has
+         zero height, and an objectBoundingBox gradient on it renders nothing. -->
+    <linearGradient id="amber" gradientUnits="userSpaceOnUse" x1="132" y1="380" x2="228" y2="412">
+      <stop offset="0" stop-color="#e0a049" />
+      <stop offset="1" stop-color="#c87f27" />
+    </linearGradient>
+  </defs>
+
+  <rect x="34" y="34" width="444" height="444" rx="100" fill="url(#paper)" />
+  <rect
+    x="34"
+    y="34"
+    width="444"
+    height="444"
+    rx="100"
+    fill="none"
+    stroke="#e3ddcf"
+    stroke-width="4"
+  />
+
+  <g stroke="#3b3730" stroke-width="26" stroke-linecap="round">
+    <path d="M132 186h248" />
+    <path d="M132 256h248" opacity="0.72" />
+    <path d="M132 326h150" opacity="0.46" />
+  </g>
+
+  <path d="M132 396h96" stroke="url(#amber)" stroke-width="26" stroke-linecap="round" />
+</svg>

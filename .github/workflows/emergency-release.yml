@@ -1,0 +1,331 @@
+# The emergency release lane.
+#
+# `release.yml` is the normal path: a `v*` tag on a commit that reached `main`
+# through the gate and the merge queue. This is the path for when that is not
+# possible and something has to ship anyway.
+#
+# It exists because the bypass already existed. `release.yml` triggers on a `v*`
+# tag with no branch filter, and only `main` is protected, so tagging any branch
+# has always produced a full draft release from a commit that never ran
+# `scripts/simplemark_ci.sh` and never entered the merge queue. That is a real
+# capability and it is worth keeping — but as an accident it is invisible, and
+# an installer whose provenance nobody can see is the problem this repository
+# exists to avoid.
+#
+# GitHub cannot express a weaker path *into* `main`: branch protection and
+# rulesets key on the target ref, never the source, so a `hotfix/*` branch gets
+# `main`'s rules like anything else. Making the branch-tag path deliberate is
+# therefore the honest option, not a second-best one.
+#
+# The trade this lane makes: you may skip the gate, and the draft says so, in
+# its title and its body, permanently. It never publishes — promotion still runs
+# every platform trust gate in `release-promote.yml`.
+name: emergency release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or commit SHA to build from
+        required: true
+        type: string
+      tag:
+        description: Version tag to create, e.g. v0.1.1
+        required: true
+        type: string
+      reason:
+        description: Why the normal lane could not be used. Recorded in the release body.
+        required: true
+        type: string
+      run_gate:
+        description: Run the canonical gate first. Turning this off is the bypass, and is recorded.
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: emergency-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  # §5 still applies. The version check is correctness, not CI: shipping
+  # `SimpleMark-0.0.0` reports the wrong version in every About window forever,
+  # and no emergency is served by that. It is never skippable here.
+  version:
+    name: version
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Refuse a reason that says nothing
+        run: |
+          set -euo pipefail
+          reason="$(printf '%s' "${{ inputs.reason }}" | tr -d '[:space:]')"
+          if [ "${#reason}" -lt 12 ]; then
+            echo "emergency-release: --reason must actually say why; got '${{ inputs.reason }}'" >&2
+            exit 1
+          fi
+
+      - name: Assert the tag matches every versioned file
+        id: check
+        run: |
+          set -euo pipefail
+          node scripts/assert-release-version.mjs --tag "${{ inputs.tag }}"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ inputs.tag }}
+
+  gate:
+    name: canonical gate
+    needs: version
+    # Skipped only when the dispatcher explicitly turned it off. That choice is
+    # carried into the release body below, so it cannot be quietly forgotten.
+    if: ${{ inputs.run_gate }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install the workspace dependencies
+        run: npm ci
+
+      - name: Install Chromium for the UI gate
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the canonical gate
+        run: bash scripts/simplemark_ci.sh
+
+  build:
+    name: ${{ matrix.leg }}
+    needs: [version, gate]
+    # `always()` here is not a fallback: the gate job is legitimately `skipped`
+    # when run_gate is false, and a skipped dependency would otherwise skip this
+    # too. A gate that actually *failed* still stops the build.
+    if: ${{ always() && needs.version.result == 'success' && needs.gate.result != 'failure' && needs.gate.result != 'cancelled' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: macos-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+            os: macos
+            arch: arm64
+          - leg: macos-x64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+            os: macos
+            arch: x64
+          - leg: windows-x64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundles: msi,nsis
+            os: windows
+            arch: x64
+          - leg: linux-x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+            os: linux
+            arch: x64
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Add the Rust target for this leg
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ matrix.leg }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ matrix.leg }}-cargo-
+
+      - name: Install the Linux system dependencies
+        if: matrix.os == 'linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf libfuse2
+
+      - name: Install the workspace dependencies
+        run: npm ci
+
+      - name: Build the native package
+        run: |
+          set -euo pipefail
+          npx tauri build --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}"
+
+      - name: Collect, name, and verify the installers
+        run: |
+          set -euo pipefail
+          version="${{ needs.version.outputs.version }}"
+          bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
+          out=".artifacts/release"
+          mkdir -p "$out"
+
+          collect() {
+            directory="$bundle/$1"
+            [ -d "$directory" ] || { echo "emergency-release: $directory does not exist" >&2; exit 1; }
+            source="$(find "$directory" -maxdepth 1 -type f -name "$2" | sort | head -n 1)"
+            [ -n "$source" ] || { echo "emergency-release: no $2 under $directory" >&2; exit 1; }
+            cp "$source" "$out/$3"
+            node scripts/verify-native-artifact.mjs --target "${{ matrix.os }}" --artifact "$out/$3"
+          }
+
+          case "${{ matrix.os }}" in
+            macos)   collect dmg '*.dmg' "SimpleMark-$version-macos-${{ matrix.arch }}.dmg" ;;
+            windows) collect msi '*.msi' "SimpleMark-$version-windows-x64.msi"
+                     collect nsis '*.exe' "SimpleMark-$version-windows-x64-setup.exe" ;;
+            linux)   collect appimage '*.AppImage' "SimpleMark-$version-linux-x64.AppImage" ;;
+            *) echo "emergency-release: unknown os ${{ matrix.os }}" >&2; exit 1 ;;
+          esac
+          ls -l "$out"
+
+      - name: Upload this leg's installers
+        uses: actions/upload-artifact@v6
+        with:
+          name: simplemark-emergency-${{ matrix.os }}-${{ matrix.arch }}
+          path: .artifacts/release
+          if-no-files-found: error
+          retention-days: 30
+
+  draft:
+    name: draft release
+    needs: [version, gate, build]
+    if: ${{ always() && needs.build.result == 'success' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    environment: release-signing
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Download every leg's installers
+        uses: actions/download-artifact@v6
+        with:
+          pattern: simplemark-emergency-*-*
+          path: .artifacts/incoming
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd .artifacts/incoming
+          rm -f SHA256SUMS
+          sha256sum SimpleMark-* > SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      # The whole point of this lane. Whatever was skipped is stated in the open,
+      # in the release itself, where anyone holding the installer can read it —
+      # not only in an Actions log nobody opens six months later.
+      - name: Assemble the release notes with the bypass banner
+        run: |
+          set -euo pipefail
+          git log --format=%s -20 "${{ needs.version.outputs.sha }}" > .artifacts/commits.txt
+
+          # Whether this commit ever reached main, tested rather than assumed.
+          git fetch --quiet origin main
+          if git merge-base --is-ancestor "${{ needs.version.outputs.sha }}" origin/main; then
+            ON_MAIN="yes — this commit is an ancestor of \`main\`"
+          else
+            ON_MAIN="**no — this commit is not on \`main\`**"
+          fi
+          export ON_MAIN
+          node scripts/release-notes.mjs \
+            --tag "${{ inputs.tag }}" \
+            --sha "${{ needs.version.outputs.sha }}" \
+            --sums .artifacts/incoming/SHA256SUMS \
+            --commits .artifacts/commits.txt \
+            > .artifacts/body.md
+
+          {
+            echo "> ## Built through the emergency lane"
+            echo ">"
+            echo "> This release did **not** go through \`main\`'s merge queue."
+            echo ">"
+            echo "> | | |"
+            echo "> |---|---|"
+            echo "> | Built from | \`${{ inputs.ref }}\` @ \`${{ needs.version.outputs.sha }}\` |"
+            echo "> | Reached \`main\` | ${ON_MAIN} |"
+            echo "> | Canonical gate | ${GATE} |"
+            echo "> | Dispatched by | @${{ github.actor }} |"
+            echo "> | Reason given | ${{ inputs.reason }} |"
+            echo ""
+            cat .artifacts/body.md
+          } > .artifacts/release-notes.md
+          cat .artifacts/release-notes.md
+        env:
+          GATE: ${{ inputs.run_gate && 'ran and passed' || '**SKIPPED — this build is unverified**' }}
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="SimpleMark ${{ needs.version.outputs.version }}"
+          if [ "${{ inputs.run_gate }}" != "true" ]; then
+            title="$title — EMERGENCY, GATE SKIPPED"
+          else
+            title="$title — emergency lane"
+          fi
+          gh release create "${{ inputs.tag }}" \
+            --draft \
+            --target "${{ needs.version.outputs.sha }}" \
+            --title "$title" \
+            --notes-file .artifacts/release-notes.md \
+            .artifacts/incoming/SimpleMark-* \
+            .artifacts/incoming/SHA256SUMS
+          echo "emergency-release: created ${{ inputs.tag }} as a draft; promotion is release-promote.yml"

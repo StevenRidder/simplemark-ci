@@ -62,12 +62,29 @@ This contract never redefines `src-tauri/tauri.conf.json`. Where it needs a bund
 that APP-2's configuration does not list, the workflow passes `--bundles` explicitly for
 that matrix leg (§3) rather than editing APP-2's file.
 
-## 2. Two triggers, and no third
+## 2. Three triggers, and no fourth
 
 | Trigger | Produces | Visibility |
 |---|---|---|
 | `pull_request`, and `workflow_dispatch` on a branch | Private Actions artifacts (§7) | Repository collaborators only |
 | `push` of a tag matching `v*` | A **draft** GitHub Release | Nobody until a human publishes it |
+| `workflow_dispatch` on the emergency lane | A **draft** GitHub Release, labelled as such | Nobody until a human publishes it |
+
+This section said "two triggers, and no third" until the emergency lane was added, and
+the honest reason for the change is that the third trigger already existed by accident.
+`release.yml`'s tag trigger has no branch filter and only `main` is protected, so tagging
+any branch has always produced a full draft release from a commit that never ran the
+canonical gate and never entered the merge queue. GitHub cannot express a weaker path
+*into* `main` — branch protection and rulesets key on the target ref, never the source —
+so that capability could not be removed by configuration, only made deliberate.
+
+`.github/workflows/emergency-release.yml` is that capability, named. It takes an explicit
+ref, a version tag, and a **required reason**, and it may skip the canonical gate. What it
+may not do is hide that it did: the release title carries `EMERGENCY, GATE SKIPPED`, and
+the body records the ref, whether that commit ever reached `main` (tested with
+`git merge-base --is-ancestor`, not asserted), whether the gate ran, who dispatched it,
+and why. The §5 version check is never skippable there, because shipping the wrong version
+number is a correctness failure rather than a testing one.
 
 Rules:
 
@@ -75,6 +92,8 @@ Rules:
 - A tag build **never** publishes. It creates the release with `draft: true`. Publishing
   is a deliberate human action, which is what makes the draft a review point rather than
   a formality.
+- The emergency lane **never** publishes either, and promotion still runs every platform's
+  trust gate (§10). A bypass may skip verification; it may not skip signing.
 - `push` to `main` does **not** build installers. The `verify` gate on `main` stays fast;
   a four-platform native build on every merge buys nothing that the PR build did not
   already prove about the same tree.

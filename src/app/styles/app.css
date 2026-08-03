@@ -2083,3 +2083,34 @@ section.editor {
 :root[data-shell='native'] .workspace-body.navigation-hidden .native-editor-head {
   padding-left: 78px;
 }
+
+/*
+ * GitHub callouts. Stored as `> [!NOTE]` blockquotes, so every other reader
+ * still shows a blockquote — the styling is ours, the file is portable.
+ */
+.milkdown .ProseMirror .callout {
+  margin: 18px 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--callout-accent, var(--ink-3));
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--callout-accent, var(--ink-3)) 7%, transparent);
+}
+
+.milkdown .ProseMirror .callout > :first-child { margin-top: 0; }
+.milkdown .ProseMirror .callout > :last-child { margin-bottom: 0; }
+
+.milkdown .ProseMirror .callout::before {
+  content: attr(data-callout);
+  display: block;
+  margin-bottom: 6px;
+  font: 600 0.72rem/1 var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--callout-accent, var(--ink-3));
+}
+
+.milkdown .ProseMirror .callout-note { --callout-accent: #4a76b8; }
+.milkdown .ProseMirror .callout-tip { --callout-accent: #4d8a57; }
+.milkdown .ProseMirror .callout-important { --callout-accent: #a3599e; }
+.milkdown .ProseMirror .callout-warning { --callout-accent: var(--accent); }
+.milkdown .ProseMirror .callout-caution { --callout-accent: #c4554d; }

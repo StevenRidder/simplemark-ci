@@ -59,6 +59,7 @@ import { foldingKey, foldingPlugin } from './folding.js'
 import { codeHighlightPlugin } from './code-highlight.js'
 import { findKey, findPlugin } from './find.js'
 import type { FindState } from './find.js'
+import { calloutRemark, calloutSchema } from './callout.js'
 import { mathBlockSchema, mathRemark } from './math-block.js'
 import { pasteSniffers } from './paste-sniffers.js'
 
@@ -198,6 +199,8 @@ export class MilkdownEditor {
       .use(findPlugin)
       .use(mathRemark)
       .use(mathBlockSchema)
+      .use(calloutRemark)
+      .use(calloutSchema)
       .use(diagramView)
       .use(mathView)
       .use(imageView)

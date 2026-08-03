@@ -1519,3 +1519,38 @@ section.editor {
   color: var(--ink-2);
   white-space: pre-wrap;
 }
+
+/* ---- formal notation: Graphviz and KaTeX (RENDERERS.md §2) ---- */
+
+/* Graphviz emits its own fixed-size SVG; keep it inside the reading column. */
+.diagram-render svg[width] {
+  max-width: 100%;
+  height: auto;
+}
+
+/*
+ * KaTeX ships its own stylesheet, so this only places the block on the page:
+ * centred like display math, scrollable on narrow widths rather than forcing
+ * the document to scroll sideways.
+ */
+.math-block {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+  text-align: center;
+  color: var(--ink);
+}
+
+.math-block .katex {
+  font-size: 1.12em;
+}
+
+/* KaTeX's default colour is inherited, but its rules need the reader ink. */
+.math-block .katex .mord,
+.math-block .katex .mbin,
+.math-block .katex .mrel,
+.math-block .katex .mopen,
+.math-block .katex .mclose,
+.math-block .katex .mpunct {
+  color: inherit;
+}

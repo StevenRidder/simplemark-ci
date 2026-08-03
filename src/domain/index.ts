@@ -27,3 +27,4 @@ export {
   looksLikeTsv,
   tsvToMarkdownTable,
 } from './paste/exhaust.js'
+export { looksLikeDot, looksLikeMath, stripMathDelimiters } from './paste/formal.js'

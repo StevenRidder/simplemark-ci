@@ -12,10 +12,13 @@ import {
   looksLikeDiff,
   looksLikeFileTree,
   looksLikeJson,
+  looksLikeDot,
+  looksLikeMath,
   looksLikeMermaid,
   looksLikeStackTrace,
   looksLikeSvg,
   looksLikeTsv,
+  stripMathDelimiters,
   svgInHtml,
   tsvToMarkdownTable,
 } from '../../domain/index.js'
@@ -68,6 +71,20 @@ const SNIFFERS: readonly Sniffer[] = [
     id: 'svg',
     priority: 20,
     claim: (text: string) => (looksLikeSvg(text) ? { language: 'svg', source: text.trim() } : null),
+  },
+  // Formal notation. DOT outranks Mermaid because `graph {` matches both
+  // keywords and the brace is the more specific claim; math sits beside them
+  // because `$$` collides with nothing else.
+  {
+    id: 'dot',
+    priority: 11,
+    claim: (text: string) => (looksLikeDot(text) ? { language: 'dot', source: text.trim() } : null),
+  },
+  {
+    id: 'math',
+    priority: 9,
+    claim: (text: string) =>
+      looksLikeMath(text) ? { language: 'math', source: stripMathDelimiters(text) } : null,
   },
   {
     id: 'mermaid',

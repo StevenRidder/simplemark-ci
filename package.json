@@ -28,8 +28,10 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@hpcc-js/wasm-graphviz": "^1.28.0",
     "@milkdown/kit": "^7.21.3",
     "dompurify": "^3.4.12",
+    "katex": "^0.18.1",
     "lowlight": "^3.3.0",
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-to-markdown": "^2.1.2",

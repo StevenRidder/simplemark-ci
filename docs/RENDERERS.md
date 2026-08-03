@@ -42,8 +42,8 @@ mini-applications or exposing a renderer cockpit.
 |---|---|---|---|---|---|
 | **Document** | remark / ProseMirror | the `.md` itself | — | core | ✓ |
 | **Diagrams** | [Mermaid 11](https://mermaid.js.org/) | ` ```mermaid ` source | ~1.2 MB | core | ✓✓ |
-| **Graphs** | [`@hpcc-js/wasm`](https://github.com/hpcc-systems/hpcc-js-wasm) (Graphviz) | ` ```dot ` source | ~1.5 MB wasm | verified | ✓✓ |
-| **Math** | [KaTeX](https://katex.org/) | `$$…$$` / `$…$` | ~280 KB | core | ✓✓ |
+| **Graphs** ✅ | [`@hpcc-js/wasm-graphviz`](https://github.com/hpcc-systems/hpcc-js-wasm) | ` ```dot ` source | 801 KB lazy chunk | verified | ✓✓ |
+| **Math** ✅ | [KaTeX](https://katex.org/) | ` ```math ` source | ~255 KB + fonts | core | ✓✓ |
 | **Code** | [Shiki](https://shiki.style/) | fenced code + lang | ~400 KB lazy | core | ✓ |
 | **Charts** | [Vega-Lite](https://vega.github.io/vega-lite/) | ` ```vega-lite ` JSON spec | ~1.1 MB | verified | ✓✓ |
 | **Mind maps** | [Markmap](https://markmap.js.org/) | the note's own headings | ~180 KB | verified | ✓ (implicit) |
@@ -173,6 +173,38 @@ path into real document content.
 The rule that keeps this honest is unchanged (§4.4): a signature hit converts
 only when validation passes, one ⌘Z restores the raw pasted text, and prose is
 never claimed.
+
+## 4.6 Graphviz and KaTeX (shipped)
+
+Both magic-paste, both through the existing `DiagramRenderer` port and the
+same NodeView as Mermaid — rendered block, editable source, visible failure.
+
+**Graphviz.** Signature is the keyword *plus a brace*: `graph {` is DOT,
+`graph LR` is Mermaid, and requiring the closing brace too keeps a half-pasted
+graph from claiming the event. Priority 11, just above Mermaid, because the
+brace is the more specific claim. The wasm is embedded in its own **lazy 801 KB
+chunk** — never preloaded, no CDN, so a note that contains no graph pays
+nothing and a note that does still reaches no external host. A UI test asserts
+exactly that.
+
+**KaTeX.** Signature is `$$…$$` or a bare `\begin{env}…\end{env}`. Inline
+`$x$` is deliberately **not** claimed: a paste is a block-level event and a
+single dollar is far more often money than maths (`The licence costs $100` has
+a test). `throwOnError: true` is set against KaTeX's default of rendering bad
+input as red source text — that would put a broken formula in the document
+dressed as a rendered one, which is precisely the silent-wrong-guess §4.4
+forbids. `trust: false` strips `\href`, `\url` and `\includegraphics`
+destinations entirely.
+
+**Storage.** Math stores as a ` ```math ` fence rather than `$$…$$`. The fence
+is what the existing code-block mechanism and the D7 source map already handle
+safely, GitHub renders ` ```math ` natively, and it avoids remark escaping
+backslashes in formulas. The `$$` delimiters are stripped on the way in, so the
+stored source is the expression itself.
+
+**Not included:** inline `$x$` math inside a paragraph. That needs a remark
+extension and a ProseMirror inline node rather than a paste sniffer, and it is
+its own task.
 
 ## 5. Later: the second tier
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Public CI sandbox helpers for SimpleMark.
 #
-# The canonical tree lives on a PRIVATE repo (StevenRidder/simplemark), where
+# The canonical tree lives on a PRIVATE repo (6th-Element-Labs/simplemark), where
 # GitHub Actions minutes are billed. The sandbox is a separate PUBLIC repo with
 # the full actual tree and the same workflows, where Actions minutes are free.
 #
@@ -18,7 +18,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CI_REPO="${CI_REPO:-StevenRidder/simplemark-ci}"
 CI_REMOTE="${CI_REMOTE:-ci}"
 CI_REMOTE_URL="${CI_REMOTE_URL:-https://github.com/${CI_REPO}.git}"
-CANONICAL_REPO="${CANONICAL_REPO:-StevenRidder/simplemark}"
+CANONICAL_REPO="${CANONICAL_REPO:-6th-Element-Labs/simplemark}"
 ORIGIN_REMOTE="${ORIGIN_REMOTE:-origin}"
 WAIT_TIMEOUT_SEC="${WAIT_TIMEOUT_SEC:-3600}"
 POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-20}"

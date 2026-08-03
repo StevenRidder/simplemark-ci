@@ -156,6 +156,15 @@ else
   fail "git diff --check reported problems"
 fi
 
+section "public mirror hygiene"
+if bash scripts/mirror/test-public-mirror-hygiene.sh; then
+  record "public-mirror-hygiene" "passed" "website and private repository identity excluded"
+  echo "PASS  public-mirror-hygiene"
+else
+  record "public-mirror-hygiene" "failed" "sanitized mirror retained private-only material"
+  fail "public-mirror-hygiene: sanitized mirror retained private-only material"
+fi
+
 for s in $REQUIRED_SCRIPTS; do
   [ "$SCOPE" = "fast" ] && [ "$s" = "check:boundaries" ] && continue
   run_script "$s" required

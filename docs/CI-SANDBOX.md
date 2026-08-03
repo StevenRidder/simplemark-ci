@@ -1,14 +1,14 @@
 # CI sandbox (`simplemark-ci`)
 
 SimpleMark keeps its canonical source on the **private** repo
-[`StevenRidder/simplemark`](https://github.com/StevenRidder/simplemark). GitHub
+[`6th-Element-Labs/simplemark`](https://github.com/6th-Element-Labs/simplemark). GitHub
 Actions minutes are billed on private repos and free on public ones, so — exactly
 as Helm and Switchboard already do — CI runs on a separate **public sandbox** that
 holds the **full actual tree** and the **same workflows**.
 
 | Repo | Role | Authority |
 |---|---|---|
-| `StevenRidder/simplemark` | Canonical source, PRs, Switchboard merge webhook | `done` · `merge_provenance` · `code_truth` |
+| `6th-Element-Labs/simplemark` | Canonical source, PRs, Switchboard merge webhook | `done` · `merge_provenance` · `code_truth` |
 | `StevenRidder/simplemark-ci` | Public CI sandbox — push branches here first | `verification_only` |
 
 The sandbox is **not** a product mirror. It is not scrubbed, its feature branches
@@ -21,7 +21,7 @@ are ephemeral, and it can never prove Done. Only a merge on the canonical repo c
 |---|---|---|---|
 | Switchboard | `6th-Element-Labs/projectplanner` | `6th-Element-Labs/projectplanner-ci` | `Switchboard CI / VM gate` |
 | Helm | `StevenRidder/Helm` | `StevenRidder/helm-ci` | `helm-ci/full-suite` |
-| SimpleMark | `StevenRidder/simplemark` | `StevenRidder/simplemark-ci` | `simplemark-ci/full-suite` |
+| SimpleMark | `6th-Element-Labs/simplemark` | `StevenRidder/simplemark-ci` | `simplemark-ci/full-suite` |
 
 Switchboard uses the stricter variant: the canonical dispatcher mirrors an exact
 SHA to a disposable `ci/**` tag and invokes a workflow that lives on the sandbox's

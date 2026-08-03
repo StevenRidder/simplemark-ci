@@ -8,7 +8,7 @@ set -euo pipefail
 #   MIRROR_DRY_RUN=1 scripts/publish-public-mirror.sh   # build and scan only
 #
 # Three distinct repos, three distinct jobs:
-#   StevenRidder/simplemark         private canonical — the only source of truth
+#   6th-Element-Labs/simplemark     private canonical — the only source of truth
 #   StevenRidder/simplemark-ci      public CI sandbox — temporary, full tree, do not repurpose
 #   StevenRidder/simplemark-public  this mirror — clean, curated, no agent plumbing
 #
@@ -25,16 +25,17 @@ ARCHIVE="${WORK_ROOT}/source.tar"
 EXPORT_DIR="${WORK_ROOT}/export"
 PUBLIC_CLONE="${WORK_ROOT}/public"
 
-# Paths that must never reach the mirror: agent plumbing, board wiring, CI
-# sandbox mechanics, and internal strategy documents.
+# Paths that must never reach the mirror: the private product website and its
+# hosting/brand assets, agent plumbing, board wiring, CI sandbox mechanics, and
+# internal strategy documents.
 # tests/ui/fidelity.spec.ts drives spike/fidelity's harness and types against the
 # window global it installs. The spike does not ship, so the spec goes with it.
-HIDDEN_PATH_RE='^(AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattributes$|scripts/(publish-public-mirror|ci-sandbox|simplemark_ci)\.sh|scripts/mirror/|spike/|tests/ui/fidelity\.spec\.ts|docs/(POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX)\.md|docs/superpowers/|tests/fixtures/01-switchboard-borrowing-map\.md)'
+HIDDEN_PATH_RE='^(website/|AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattributes$|scripts/(publish-public-mirror|ci-sandbox|simplemark_ci)\.sh|scripts/mirror/|spike/|tests/app/ci-sandbox-open-pr\.test\.ts|tests/ui/fidelity\.spec\.ts|docs/(POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX)\.md|docs/superpowers/|tests/fixtures/01-switchboard-borrowing-map\.md)'
 
 # Text that must never appear in the mirror, even inside a file that ships.
 # Scoped to the agent/board scaffolding and CI mechanics — not to every mention
 # of Switchboard, which is a sibling product the docs legitimately cite.
-HIDDEN_TEXT_RE='AGENTS\.md|CLAUDE\.md|superpowers|ci-sandbox|simplemark-ci|taikun-plan|plan\.taikunai|PM_MCP_TOKEN|SWITCHBOARD_TOKEN|MIRROR_DRY_RUN'
+HIDDEN_TEXT_RE='AGENTS\.md|CLAUDE\.md|superpowers|ci-sandbox|simplemark-ci|taikun-plan|plan\.taikunai|PM_MCP_TOKEN|SWITCHBOARD_TOKEN|MIRROR_DRY_RUN|6th-Element-Labs/simplemark|StevenRidder/simplemark([^[:alnum:]-]|$)'
 
 # Documents that do not ship. References to them are de-linked rather than
 # deleted, so the surrounding sentence survives and the mirror has no dead links.
@@ -77,17 +78,17 @@ scan_tree() {
 
   rel_files="$(cd "$tree_dir" && find . -type f -not -path './.git/*' | sed 's#^\./##' | LC_ALL=C sort)"
 
-  if hits="$(printf '%s\n' "$rel_files" | rg -n "$HIDDEN_PATH_RE" || true)"; [ -n "$hits" ]; then
+  if hits="$(printf '%s\n' "$rel_files" | grep -En "$HIDDEN_PATH_RE" || true)"; [ -n "$hits" ]; then
     printf '%s\n' "$hits" >&2
     die "[$label] hidden private paths are present in export"
   fi
 
-  if hits="$(cd "$tree_dir" && rg -n "$HIDDEN_TEXT_RE" --glob '!package-lock.json' || true)"; [ -n "$hits" ]; then
+  if hits="$(cd "$tree_dir" && grep -ERIn --exclude='package-lock.json' -e "$HIDDEN_TEXT_RE" . || true)"; [ -n "$hits" ]; then
     printf '%s\n' "$hits" >&2
     die "[$label] hidden private references are present in export"
   fi
 
-  if hits="$(cd "$tree_dir" && rg -n "$HARD_SECRET_RE" --glob '!package-lock.json' || true)"; [ -n "$hits" ]; then
+  if hits="$(cd "$tree_dir" && grep -ERIn --exclude='package-lock.json' -e "$HARD_SECRET_RE" . || true)"; [ -n "$hits" ]; then
     printf '%s\n' "$hits" >&2
     die "[$label] hard secret/private-machine pattern found in export"
   fi
@@ -103,11 +104,11 @@ scan_product_contract() {
   done
 
   # The README must actually show the demo, or the front page is pointless.
-  rg -q 'docs/assets/simplemark-demo\.gif' "${tree_dir}/README.md" \
+  grep -Eq 'docs/assets/simplemark-demo\.gif' "${tree_dir}/README.md" \
     || die "[$label] product guard failed: README does not embed the demo GIF"
 
   # The fixture swap must be complete on both sides, or the suite cannot run.
-  rg -q "01-hostile-markdown\.md" "${tree_dir}/tests/support/fixtures.ts" \
+  grep -Eq "01-hostile-markdown\.md" "${tree_dir}/tests/support/fixtures.ts" \
     || die "[$label] product guard failed: fixtures.ts was not repointed at the neutral fixture"
 }
 
@@ -117,7 +118,7 @@ sanitize_export() {
 
   # Drop the private-only paths.
   (cd "$dir" && find . -type f -not -path './.git/*' | sed 's#^\./##' \
-    | rg "$HIDDEN_PATH_RE" || true) | while IFS= read -r path; do
+    | grep -E "$HIDDEN_PATH_RE" || true) | while IFS= read -r path; do
     [ -n "$path" ] && rm -f "${dir}/${path}"
   done
   find "$dir" -type d -empty -delete
@@ -157,7 +158,7 @@ sanitize_export() {
 main() {
   command -v git >/dev/null || die "git is required"
   command -v gh >/dev/null || die "GitHub CLI gh is required"
-  command -v rg >/dev/null || die "ripgrep rg is required"
+  command -v grep >/dev/null || die "grep is required"
   command -v rsync >/dev/null || die "rsync is required"
   command -v perl >/dev/null || die "perl is required"
 

@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-const githubUrl = "https://github.com/StevenRidder/simplemark";
+const githubUrl = "https://github.com/StevenRidder/simplemark-public";
 
 function Brand({ footer = false }: { footer?: boolean }) {
   return (

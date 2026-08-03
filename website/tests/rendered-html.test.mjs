@@ -38,5 +38,6 @@ test("keeps the pre-alpha download state honest", async () => {
   assert.match(html, /disabled=""/);
   assert.match(html, /signed native download/);
   assert.match(html, /production file watching/);
-  assert.match(html, /github\.com\/StevenRidder\/simplemark/);
+  assert.match(html, /github\.com\/StevenRidder\/simplemark-public/);
+  assert.doesNotMatch(html, /github\.com\/(?:StevenRidder|6th-Element-Labs)\/simplemark(?:[\"/])/);
 });

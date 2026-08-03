@@ -79,10 +79,10 @@ test('controls that exist are real; controls needing other infrastructure stay d
   // portable image/file references real. Search, New note and Document list
   // belong to SHELL-1; Work with AI to the live-agent deliverable.
   await expect(page.getByRole('button', { name: 'Work with AI' })).toBeDisabled()
-  await expect(page.getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
+  await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Search' })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Document list' })).toBeDisabled()
-  await expect(page.getByRole('button', { name: 'Table' })).toBeEnabled()
+  await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Table' })).toBeEnabled()
 })
 
 test('typing flows through the application API and advances the document revision', async ({
@@ -126,7 +126,7 @@ test('a formatting command reaches the document as Markdown', async ({ page }) =
   }
 
   await page.getByRole('button', { name: 'Text formatting' }).click()
-  await page.getByRole('button', { name: 'Bold' }).click()
+  await page.locator('.format-popover').getByRole('button', { name: 'Bold' }).click()
 
   await expect
     .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))

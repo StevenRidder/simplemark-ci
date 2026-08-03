@@ -62,7 +62,7 @@ test.describe('inline commands reach the document', () => {
     test(`${label} produces ${expected}`, async ({ page }) => {
       await selectWord(page, word)
       await page.getByRole('button', { name: 'Text formatting' }).click()
-      await page.getByRole('button', { name: label, exact: true }).click()
+      await page.locator('.format-popover').getByRole('button', { name: label, exact: true }).click()
       await expect.poll(() => markdown(page)).toContain(expected)
     })
   }
@@ -82,7 +82,7 @@ test('the checklist button produces a task item', async ({ page }) => {
 test('the table button inserts a real table', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
 
   await expect(page.locator(`${editor} table`)).toBeVisible()
 
@@ -96,7 +96,7 @@ test('the table button inserts a real table', async ({ page }) => {
 test('table-local controls change rows, columns, and alignment as portable Markdown', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
 
   const table = page.locator(`${editor} table`)
   await table.locator('th').first().click()
@@ -127,7 +127,7 @@ test('table-local controls change rows, columns, and alignment as portable Markd
 test('Tab from the final table cell creates a new editable GFM row', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
 
   const table = page.locator(`${editor} table`)
   const rowsBefore = await table.locator('tr').count()
@@ -142,7 +142,7 @@ test('Tab from the final table cell creates a new editable GFM row', async ({ pa
 test('table controls delete structure without turning into table administration', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
 
   const table = page.locator(`${editor} table`)
   await table.locator('td').first().click()
@@ -162,7 +162,7 @@ test('table controls delete structure without turning into table administration'
 test('a table column can be width-dragged without width metadata entering Markdown', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
 
   const table = page.locator(`${editor} table`)
   const cell = table.locator('th').first()
@@ -183,7 +183,7 @@ test('a table column can be width-dragged without width metadata entering Markdo
 test('table controls select cells, bold them portably, and move the table as one block', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
 
   const table = page.locator(`${editor} table`)
   const dataCells = table.locator('td')
@@ -214,7 +214,7 @@ test('table controls select cells, bold them portably, and move the table as one
 test('advanced table administration stays out of the reader menu', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
 
   const table = page.locator(`${editor} table`)
   await table.locator('td').first().click()
@@ -290,7 +290,7 @@ test.describe('everyday correction controls', () => {
     await page.keyboard.type('destination')
     for (let i = 0; i < 'destination'.length; i += 1) await page.keyboard.press('Shift+ArrowLeft')
     await page.once('dialog', (dialog) => dialog.accept('https://example.invalid/destination'))
-    await page.getByRole('button', { name: 'Link', exact: true }).click()
+    await page.locator('.format-popover').getByRole('button', { name: 'Link', exact: true }).click()
     await expect.poll(() => markdown(page)).toContain('[destination](https://example.invalid/destination)')
   })
 })
@@ -443,5 +443,5 @@ test('controls needing infrastructure stay disabled', async ({ page }) => {
   for (const name of ['Search', 'Document list', 'New note', 'Work with AI']) {
     await expect(page.getByRole('button', { name })).toBeDisabled()
   }
-  await expect(page.getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
+  await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
 })

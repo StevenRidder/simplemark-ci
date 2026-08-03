@@ -75,6 +75,10 @@ export interface WindowChromeOptions {
   readonly onNavigate?: (pos: number) => void
   /** Inserts an ordinary Markdown image or file link through a platform port. */
   readonly onInsertAsset?: (() => void) | undefined
+  /** Whether the quiet, single-row editing strip is shown. This is shell state. */
+  readonly stylesBarVisible: boolean
+  /** Persists the shell-only styles-bar preference in the composition root. */
+  readonly onStylesBarVisibleChange: (visible: boolean) => void
 }
 
 export interface WindowChrome {
@@ -158,6 +162,145 @@ function svgButton(
     button.title = label
   }
   return button
+}
+
+/**
+ * Bear's compact styles bar, expressed entirely as existing editor commands.
+ *
+ * It deliberately owns no formatting logic. The browser shell and a future
+ * native View/Format menu both pass the same `EditorCommand` values through
+ * WindowChromeOptions.onCommand, so there is no second rich-text path.
+ */
+function createStylesBar(options: WindowChromeOptions): HTMLElement {
+  const bar = document.createElement('div')
+  bar.className = 'styles-bar'
+  bar.setAttribute('aria-label', 'Styles bar')
+  bar.hidden = !options.stylesBarVisible
+
+  const closePanels = (): void => {
+    for (const panel of bar.querySelectorAll<HTMLElement>('.styles-menu.open')) {
+      panel.classList.remove('open')
+      panel.previousElementSibling?.setAttribute('aria-expanded', 'false')
+    }
+  }
+  const menu = (label: string, content: (panel: HTMLDivElement) => void): HTMLDivElement => {
+    const group = document.createElement('div')
+    group.className = 'styles-menu-group'
+    const trigger = document.createElement('button')
+    trigger.type = 'button'
+    trigger.className = 'styles-control styles-menu-trigger'
+    trigger.textContent = label
+    // Keep the visual chevron out of the command name. It is decoration, not
+    // a different action, and keyboard/screen-reader users need a stable name.
+    trigger.setAttribute('aria-label', label)
+    trigger.setAttribute('aria-expanded', 'false')
+    trigger.addEventListener('mousedown', (event) => event.preventDefault())
+    const panel = document.createElement('div')
+    panel.className = 'styles-menu'
+    content(panel)
+    trigger.addEventListener('click', () => {
+      const open = !panel.classList.contains('open')
+      closePanels()
+      panel.classList.toggle('open', open)
+      trigger.setAttribute('aria-expanded', String(open))
+    })
+    group.append(trigger, panel)
+    return group
+  }
+  const command = (label: string, editorCommand: EditorCommand, className = 'styles-control'): HTMLButtonElement =>
+    commandButton(className, label, label, editorCommand, options.onCommand)
+
+  const headers = menu('Headers', (panel) => {
+    for (const level of [1, 2, 3] as const) {
+      panel.append(command(`Heading ${level}`, `heading${level}`))
+    }
+  })
+  const lists = menu('Lists', (panel) => {
+    panel.append(
+      command('Bullet list', 'bulletList'),
+      command('Numbered list', 'orderedList'),
+      command('Quote', 'quote'),
+    )
+  })
+  const more = menu('More', (panel) => {
+    // On a narrow window these mirror the low-frequency hidden row controls.
+    // They still call the same command union; More is overflow, not a second
+    // formatting implementation.
+    panel.append(
+      command('Todo', 'taskList'),
+      command('Bullet list', 'bulletList'),
+      command('Numbered list', 'orderedList'),
+      command('Bold', 'bold'),
+      command('Italic', 'italic'),
+      command('Link', 'link'),
+      command('Tables', 'table'),
+    )
+    for (const level of [4, 5, 6] as const) {
+      panel.append(command(`Heading ${level}`, `heading${level}`))
+    }
+    panel.append(
+      command('Strikethrough', 'strikethrough'),
+      command('Highlight', 'highlight'),
+      command('Inline code', 'inlineCode'),
+      command('Code block', 'codeBlock'),
+      command('Divider', 'divider'),
+      command('Move block up', 'moveBlockUp'),
+      command('Move block down', 'moveBlockDown'),
+    )
+    const file = document.createElement('button')
+    file.type = 'button'
+    file.className = 'styles-control'
+    file.textContent = 'Image/File'
+    if (options.onInsertAsset === undefined) {
+      file.disabled = true
+      file.title = 'Image/File — portable file links are not available on this platform'
+    } else {
+      file.addEventListener('mousedown', (event) => event.preventDefault())
+      file.addEventListener('click', () => options.onInsertAsset?.())
+    }
+    panel.append(file)
+    const visibility = document.createElement('button')
+    visibility.type = 'button'
+    visibility.className = 'styles-control styles-bar-toggle'
+    visibility.textContent = 'Hide styles bar'
+    visibility.addEventListener('mousedown', (event) => event.preventDefault())
+    visibility.addEventListener('click', () => {
+      options.onStylesBarVisibleChange(false)
+      bar.hidden = true
+      closePanels()
+    })
+    panel.append(visibility)
+  })
+
+  const asset = document.createElement('button')
+  asset.type = 'button'
+  asset.className = 'styles-control styles-asset'
+  asset.textContent = 'Image/File'
+  asset.setAttribute('aria-label', 'Insert image or link file')
+  if (options.onInsertAsset === undefined) {
+    asset.disabled = true
+    asset.title = 'Image/File — portable file links are not available on this platform'
+  } else {
+    asset.title = 'Insert image or link file'
+    asset.addEventListener('mousedown', (event) => event.preventDefault())
+    asset.addEventListener('click', () => options.onInsertAsset?.())
+  }
+
+  // Exact product order: the visual hierarchy stays stable even while narrow
+  // windows move the low-frequency end of the row into More.
+  bar.append(
+    headers,
+    command('Todo', 'taskList', 'styles-control styles-bar-overflow'),
+    lists,
+    command('Bold', 'bold', 'styles-control styles-bar-overflow'),
+    command('Italic', 'italic', 'styles-control styles-bar-overflow'),
+    command('Link', 'link', 'styles-control styles-bar-overflow'),
+    command('Tables', 'table', 'styles-control styles-bar-overflow'),
+    asset,
+    more,
+  )
+
+  return bar
 }
 
 export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
@@ -583,6 +726,25 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     right.append(svgButton('tool', entry.label, entry.icon, { disabled: true, owner: entry.owner }))
   }
 
+  const stylesBar = createStylesBar(options)
+  const stylesBarToggle = document.createElement('button')
+  stylesBarToggle.type = 'button'
+  stylesBarToggle.className = 'styles-bar-menu-toggle'
+  const paintStylesBarToggle = (): void => {
+    stylesBarToggle.textContent = stylesBar.hidden ? 'Show styles bar' : 'Hide styles bar'
+  }
+  paintStylesBarToggle()
+  stylesBarToggle.addEventListener('mousedown', (event) => event.preventDefault())
+  stylesBarToggle.addEventListener('click', () => {
+    const visible = stylesBar.hidden
+    stylesBar.hidden = !visible
+    options.onStylesBarVisibleChange(visible)
+    paintStylesBarToggle()
+  })
+  // The same tiny View/Format affordance restores a deliberately hidden bar;
+  // hiding it can never strand the user without a way back.
+  popover.append(stylesBarToggle)
+
   titlebar.append(left, filename, editTools, right)
 
   // ---- editor host ----
@@ -600,7 +762,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   })
   editorSection.append(page, continueWriting)
 
-  windowEl.append(titlebar, editorSection)
+  windowEl.append(titlebar, stylesBar, editorSection)
   stage.append(windowEl)
 
   return {

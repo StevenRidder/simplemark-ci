@@ -23,7 +23,7 @@ async function chooseAsset(
   page.on('dialog', answerPrompt)
   const chooser = page.waitForEvent('filechooser')
   try {
-    await page.getByRole('button', { name: 'Insert image or link file' }).click()
+    await page.getByLabel('Editing tools').getByRole('button', { name: 'Insert image or link file' }).click()
     // `prompt()` blocks the page. Register both answers before setFiles so the
     // picker never deadlocks waiting for a modal the test has not yet observed.
     await (await chooser).setFiles(file)

@@ -55,6 +55,8 @@ export interface ComposeOptions {
   readonly openFileUnavailableReason?: string
 }
 
+const STYLES_BAR_KEY = 'simplemark.styles-bar-visible'
+
 export async function composeApp(options: ComposeOptions): Promise<AppComposition> {
   const { ports } = options
   const session = await DocumentSession.open(ports.file)
@@ -64,6 +66,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   // whole page rather than any selection.
   const storage = options.preferenceStorage ?? readPreferenceStorage()
   let preferences = loadPreferences(storage)
+  let stylesBarVisible = loadStylesBarVisible(storage)
   applyPreferences(preferences)
 
   let editor: MilkdownEditor | undefined
@@ -89,6 +92,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     onInsertAsset: ports.assets === undefined
       ? undefined
       : () => void insertAsset(),
+    stylesBarVisible,
+    onStylesBarVisibleChange: (visible) => {
+      stylesBarVisible = visible
+      saveStylesBarVisible(storage, visible)
+    },
     preferences,
     onPreferences: (next) => {
       preferences = next
@@ -173,6 +181,24 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     editor,
     save,
     setStatus: (state, message) => chrome.setStatus(state, message),
+  }
+}
+
+/** A shell preference, never part of the Markdown document. */
+function loadStylesBarVisible(storage: Pick<Storage, 'getItem'>): boolean {
+  try {
+    const saved = storage.getItem(STYLES_BAR_KEY)
+    return saved === null ? true : saved === 'true'
+  } catch {
+    return true
+  }
+}
+
+function saveStylesBarVisible(storage: Pick<Storage, 'setItem'>, visible: boolean): void {
+  try {
+    storage.setItem(STYLES_BAR_KEY, String(visible))
+  } catch {
+    // The app remains usable in private or restricted storage contexts.
   }
 }
 

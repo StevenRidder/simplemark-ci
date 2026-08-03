@@ -210,6 +210,96 @@ button[disabled] {
   display: block;
 }
 
+/* EDITOR-6 — an optional quiet strip for the few actions used while writing.
+   It is deliberately a shell control, never a rich-text representation. */
+.styles-bar {
+  flex: 0 0 37px;
+  min-height: 37px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--chrome) 64%, transparent);
+  position: relative;
+  z-index: 9;
+}
+
+.styles-bar[hidden] {
+  display: none;
+}
+
+.styles-menu-group {
+  position: relative;
+}
+
+.styles-control {
+  min-width: 30px;
+  height: 27px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.styles-control:hover:not([disabled]),
+.styles-menu-trigger[aria-expanded='true'] {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--soft) 84%, transparent);
+}
+
+.styles-menu-trigger::after {
+  content: '⌄';
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.styles-menu {
+  display: none;
+  position: absolute;
+  z-index: 25;
+  top: calc(100% + 5px);
+  left: 0;
+  min-width: 142px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--paper) 97%, transparent);
+  box-shadow: 0 12px 34px rgba(32, 29, 24, 0.16);
+  backdrop-filter: blur(16px);
+}
+
+.styles-menu.open {
+  display: grid;
+  gap: 2px;
+}
+
+.styles-menu .styles-control {
+  width: 100%;
+  text-align: left;
+}
+
+.styles-bar-menu-toggle {
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-2);
+  text-align: left;
+  font-size: 11px;
+}
+
+.styles-bar-menu-toggle:hover {
+  background: var(--soft);
+}
+
 .style-row {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -1209,6 +1299,18 @@ section.editor {
     background: color-mix(in srgb, var(--paper) 94%, transparent);
     box-shadow: 0 8px 28px rgba(28, 25, 21, 0.14);
     backdrop-filter: blur(18px);
+  }
+  .styles-bar {
+    justify-content: flex-start;
+    overflow: visible;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  /* The row stays one line: low-frequency actions move into More, where the
+     exact same commands remain available. */
+  .styles-bar-overflow,
+  .styles-asset {
+    display: none;
   }
   .format-popover {
     top: auto;

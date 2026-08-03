@@ -302,11 +302,42 @@ export class MilkdownEditor {
    * canvas can land on a NodeView and take a node selection instead of a text
    * one.
    */
+  /**
+   * Puts the caret where writing continues — after the last block, not inside
+   * it (BUG-2).
+   *
+   * `Selection.atEnd` resolves the end of the document, and when the last node
+   * is a diagram fence that position is *inside* the fence's source. Typing
+   * there appends Mermaid; pasting there writes the clipboard into the diagram
+   * and corrupts it. So when the final block cannot hold prose, a paragraph is
+   * opened after it first.
+   *
+   * That insertion is safe here and deliberately not done on load: focusEnd is
+   * only ever called when someone is about to write. Opening a document that
+   * ends in a diagram still changes nothing — `continueAfterLastBlock` remains
+   * the explicit control for that, and there is a test for the no-change case.
+   */
   focusEnd(): void {
     this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
-      const { doc, tr } = view.state
-      view.dispatch(tr.setSelection(Selection.atEnd(doc)).scrollIntoView())
+      const { doc, schema } = view.state
+      const last = doc.lastChild
+      const holdsProse = last !== null && last.isTextblock && last.type.spec.code !== true
+      const paragraph = schema.nodes['paragraph']
+
+      if (holdsProse || paragraph === undefined) {
+        view.dispatch(view.state.tr.setSelection(Selection.atEnd(doc)).scrollIntoView())
+        view.focus()
+        return
+      }
+
+      const insertAt = doc.content.size
+      const transaction = view.state.tr.insert(insertAt, paragraph.create())
+      view.dispatch(
+        transaction
+          .setSelection(Selection.near(transaction.doc.resolve(insertAt + 1)))
+          .scrollIntoView(),
+      )
       view.focus()
     })
   }

@@ -1,9 +1,8 @@
 /**
  * Records a realtime demo of SimpleMark and encodes it to an animated GIF.
  *
- * Unlike record-paste-demo.mjs — which reloads the page and grabs one still per
- * capability — this drives a single continuous session and captures actual video,
- * so pasting, rendering and re-rendering are seen happening rather than implied.
+ * Drives a single continuous session and captures actual video, so pasting,
+ * rendering and re-rendering are seen happening rather than implied.
  *
  *   npm run dev            # the app must be up on :5273
  *   node scripts/record-demo.mjs
@@ -77,25 +76,16 @@ async function caretToEnd() {
   await page.evaluate(() => window.simplemark.editor.focusEnd())
 }
 
-/** The type of the document's last top-level node, read from ProseMirror itself. */
-function lastNodeType() {
-  return page.evaluate(
-    () => document.querySelector('.milkdown .ProseMirror').pmViewDesc.node.lastChild?.type.name,
-  )
-}
-
 /**
  * Pastes as a person does: clipboard + the real key chord, so the sniffers run.
  *
- * When the document's last node is a diagram there is no trailing paragraph and
- * no gap cursor, so focusEnd() drops the caret *inside* the diagram's source and
- * plain Enter just adds a line of Mermaid. exitCode (Mod-Enter) opens a real
- * paragraph after the block, which is where the next paste belongs.
+ * focusEnd() opens a paragraph after a terminal rendered block rather than
+ * dropping the caret into its source (BUG-2), so this no longer needs the
+ * exitCode workaround it once carried.
  */
 async function paste(text) {
   await caretToEnd()
-  const last = await lastNodeType()
-  await page.keyboard.press(last === 'code_block' ? 'ControlOrMeta+Enter' : 'Enter')
+  await page.keyboard.press('Enter')
   await page.evaluate((t) => navigator.clipboard.writeText(t), text)
   await page.keyboard.press('ControlOrMeta+v')
 }
@@ -131,8 +121,11 @@ await reveal(diagram)
 await beat(1800)
 
 // 4 — edit the diagram's source and watch it re-render under the caret.
+// The source editor is a sheet mounted on document.body, not a child of the
+// diagram, so it is located globally rather than scoped to the figure.
 await diagram.locator('.edit-source').click()
-const source = diagram.locator('.diagram-source')
+const source = page.locator('.diagram-source-sheet:not([hidden]) .diagram-source')
+await source.waitFor()
 await source.click()
 await source.press('ControlOrMeta+a')
 await page.keyboard.type(

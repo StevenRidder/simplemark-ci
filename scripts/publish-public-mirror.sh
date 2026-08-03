@@ -29,7 +29,7 @@ PUBLIC_CLONE="${WORK_ROOT}/public"
 # sandbox mechanics, and internal strategy documents.
 # tests/ui/fidelity.spec.ts drives spike/fidelity's harness and types against the
 # window global it installs. The spike does not ship, so the spec goes with it.
-HIDDEN_PATH_RE='^(AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattributes$|scripts/(publish-public-mirror|ci-sandbox|simplemark_ci)\.sh|scripts/mirror/|scripts/record-paste-demo\.mjs|spike/|tests/ui/fidelity\.spec\.ts|docs/(POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX)\.md|docs/superpowers/|docs/assets/simplemark-paste-demo\.gif|tests/fixtures/01-switchboard-borrowing-map\.md)'
+HIDDEN_PATH_RE='^(AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattributes$|scripts/(publish-public-mirror|ci-sandbox|simplemark_ci)\.sh|scripts/mirror/|spike/|tests/ui/fidelity\.spec\.ts|docs/(POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX)\.md|docs/superpowers/|tests/fixtures/01-switchboard-borrowing-map\.md)'
 
 # Text that must never appear in the mirror, even inside a file that ships.
 # Scoped to the agent/board scaffolding and CI mechanics — not to every mention

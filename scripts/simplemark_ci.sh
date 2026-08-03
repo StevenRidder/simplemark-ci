@@ -71,6 +71,24 @@ run_script() {
     return 0
   fi
   section "$name"
+  if [ "$name" = "test:ui" ]; then
+    # Multiple task worktrees run this same gate locally. A shared default Vite
+    # port lets one suite attach to another worktree's app, then fail when that
+    # suite shuts its server down. Use a stable per-worktree port unless the
+    # caller deliberately supplies one (for example, a hosted CI runner).
+    local checksum ui_port
+    checksum="$(printf '%s' "$ROOT" | cksum | awk '{print $1}')"
+    ui_port="${SIMPLEMARK_TEST_PORT:-$((5400 + checksum % 1000))}"
+    echo "SIMPLEMARK_TEST_PORT=$ui_port"
+    if SIMPLEMARK_TEST_PORT="$ui_port" npm run --silent "$name"; then
+      record "$name" "passed" "port=$ui_port"
+      echo "PASS  $name"
+    else
+      record "$name" "failed" "npm run $name exited non-zero (port=$ui_port)"
+      fail "$name: npm run $name failed"
+    fi
+    return 0
+  fi
   if npm run --silent "$name"; then
     record "$name" "passed" ""
     echo "PASS  $name"

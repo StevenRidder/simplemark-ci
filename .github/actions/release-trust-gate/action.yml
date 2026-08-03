@@ -1,0 +1,19 @@
+name: Verify SimpleMark release trust
+description: Fail closed unless one platform installer has matching smoke and trust evidence.
+inputs:
+  target:
+    description: macos, windows, or linux
+    required: true
+  evidence:
+    description: Path to the exact platform smoke evidence JSON file
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Verify release trust
+      shell: bash
+      run: >-
+        node scripts/verify-release-trust.mjs
+        --target "${{ inputs.target }}"
+        --mode public-release
+        --evidence "${{ inputs.evidence }}"

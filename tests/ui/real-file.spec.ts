@@ -145,11 +145,12 @@ test('a table edit saves and reopens as an ordinary GFM pipe table', async ({ pa
   await table.locator('td').last().click()
   await page.keyboard.type('Saved cell')
 
-  // Milkdown batches document-change notifications; wait for the actual
-  // DocumentSession transaction rather than racing a save against the editor.
+  // The row/column operations already made the document dirty. Wait for this
+  // final cell transaction specifically; merely observing dirty here lets a
+  // loaded CI worker save before the typed text reaches Milkdown.
   await expect
-    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().dirty))
-    .toBe(true)
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('Saved cell')
   await page.evaluate(() => window.simplemark!.save())
   const onDisk = await diskContent(page)
   expect(onDisk).toContain('Saved cell')

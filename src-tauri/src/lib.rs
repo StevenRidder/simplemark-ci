@@ -33,6 +33,39 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, Url};
 use tauri_plugin_dialog::DialogExt;
 
+/// Which commit produced this bundle, captured at compile time by `build.rs`.
+///
+/// Reported, never interpreted. The shell decides how to say it; this only
+/// carries what the build knew. `sha` is `unknown` when the build had no git
+/// metadata to read, which the shell must show as-is rather than hide.
+#[derive(Serialize)]
+pub struct BuildProvenance {
+    sha: String,
+    short_sha: String,
+    built_at: String,
+}
+
+/// The commit and time this binary was built from.
+#[tauri::command]
+fn build_provenance() -> BuildProvenance {
+    let sha = env!("SIMPLEMARK_BUILD_SHA").to_string();
+    BuildProvenance {
+        short_sha: short_sha(&sha),
+        sha,
+        built_at: env!("SIMPLEMARK_BUILD_TIME").to_string(),
+    }
+}
+
+/// Seven characters, git's own abbreviation, except for the honest non-SHA
+/// values — truncating `unknown` to `unknow` would read like a real commit.
+fn short_sha(sha: &str) -> String {
+    if sha.len() >= 40 && sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        sha[..7].to_string()
+    } else {
+        sha.to_string()
+    }
+}
+
 /// A document handed to the shared application layer.
 ///
 /// `handle` is the absolute path. It is opaque to the TypeScript side, which
@@ -718,6 +751,7 @@ pub fn run() {
             take_open_note_request,
             save_note,
             print_note,
+            build_provenance,
             watch_note,
             watch_workspace_folder
         ])
@@ -742,6 +776,24 @@ mod tests {
         let awkward: Vec<u8> = vec![b'a', b'\r', 0xF0, 0x9F, 0x92, 0xA9, 0xFF, b'\n'];
         let encoded = BASE64.encode(&awkward);
         assert_eq!(BASE64.decode(encoded.as_bytes()).unwrap(), awkward);
+    }
+
+    /// The bundle must be able to name its own commit — that is the entire
+    /// point of APP-22, and a build that silently lost the stamp would look
+    /// exactly like a working one until somebody trusted a stale app.
+    #[test]
+    fn the_build_stamps_a_commit_and_a_time() {
+        let provenance = build_provenance();
+        assert!(!provenance.sha.is_empty());
+        assert!(!provenance.built_at.is_empty());
+        assert_eq!(provenance.short_sha, short_sha(&provenance.sha));
+    }
+
+    #[test]
+    fn short_sha_abbreviates_commits_and_leaves_non_commits_intact() {
+        assert_eq!(short_sha("7670ea436b308c4ba6669ddc47c54565deb6fa26"), "7670ea4");
+        // Never abbreviate the honest fallback into something SHA-shaped.
+        assert_eq!(short_sha("unknown"), "unknown");
     }
 
     #[test]

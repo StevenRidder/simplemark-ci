@@ -2,6 +2,8 @@ import { CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu } from '@tau
 
 import { COMMANDS, MENUS } from '../../application/index.js'
 import type { DocumentCommandId, MenuEntry, MenuSpec } from '../../application/index.js'
+import { buildNumber, describeBuild } from '../build-provenance.js'
+import type { BuildProvenance } from '../build-provenance.js'
 
 /**
  * The macOS menubar, built from the shared command registry (APP-2).
@@ -24,6 +26,15 @@ export interface NativeMenuOptions {
   /** Current application-owned state, read at build and after every action. */
   readonly state: (command: DocumentCommandId) => { readonly enabled: boolean; readonly checked: boolean }
   readonly appName?: string
+  /**
+   * Which commit this build came from (APP-22), shown in About.
+   *
+   * About is where a Mac user already looks for what an app is, so provenance
+   * goes there rather than into a new surface the document would have to make
+   * room for. Absent means the shell could not read it — the panel then says so
+   * instead of quietly omitting the line.
+   */
+  readonly provenance?: BuildProvenance
 }
 
 async function buildEntry(
@@ -82,8 +93,29 @@ export async function installNativeMenu(options: NativeMenuOptions): Promise<Men
   const appMenu = await Submenu.new({
     text: appName,
     items: [
-      // About carries metadata rather than a plain tag in Tauri's menu API.
-      await PredefinedMenuItem.new({ item: { About: null }, text: `About ${appName}` }),
+      // About carries metadata rather than a plain tag in Tauri's menu API,
+      // which is what lets the build's own commit ride along.
+      //
+      // Tauri's `shortVersion` is what macOS renders in parentheses after the
+      // version, so the commit goes there: `Version 0.1.0 (252f942)`, the build
+      // number convention every Mac app already follows. `version` is left to
+      // the configured 0.1.0. The two fields read backwards from their Apple
+      // namesakes, which is worth stating because swapping them silently
+      // produces `Version 252f942 (0.1.0)` and looks like a versioning bug.
+      //
+      // `credits` carries the fuller line. Not `comments` — that is a GTK field
+      // the macOS standard About panel drops without a word, which is exactly
+      // how the first attempt here produced a panel with no provenance at all.
+      await PredefinedMenuItem.new({
+        item: {
+          About: {
+            name: appName,
+            shortVersion: buildNumber(options.provenance),
+            credits: describeBuild(options.provenance),
+          },
+        },
+        text: `About ${appName}`,
+      }),
       await PredefinedMenuItem.new({ item: 'Separator' }),
       await PredefinedMenuItem.new({ item: 'Services' }),
       await PredefinedMenuItem.new({ item: 'Separator' }),

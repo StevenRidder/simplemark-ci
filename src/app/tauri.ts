@@ -17,6 +17,8 @@ import { TauriWorkspaceCatalogPort } from '../adapters/filesystem/tauri-workspac
 import { TauriDocumentLinkPort } from '../adapters/filesystem/tauri-document-link-port.js'
 import type { FilePort, WorkspaceCatalog } from '../application/index.js'
 import { installNativeMenu } from './ui/native-menu.js'
+import { readProvenance } from './build-provenance.js'
+import type { BuildProvenance } from './build-provenance.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
@@ -409,9 +411,19 @@ async function mount(
   // Native-first: the menubar is the complete command surface, generated from
   // the same registry the toolbar uses. Rebuilt with each composition so the
   // View checkmarks match the shell that is actually on screen.
+  // Provenance is read once at menu build. A bundle's commit cannot change
+  // while it runs, and a failure to read it must not cost you the menubar.
+  let provenance: BuildProvenance | undefined
+  try {
+    provenance = readProvenance(await invoke('build_provenance'))
+  } catch {
+    provenance = undefined
+  }
+
   await installNativeMenu({
     run: (command) => app.run(command),
     state: (command) => app.commandState(command),
+    ...(provenance === undefined ? {} : { provenance }),
   })
 
   return app

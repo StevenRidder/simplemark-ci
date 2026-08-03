@@ -28,3 +28,5 @@ export {
   tsvToMarkdownTable,
 } from './paste/exhaust.js'
 export { looksLikeDot, looksLikeMath, stripMathDelimiters } from './paste/formal.js'
+export { CALLOUT_TYPES, matchCalloutMarker } from './paste/callout.js'
+export type { CalloutMarker, CalloutType } from './paste/callout.js'

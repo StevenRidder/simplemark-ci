@@ -1,6 +1,6 @@
 [package]
 name = "simplemark"
-version = "0.0.0"
+version = "0.1.0"
 description = "The beautiful living document for AI-generated Markdown"
 edition = "2021"
 rust-version = "1.77"

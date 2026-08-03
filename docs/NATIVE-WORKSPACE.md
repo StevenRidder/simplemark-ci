@@ -127,7 +127,10 @@ client, stays out of Markdown, and double-clicking the material restores bottom-
 keeps the active block above the dock so tables and rendered blocks remain directly manipulable.
 
 The native window uses macOS's real overlay title bar. Empty pane headers start a native window drag
-(with Tauri's drag-region marker as a fallback), and a double-click zooms the window. The real 14px
+(with Tauri's drag-region marker as a fallback), and a double-click zooms the window. Tauri 2 gates
+both commands separately from `core:default`, so the native capability explicitly grants
+`core:window:allow-start-dragging` and `core:window:allow-toggle-maximize`; removing either permission
+must fail the native-capability test instead of silently leaving dead chrome. The real 14px
 traffic-light inset is `(18, 31)` in the 58px header, visually centring the controls on the header;
 SimpleMark never draws replacement circles.
 

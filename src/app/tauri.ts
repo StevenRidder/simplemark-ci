@@ -228,14 +228,22 @@ function installWindowDragging(element: HTMLElement): void {
       if (event.button !== 0 || isChrome(event.target)) return
       // Left to itself the webview would start a text selection instead.
       event.preventDefault()
-      void getCurrentWindow().startDragging()
+      // Tauri 2 gates this command separately from `core:default`; the native
+      // capability grants `core:window:allow-start-dragging`. Keep the error
+      // visible during development instead of silently shipping a dead title
+      // bar if that capability is ever removed.
+      void getCurrentWindow().startDragging().catch((error: unknown) => {
+        console.error('Could not start native window drag', error)
+      })
     })
 
     // Double-clicking any empty pane header zooms, which is the macOS
     // convention people reach for without thinking about it.
     region.addEventListener('dblclick', (event) => {
       if (isChrome(event.target)) return
-      void getCurrentWindow().toggleMaximize()
+      void getCurrentWindow().toggleMaximize().catch((error: unknown) => {
+        console.error('Could not toggle native window size', error)
+      })
     })
   }
 }

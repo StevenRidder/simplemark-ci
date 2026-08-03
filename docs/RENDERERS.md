@@ -212,6 +212,46 @@ prose with prices as prose — there is a test for exactly that line.
 node and input rules on top of the remark extension, and it belongs to EDITOR-9
 alongside footnotes and callouts.
 
+## 4.7 Borrowed from livemark
+
+[livemark](https://github.com/datisthq/livemark) (MIT © 2025 Evgeny Karev) is a
+static documentation-site generator: build-time MDX, read-only, it never writes
+a user's Markdown. Almost none of it transfers — its remark plugins emit MDX JSX
+elements, which cannot round-trip to a file. Two things did.
+
+**The ANSI state machine.** SimpleMark's first ANSI card handled only the
+16-colour codes and read every other parameter as a standalone SGR code. That
+was worse than incomplete: `38;2;R;G;B` consumed the `2` as *dim* and dropped
+the colour, so real CI output rendered with actively wrong styling. livemark's
+parser consumes the parameters of `38`/`48` properly, and its 6x6x6 colour-cube
+and greyscale-ramp maths are lifted directly.
+
+Our colour policy differs deliberately. Indices **0–15** resolve to
+`var(--ansi-N)` — they are *names*, and a terminal green must stay legible on
+both reader grounds (contract rule 3). Indices **16–255 and truecolor** are
+absolute values the tool chose, emitted verbatim: fidelity wins there, and they
+cannot be classes anyway.
+
+**The callout transform.** `> [!NOTE]` and the other four GitHub types. The
+marker pattern and the awkward part — rebuilding the first paragraph without the
+marker while preserving anything else on that line — are livemark's shape.
+
+Two differences. livemark maps `CAUTION` to "danger" and `IMPORTANT` to "info"
+for its own component vocabulary; SimpleMark keeps GitHub's five names, because
+the name in the file should be the name GitHub renders (D1). And an unknown type
+stays an ordinary blockquote rather than being coerced to a nearest match.
+
+Serialising back needed a `mdast-util-to-markdown` handler rather than node
+emission, for reasons worth recording: as **text** remark escapes the bracket and
+`> \[!NOTE]` is not a callout anywhere; as an **html node** it is treated as flow
+html and leaves a bare `>` between marker and body. `containerFlow` also returns
+a leading break that must be dropped. The round trip is byte-identical.
+
+**Explicitly not borrowed:** MDX (violates D1 — not portable Markdown), their
+build-time architecture, and their file watcher, which is Vite HMR plumbing. Our
+external-change refresh has to reconcile a foreign write against a live document
+with unsaved edits — a harder problem they never face, being read-only.
+
 ## 5. Later: the second tier
 
 Deferred, in rough order of likely value.

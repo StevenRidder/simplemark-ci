@@ -42,6 +42,22 @@ Controls are monochrome, compact, evenly spaced, and have no explanatory labels 
 state. They acquire meaning through hover/focus tooltips and their menus. SimpleMark should use
 the same density and progressive disclosure, but its own icons and typography.
 
+The styles-bar popovers are smaller than the full Format menu and were inspected control by
+control:
+
+| Trigger | Bear popover contents |
+| --- | --- |
+| Headers | Heading 1 through Heading 6 |
+| Lists | List; Ordered List; Block Quote; Todo submenu; Callout submenu; Separator |
+| Todo submenu | Todo; Toggle; Mark as Completed; Mark as Incomplete; Move Completed to Bottom |
+| Callout submenu | Note; Tip; Important; Warning; Caution |
+| Highlight | Default; Green; Red; Blue; Yellow; Purple |
+| More | Underline; Strikethrough; Footnote; Code; Code Block; Math; Math Block; Wiki Link; Hide Style Bar |
+
+Tables and Image/File are direct buttons, not another layer of menus. Headers, Lists, Highlight,
+and More show a small chevron; More uses vertical dots. The Image/File glyph is a picture/file card,
+not a paperclip. Popover rows stay visible but dim when the current selection cannot use them.
+
 ### Format menu
 
 Bear's macOS **Format** menu is the complete, keyboard-accessible fallback for the styles bar. The
@@ -152,16 +168,21 @@ insert one.
 Implement the following initial subset, in Bear's observed order:
 
 ```text
-Headers | Todo | Lists | Bold | Italic | Link | Tables | Image/File | More
+Headers | Todo | Lists | Bold | Italic | Highlight | Link | Tables | Image/File | More
 ```
 
-Defer highlighting, wiki links, callouts, dates, and rich attachments until their Markdown storage
-and byte-preserving edit paths are specified. The bar is optional and remembers the user's local
-preference. On narrow windows it collapses lower-priority controls into **More** rather than wrapping
-onto a second row.
+Default `==highlight==` is portable and enabled. Colour highlights, underline, wiki links, callouts,
+footnotes, math insertion, dates, and rich attachments remain visible but disabled until their
+Markdown storage and byte-preserving edit paths are specified. This matches Bear's discoverable
+disabled-state behavior without inventing proprietary source. The bar is optional and remembers the
+user's local preference. On narrow windows it collapses lower-priority controls into **More** rather
+than wrapping onto a second row.
 
 The macOS menu and styles bar must call the same application commands. The browser and Tauri shells
 must render the same bar and table behavior; Tauri supplies native menu wiring, not a second editor.
+The approved bottom-centre position is the default and reset point. Users can drag the palette by
+its quiet background, its normalized position is remembered locally, and a double-click resets it;
+dragging a formatting control still performs only that control's command.
 
 ## Acceptance tests
 

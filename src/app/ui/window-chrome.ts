@@ -35,6 +35,12 @@ import type { ReaderPreferences } from '../reader-preferences.js'
 
 export type SaveState = 'saved' | 'dirty' | 'error'
 
+/** A palette centre expressed inside the document pane, so window resizing is safe. */
+export interface StylesBarPosition {
+  readonly x: number
+  readonly y: number
+}
+
 export interface WindowChromeOptions {
   /** macOS supplies the app menu and window furniture; web supplies neither. */
   readonly chromeMode: 'web' | 'macos'
@@ -67,6 +73,10 @@ export interface WindowChromeOptions {
   readonly stylesBarVisible: boolean
   /** Persists the shell-only styles-bar preference in the composition root. */
   readonly onStylesBarVisibleChange: (visible: boolean) => void
+  /** A missing position means the approved bottom-centre wireframe default. */
+  readonly stylesBarPosition?: StylesBarPosition | undefined
+  /** Persists a user-placed palette without putting layout into Markdown. */
+  readonly onStylesBarPositionChange: (position: StylesBarPosition | undefined) => void
   /** Optional shared workspace navigation. Native and browser shells supply the same intent. */
   readonly workspace?: WorkspaceOptions | undefined
 }
@@ -190,6 +200,7 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
   const bar = document.createElement('div')
   bar.className = 'styles-bar'
   bar.setAttribute('aria-label', 'Styles bar')
+  bar.setAttribute('aria-description', 'Drag the palette background to move it. Double-click the background to reset it.')
   bar.hidden = !options.stylesBarVisible
 
   const closePanels = (): void => {
@@ -198,20 +209,35 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
       panel.previousElementSibling?.setAttribute('aria-expanded', 'false')
     }
   }
-  const menu = (label: string, content: (panel: HTMLDivElement) => void): HTMLDivElement => {
+  bar.addEventListener('simplemark-close-menus', closePanels)
+  bar.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return
+    const openTrigger = bar.querySelector<HTMLButtonElement>('[aria-expanded="true"]')
+    closePanels()
+    openTrigger?.focus()
+    event.preventDefault()
+  })
+  const menu = (
+    label: string,
+    glyph: string,
+    content: (panel: HTMLDivElement) => void,
+  ): HTMLDivElement => {
     const group = document.createElement('div')
     group.className = 'styles-menu-group'
     const trigger = document.createElement('button')
     trigger.type = 'button'
     trigger.className = 'styles-control styles-menu-trigger'
-    trigger.textContent = label
+    trigger.innerHTML = glyph
     // Keep the visual chevron out of the command name. It is decoration, not
     // a different action, and keyboard/screen-reader users need a stable name.
     trigger.setAttribute('aria-label', label)
+    trigger.title = label
+    trigger.setAttribute('aria-haspopup', 'menu')
     trigger.setAttribute('aria-expanded', 'false')
     trigger.addEventListener('mousedown', (event) => event.preventDefault())
     const panel = document.createElement('div')
     panel.className = 'styles-menu'
+    panel.setAttribute('role', 'menu')
     content(panel)
     trigger.addEventListener('click', () => {
       const open = !panel.classList.contains('open')
@@ -219,61 +245,159 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
       panel.classList.toggle('open', open)
       trigger.setAttribute('aria-expanded', String(open))
     })
+    trigger.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+      closePanels()
+      panel.classList.add('open')
+      trigger.setAttribute('aria-expanded', 'true')
+      const items = [...panel.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+      const item = event.key === 'ArrowDown' ? items[0] : items.at(-1)
+      item?.focus()
+      event.preventDefault()
+    })
+    panel.addEventListener('keydown', (event) => {
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+      const items = [...panel.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+        .filter((item) => item.offsetParent !== null)
+      if (items.length === 0) return
+      const current = items.indexOf(document.activeElement as HTMLButtonElement)
+      const index = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : event.key === 'ArrowDown'
+            ? (current + 1 + items.length) % items.length
+            : (current - 1 + items.length) % items.length
+      items[index]?.focus()
+      event.preventDefault()
+    })
     group.append(trigger, panel)
     return group
   }
-  const command = (label: string, editorCommand: EditorCommand, className = 'styles-control'): HTMLButtonElement =>
-    commandButton(className, label, label, editorCommand, options.onCommand)
+  const command = (
+    label: string,
+    editorCommand: EditorCommand,
+    className = 'styles-control',
+    glyph = label,
+  ): HTMLButtonElement => {
+    const button = commandButton(className, label, glyph, editorCommand, options.onCommand)
+    button.addEventListener('click', closePanels)
+    return button
+  }
+  const unavailable = (label: string, reason: string): HTMLButtonElement => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'styles-control styles-menu-unavailable'
+    button.textContent = label
+    button.disabled = true
+    button.title = `${label} — ${reason}`
+    return button
+  }
+  const separator = (): HTMLHRElement => {
+    const rule = document.createElement('hr')
+    rule.className = 'styles-menu-separator'
+    return rule
+  }
+  const nestedMenu = (
+    label: string,
+    content: (panel: HTMLDivElement) => void,
+  ): HTMLDivElement => {
+    const group = document.createElement('div')
+    group.className = 'styles-nested-group'
+    const trigger = document.createElement('button')
+    trigger.type = 'button'
+    trigger.className = 'styles-control styles-nested-trigger'
+    trigger.innerHTML = `<span>${label}</span><span aria-hidden="true">›</span>`
+    trigger.setAttribute('aria-label', label)
+    trigger.setAttribute('aria-haspopup', 'menu')
+    const panel = document.createElement('div')
+    panel.className = 'styles-nested-menu'
+    panel.setAttribute('role', 'menu')
+    content(panel)
+    group.append(trigger, panel)
+    return group
+  }
 
-  const headers = menu('Headers', (panel) => {
-    for (const level of [1, 2, 3] as const) {
+  const headerGlyph = '<span class="styles-letter">H</span><span class="styles-chevron" aria-hidden="true">⌄</span>'
+  const listGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h10M8 12h10M8 17h10"/><path d="M4 7h.01M4 12h.01M4 17h.01"/></svg><span class="styles-chevron" aria-hidden="true">⌄</span>'
+  const todoGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="m7 12 3 3 7-7"/></svg>'
+  const linkGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>'
+  const tableGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16"/></svg>'
+  const highlightGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 4.5 5 5-8.7 8.7-6.2 1.2 1.2-6.2Z"/><path d="m12.5 6.5 5 5M4 21h16"/></svg><span class="styles-chevron" aria-hidden="true">⌄</span>'
+  const assetGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="14" height="12" rx="2"/><path d="m6.5 15 3.2-3.3 2.4 2.3 1.8-1.7 3.1 2.9"/><circle cx="14.5" cy="8.5" r="1"/><path d="M8 19h10a2 2 0 0 0 2-2V9"/></svg>'
+  const moreGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.25"/><circle cx="12" cy="12" r="1.25"/><circle cx="12" cy="19" r="1.25"/></svg>'
+
+  const headers = menu('Headers', headerGlyph, (panel) => {
+    for (const level of [1, 2, 3, 4, 5, 6] as const) {
       panel.append(command(`Heading ${level}`, `heading${level}`))
     }
   })
-  const lists = menu('Lists', (panel) => {
+  const lists = menu('Lists', listGlyph, (panel) => {
     panel.append(
-      command('Bullet list', 'bulletList'),
-      command('Numbered list', 'orderedList'),
-      command('Quote', 'quote'),
+      command('List', 'bulletList'),
+      command('Ordered List', 'orderedList'),
+      command('Block Quote', 'quote'),
+      nestedMenu('Todo', (todo) => {
+        todo.append(
+          command('Todo', 'taskList'),
+          unavailable('Toggle', 'task completion commands are not in this build'),
+          unavailable('Mark as Completed', 'task completion commands are not in this build'),
+          unavailable('Mark as Incomplete', 'task completion commands are not in this build'),
+          unavailable('Move Completed to Bottom', 'task reordering is not in this build'),
+        )
+      }),
+      nestedMenu('Callout', (callout) => {
+        for (const kind of ['Note', 'Tip', 'Important', 'Warning', 'Caution']) {
+          callout.append(unavailable(kind, 'portable callout source is not defined yet'))
+        }
+      }),
+      command('Separator', 'divider'),
     )
   })
-  const more = menu('More', (panel) => {
-    // On a narrow window these mirror the low-frequency hidden row controls.
-    // They still call the same command union; More is overflow, not a second
-    // formatting implementation.
-    panel.append(
-      command('Todo', 'taskList'),
-      command('Bullet list', 'bulletList'),
-      command('Numbered list', 'orderedList'),
-      command('Bold', 'bold'),
-      command('Italic', 'italic'),
-      command('Link', 'link'),
-      command('Tables', 'table'),
-    )
-    for (const level of [4, 5, 6] as const) {
-      panel.append(command(`Heading ${level}`, `heading${level}`))
+  const highlight = menu('Highlight', highlightGlyph, (panel) => {
+    panel.append(command('Default', 'highlight'))
+    for (const colour of ['Green', 'Red', 'Blue', 'Yellow', 'Purple']) {
+      panel.append(unavailable(colour, 'Markdown highlight colours are not portable'))
     }
+  })
+  const more = menu('More', moreGlyph, (panel) => {
+    // Bear's exact primary menu. Unsupported source formats remain visible but
+    // honestly disabled rather than silently acquiring proprietary Markdown.
     panel.append(
+      unavailable('Underline', 'ordinary Markdown has no underline mark'),
       command('Strikethrough', 'strikethrough'),
-      command('Highlight', 'highlight'),
-      command('Inline code', 'inlineCode'),
-      command('Code block', 'codeBlock'),
-      command('Divider', 'divider'),
-      command('Move block up', 'moveBlockUp'),
-      command('Move block down', 'moveBlockDown'),
+      unavailable('Footnote', 'footnote insertion is not in this build'),
+      command('Code', 'inlineCode'),
+      command('Code Block', 'codeBlock'),
+      unavailable('Math', 'inline math insertion is not in this build'),
+      unavailable('Math Block', 'math block insertion is not in this build'),
+      unavailable('Wiki Link', 'wiki-link source is not in this build'),
+      separator(),
     )
-    const file = document.createElement('button')
-    file.type = 'button'
-    file.className = 'styles-control'
-    file.textContent = 'Image/File'
+    // When space collapses these are the controls removed from the main row.
+    panel.append(
+      command('Todo', 'taskList', 'styles-control styles-overflow-menu-item'),
+      command('Bold', 'bold', 'styles-control styles-overflow-menu-item'),
+      command('Italic', 'italic', 'styles-control styles-overflow-menu-item'),
+      command('Highlight', 'highlight', 'styles-control styles-overflow-menu-item'),
+      command('Link', 'link', 'styles-control styles-overflow-menu-item'),
+      command('Tables', 'table', 'styles-control styles-overflow-menu-item'),
+    )
+    const overflowFile = document.createElement('button')
+    overflowFile.type = 'button'
+    overflowFile.className = 'styles-control styles-overflow-menu-item'
+    overflowFile.textContent = 'Image/File'
     if (options.onInsertAsset === undefined) {
-      file.disabled = true
-      file.title = 'Image/File — portable file links are not available on this platform'
+      overflowFile.disabled = true
+      overflowFile.title = 'Image/File — portable file links are not available on this platform'
     } else {
-      file.addEventListener('mousedown', (event) => event.preventDefault())
-      file.addEventListener('click', () => options.onInsertAsset?.())
+      overflowFile.addEventListener('mousedown', (event) => event.preventDefault())
+      overflowFile.addEventListener('click', () => {
+        closePanels()
+        options.onInsertAsset?.()
+      })
     }
-    panel.append(file)
+    panel.append(overflowFile)
     const visibility = document.createElement('button')
     visibility.type = 'button'
     visibility.className = 'styles-control styles-bar-toggle'
@@ -290,7 +414,7 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
   const asset = document.createElement('button')
   asset.type = 'button'
   asset.className = 'styles-control styles-asset'
-  asset.textContent = 'Image/File'
+  asset.innerHTML = assetGlyph
   asset.setAttribute('aria-label', 'Insert image or link file')
   if (options.onInsertAsset === undefined) {
     asset.disabled = true
@@ -305,17 +429,113 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
   // windows move the low-frequency end of the row into More.
   bar.append(
     headers,
-    command('Todo', 'taskList', 'styles-control styles-bar-overflow'),
+    command('Todo', 'taskList', 'styles-control styles-bar-overflow', todoGlyph),
     lists,
-    command('Bold', 'bold', 'styles-control styles-bar-overflow'),
-    command('Italic', 'italic', 'styles-control styles-bar-overflow'),
-    command('Link', 'link', 'styles-control styles-bar-overflow'),
-    command('Tables', 'table', 'styles-control styles-bar-overflow'),
+    command('Bold', 'bold', 'styles-control styles-bar-overflow styles-strong', '<strong>B</strong>'),
+    command('Italic', 'italic', 'styles-control styles-bar-overflow styles-emphasis', '<em>I</em>'),
+    highlight,
+    command('Link', 'link', 'styles-control styles-bar-overflow', linkGlyph),
+    command('Tables', 'table', 'styles-control styles-bar-overflow', tableGlyph),
     asset,
     more,
   )
 
   return bar
+}
+
+/**
+ * Makes the optional palette movable without turning its command buttons into
+ * drag handles. The persisted value is a ratio of the document pane, not a
+ * screen coordinate, so it remains useful after a window resize.
+ */
+function installStylesBarDragging(
+  bar: HTMLElement,
+  surface: HTMLElement,
+  initial: StylesBarPosition | undefined,
+  onChange: (position: StylesBarPosition | undefined) => void,
+): void {
+  const margin = 8
+  let position = initial
+  let drag: { pointerId: number; offsetX: number; offsetY: number } | undefined
+
+  const clamp = (value: number, minimum: number, maximum: number): number =>
+    Math.min(Math.max(value, minimum), Math.max(minimum, maximum))
+
+  const paint = (): void => {
+    bar.classList.toggle('is-placed', position !== undefined)
+    bar.classList.toggle('menus-below', position !== undefined && position.y < 0.5)
+    if (position === undefined) {
+      bar.style.removeProperty('--styles-bar-x')
+      bar.style.removeProperty('--styles-bar-y')
+      return
+    }
+    bar.style.setProperty('--styles-bar-x', `${position.x * 100}%`)
+    bar.style.setProperty('--styles-bar-y', `${position.y * 100}%`)
+  }
+
+  const positionFromPointer = (clientX: number, clientY: number): StylesBarPosition => {
+    const bounds = surface.getBoundingClientRect()
+    const barBounds = bar.getBoundingClientRect()
+    const centreX = clamp(
+      clientX - bounds.left - (drag?.offsetX ?? barBounds.width / 2) + barBounds.width / 2,
+      margin + barBounds.width / 2,
+      bounds.width - margin - barBounds.width / 2,
+    )
+    const centreY = clamp(
+      clientY - bounds.top - (drag?.offsetY ?? barBounds.height / 2) + barBounds.height / 2,
+      margin + barBounds.height / 2,
+      bounds.height - margin - barBounds.height / 2,
+    )
+    return {
+      x: bounds.width === 0 ? 0.5 : centreX / bounds.width,
+      y: bounds.height === 0 ? 0.9 : centreY / bounds.height,
+    }
+  }
+
+  bar.addEventListener('pointerdown', (event) => {
+    // Buttons and open menus retain ordinary formatting behaviour. The quiet
+    // material around and between them is the drag handle.
+    if (event.button !== 0 || event.target !== bar) return
+    const bounds = bar.getBoundingClientRect()
+    drag = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - bounds.left,
+      offsetY: event.clientY - bounds.top,
+    }
+    bar.setPointerCapture(event.pointerId)
+    bar.classList.add('is-dragging')
+    event.preventDefault()
+  })
+
+  bar.addEventListener('pointermove', (event) => {
+    if (drag?.pointerId !== event.pointerId) return
+    position = positionFromPointer(event.clientX, event.clientY)
+    paint()
+  })
+
+  const finish = (event: PointerEvent): void => {
+    if (drag?.pointerId !== event.pointerId) return
+    position = positionFromPointer(event.clientX, event.clientY)
+    bar.releasePointerCapture(event.pointerId)
+    drag = undefined
+    bar.classList.remove('is-dragging')
+    paint()
+    onChange(position)
+  }
+  bar.addEventListener('pointerup', finish)
+  bar.addEventListener('pointercancel', finish)
+
+  bar.addEventListener('dblclick', (event) => {
+    if (event.target !== bar) return
+    position = undefined
+    paint()
+    onChange(undefined)
+  })
+
+  // A restored ratio may be outside the usable centre range after the side
+  // panes or window size change. Repaint converts it through CSS; the next
+  // drag clamps it precisely to the current surface.
+  paint()
 }
 
 export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
@@ -785,6 +1005,17 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   const documentSurface = document.createElement('div')
   documentSurface.className = 'document-surface'
   documentSurface.append(stylesBar, editorSection)
+  windowEl.addEventListener('pointerdown', (event) => {
+    if (event.target instanceof Node && !stylesBar.contains(event.target)) {
+      stylesBar.dispatchEvent(new Event('simplemark-close-menus'))
+    }
+  })
+  installStylesBarDragging(
+    stylesBar,
+    documentSurface,
+    options.stylesBarPosition,
+    options.onStylesBarPositionChange,
+  )
 
   let setWorkspaceMode = (_mode: WorkspaceMode): void => {}
   let getWorkspaceMode = (): WorkspaceMode => 'editor'

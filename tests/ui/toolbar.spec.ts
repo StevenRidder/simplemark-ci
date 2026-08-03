@@ -278,7 +278,7 @@ test.describe('everyday correction controls', () => {
   test('highlight, inline code, and link stay portable in the document', async ({ page }) => {
     await selectWord(page, 'emphasized')
     await page.getByRole('button', { name: 'Text formatting' }).click()
-    await page.getByRole('button', { name: 'Highlight' }).click()
+    await page.locator('.format-popover.open').getByRole('button', { name: 'Highlight', exact: true }).click()
     await expect.poll(() => markdown(page)).toContain('==emphasized==')
 
     await selectWord(page, 'identifier')

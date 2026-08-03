@@ -109,13 +109,27 @@ The application, Window, and Help menus use macOS/Tauri predefined items whereve
 
 ## Styles bar
 
-Native starts with the compact styles bar hidden because the menubar is the complete discoverable
-surface. View can restore it. Browser starts with it visible. When shown, it sits in a quiet dock at
-the bottom of the document, never covers content, and never wraps into a ribbon:
+Native and browser start with the compact styles bar visible to match the approved interactive
+wireframe. View can hide or restore it; the native menubar remains the complete keyboard-accessible
+command surface. The bar sits in a quiet dock at the bottom of the document and never wraps into a
+ribbon:
 
 ```text
-Headers · Todo · Lists · Bold · Italic · Link · Tables · Image/File · More
+Headers · Todo · Lists · Bold · Italic · Highlight · Link · Tables · Image/File · More
 ```
+
+The approved interactive wireframe fixes the desktop geometry: the dock is centred in the document
+pane, 18px above its lower edge, with a 5px inset, 2px gaps, an 11px corner radius, and ten 31×29px
+icon controls. Names remain available through tooltips and accessibility labels; persistent text
+labels do not widen the dock. That is the reset position, not a cage: drag the quiet material around
+the controls to place the dock anywhere inside the document pane. The position is remembered per
+client, stays out of Markdown, and double-clicking the material restores bottom-centre. Scrolling
+keeps the active block above the dock so tables and rendered blocks remain directly manipulable.
+
+The native window uses macOS's real overlay title bar. Empty pane headers start a native window drag
+(with Tauri's drag-region marker as a fallback), and a double-click zooms the window. The real 14px
+traffic-light inset is `(18, 31)` in the 58px header, visually centring the controls on the header;
+SimpleMark never draws replacement circles.
 
 ## Module boundary
 

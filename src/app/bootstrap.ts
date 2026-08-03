@@ -10,6 +10,7 @@ import type { WindowChrome } from './ui/window-chrome.js'
 import type { SaveState } from './ui/window-chrome.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import type { WorkspaceMode } from './ui/window-chrome.js'
+import type { StylesBarPosition } from './ui/window-chrome.js'
 import { DEFAULT_PREFERENCES, normalisePreferences, preferenceVariables } from './reader-preferences.js'
 import type { ReaderPreferences } from './reader-preferences.js'
 
@@ -82,6 +83,7 @@ export interface ComposeOptions {
 }
 
 const STYLES_BAR_KEY = 'simplemark.styles-bar-visible'
+const STYLES_BAR_POSITION_KEY = 'simplemark.styles-bar-position'
 
 export async function composeApp(options: ComposeOptions): Promise<AppComposition> {
   const { ports } = options
@@ -92,8 +94,10 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   // whole page rather than any selection.
   const storage = options.preferenceStorage ?? readPreferenceStorage()
   const stylesBarKey = `${STYLES_BAR_KEY}.${options.chromeMode ?? 'web'}`
+  const stylesBarPositionKey = `${STYLES_BAR_POSITION_KEY}.${options.chromeMode ?? 'web'}`
   let preferences = loadPreferences(storage)
   let stylesBarVisible = loadStylesBarVisible(storage, stylesBarKey, options.stylesBarDefault ?? true)
+  let stylesBarPosition = loadStylesBarPosition(storage, stylesBarPositionKey)
   applyPreferences(preferences)
 
   let editor: MilkdownEditor | undefined
@@ -214,6 +218,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       stylesBarVisible = visible
       saveStylesBarVisible(storage, stylesBarKey, visible)
     },
+    stylesBarPosition,
+    onStylesBarPositionChange: (position) => {
+      stylesBarPosition = position
+      saveStylesBarPosition(storage, stylesBarPositionKey, position)
+    },
     preferences,
     onPreferences: (next) => {
       preferences = next
@@ -321,6 +330,36 @@ function saveStylesBarVisible(
     storage.setItem(key, String(visible))
   } catch {
     // The app remains usable in private or restricted storage contexts.
+  }
+}
+
+function loadStylesBarPosition(
+  storage: Pick<Storage, 'getItem'>,
+  key: string,
+): StylesBarPosition | undefined {
+  try {
+    const saved = storage.getItem(key)
+    if (saved === null || saved === '') return undefined
+    const value = JSON.parse(saved) as Partial<StylesBarPosition>
+    if (
+      typeof value.x !== 'number' || !Number.isFinite(value.x) || value.x < 0 || value.x > 1 ||
+      typeof value.y !== 'number' || !Number.isFinite(value.y) || value.y < 0 || value.y > 1
+    ) return undefined
+    return { x: value.x, y: value.y }
+  } catch {
+    return undefined
+  }
+}
+
+function saveStylesBarPosition(
+  storage: Pick<Storage, 'setItem'>,
+  key: string,
+  position: StylesBarPosition | undefined,
+): void {
+  try {
+    storage.setItem(key, position === undefined ? '' : JSON.stringify(position))
+  } catch {
+    // Moving optional chrome must never interfere with editing.
   }
 }
 

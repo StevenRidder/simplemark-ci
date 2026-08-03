@@ -220,6 +220,10 @@ function installWindowDragging(element: HTMLElement): void {
     target.closest('button, input, textarea, select, a, [contenteditable]') !== null
 
   for (const region of dragRegions) {
+    // Keep Tauri's declarative path as a native fallback while the explicit
+    // API below guarantees dragging in WKWebView builds where the attribute
+    // alone has proved unreliable.
+    region.setAttribute('data-tauri-drag-region', '')
     region.addEventListener('mousedown', (event) => {
       if (event.button !== 0 || isChrome(event.target)) return
       // Left to itself the webview would start a text selection instead.

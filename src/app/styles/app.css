@@ -203,23 +203,41 @@ button[disabled] {
 /* EDITOR-6 — an optional quiet strip for the few actions used while writing.
    It is deliberately a shell control, never a rich-text representation. */
 .styles-bar {
-  position: relative;
+  position: absolute;
   z-index: 19;
-  order: 2;
-  align-self: center;
-  flex: 0 0 auto;
-  min-height: 37px;
+  left: 50%;
+  bottom: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: 4px 6px;
+  padding: 5px;
   border: 1px solid var(--line);
   border-radius: 11px;
-  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  background: color-mix(in srgb, var(--paper) 94%, var(--chrome));
   box-shadow: 0 10px 30px rgb(40 35 29 / 16%);
-  margin: 0 0 14px;
   backdrop-filter: blur(18px);
+  transform: translateX(-50%);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.styles-bar.is-placed {
+  left: var(--styles-bar-x);
+  top: var(--styles-bar-y);
+  bottom: auto;
+  transform: translate(-50%, -50%);
+}
+
+.styles-bar.is-dragging {
+  cursor: grabbing;
+  box-shadow: 0 14px 36px rgb(40 35 29 / 22%);
+}
+
+.styles-bar.menus-below .styles-menu {
+  top: calc(100% + 5px);
+  bottom: auto;
 }
 
 .styles-bar[hidden] {
@@ -231,28 +249,64 @@ button[disabled] {
 }
 
 .styles-control {
-  min-width: 30px;
-  height: 27px;
-  padding: 0 8px;
+  display: grid;
+  place-items: center;
+  min-width: 31px;
+  width: 31px;
+  height: 29px;
+  padding: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--ink-2);
-  font-size: 11px;
+  font-size: 13px;
   white-space: nowrap;
+  cursor: default;
+}
+
+.styles-control svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.styles-control svg circle {
+  fill: currentColor;
+  stroke: none;
+}
+
+.styles-letter {
+  font: 650 13px/1 var(--sans);
+}
+
+.styles-chevron {
+  margin-left: -2px;
+  color: var(--ink-3);
+  font-size: 9px;
+}
+
+.styles-menu-trigger {
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  gap: 1px;
+}
+
+.styles-strong strong {
+  font: 700 14px/1 var(--sans);
+}
+
+.styles-emphasis em {
+  font: italic 16px/1 var(--serif);
 }
 
 .styles-control:hover:not([disabled]),
 .styles-menu-trigger[aria-expanded='true'] {
   color: var(--ink);
   background: color-mix(in srgb, var(--soft) 84%, transparent);
-}
-
-.styles-menu-trigger::after {
-  content: '⌄';
-  margin-left: 4px;
-  font-size: 10px;
-  color: var(--ink-3);
 }
 
 .styles-menu {
@@ -262,8 +316,8 @@ button[disabled] {
   top: auto;
   bottom: calc(100% + 5px);
   left: 0;
-  min-width: 142px;
-  padding: 5px;
+  min-width: 176px;
+  padding: 6px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: color-mix(in srgb, var(--paper) 97%, transparent);
@@ -273,12 +327,67 @@ button[disabled] {
 
 .styles-menu.open {
   display: grid;
-  gap: 2px;
+  gap: 0;
 }
 
-.styles-menu .styles-control {
+.styles-menu .styles-control,
+.styles-nested-menu .styles-control {
   width: 100%;
+  min-width: 164px;
+  min-height: 27px;
+  height: 27px;
+  display: block;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: 13px;
   text-align: left;
+}
+
+.styles-menu-unavailable {
+  color: var(--ink-2);
+  opacity: 0.62 !important;
+}
+
+.styles-menu-separator {
+  width: calc(100% - 4px);
+  height: 1px;
+  margin: 5px 2px;
+  border: 0;
+  background: var(--line);
+}
+
+.styles-nested-group {
+  position: relative;
+}
+
+.styles-nested-trigger {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.styles-nested-menu {
+  display: none;
+  position: absolute;
+  z-index: 27;
+  left: calc(100% + 5px);
+  top: -6px;
+  min-width: 176px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--paper) 97%, transparent);
+  box-shadow: 0 12px 34px rgba(32, 29, 24, 0.16);
+  backdrop-filter: blur(16px);
+}
+
+.styles-nested-group:hover > .styles-nested-menu,
+.styles-nested-group:focus-within > .styles-nested-menu {
+  display: grid;
+}
+
+.styles-overflow-menu-item {
+  display: none !important;
 }
 
 .styles-bar-menu-toggle {
@@ -551,6 +660,11 @@ section.editor {
   flex: 1;
   overflow: auto;
   position: relative;
+  /* The formatting palette floats over this scroller. Keep caret and
+     block-focused scrolling above its hit area so the last table, diagram,
+     or paragraph remains directly manipulable instead of sitting under the
+     palette. */
+  scroll-padding-bottom: 76px;
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
 }
@@ -1724,16 +1838,16 @@ section.editor {
     backdrop-filter: blur(18px);
   }
   .styles-bar {
-    justify-content: flex-start;
-    overflow: visible;
-    padding-left: 8px;
-    padding-right: 8px;
+    bottom: 14px;
   }
   /* The row stays one line: low-frequency actions move into More, where the
      exact same commands remain available. */
   .styles-bar-overflow,
   .styles-asset {
     display: none;
+  }
+  .styles-overflow-menu-item {
+    display: block !important;
   }
   .format-popover {
     top: auto;
@@ -2031,12 +2145,17 @@ section.editor {
   display: none;
 }
 
-/* Clear the space the system's own window controls occupy.
-   Dragging is NOT done here: `-webkit-app-region` is a Chromium/Electron
-   feature that macOS's WKWebView ignores, so the native entrypoint marks the
-   bar with `data-tauri-drag-region` instead. */
+/* Clear the space the system's own window controls occupy. The native
+   entrypoint installs both Tauri's drag marker and its explicit dragging API;
+   CSS never pretends to own native window movement. */
 :root[data-shell='native'] .titlebar {
   padding: 0 18px;
+  user-select: none;
+}
+
+:root[data-shell='native'] .workspace-library-head,
+:root[data-shell='native'] .notes-header {
+  user-select: none;
 }
 
 /* The approved native wireframe does not stretch a web toolbar across the

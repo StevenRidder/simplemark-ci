@@ -6,6 +6,8 @@ import {
   codeBlockSchema,
   commonmark,
   createCodeBlockCommand,
+  imageSchema,
+  insertImageCommand,
   insertHrCommand,
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
@@ -43,8 +45,9 @@ import {
 } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 
-import type { DiagramRenderer } from '../../application/index.js'
+import type { AssetReference, DiagramRenderer } from '../../application/index.js'
 import { looksLikeMermaid, looksLikeSvg } from '../../domain/index.js'
+import { AssetImageNodeView } from './asset-image-node-view.js'
 import { DiagramNodeView } from './diagram-node-view.js'
 import {
   highlightInputRule,
@@ -129,6 +132,10 @@ export class MilkdownEditor {
         return new DiagramNodeView(node, view, getPos, options.renderer)
       }
     })
+    const imageView = $view(imageSchema.node, () => {
+      return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
+        new AssetImageNodeView(node, view, getPos)
+    })
 
     const editor = await Editor.make()
       .config((ctx) => {
@@ -175,6 +182,7 @@ export class MilkdownEditor {
       // with decorations and never changes the serialised Markdown.
       .use(foldingPlugin)
       .use(diagramView)
+      .use(imageView)
       .create()
 
     const instance = new MilkdownEditor(editor, options.renderer)
@@ -282,6 +290,30 @@ export class MilkdownEditor {
       const { doc, tr } = view.state
       view.dispatch(tr.setSelection(Selection.atEnd(doc)).scrollIntoView())
       view.focus()
+    })
+  }
+
+  /** Inserts one ordinary Markdown image or file link at the live selection. */
+  insertAsset(reference: AssetReference): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.focus()
+      if (reference.kind === 'image') {
+        const insert = callCommand(insertImageCommand.key, {
+          src: reference.src,
+          alt: reference.label,
+          title: '',
+        })
+        insert(ctx)
+        return
+      }
+
+      const mark = view.state.schema.marks['link']
+      if (mark === undefined) return
+      const { from, to } = view.state.selection
+      const transaction = view.state.tr.insertText(reference.label, from, to)
+      transaction.addMark(from, from + reference.label.length, mark.create({ href: reference.src, title: '' }))
+      view.dispatch(transaction.scrollIntoView())
     })
   }
 

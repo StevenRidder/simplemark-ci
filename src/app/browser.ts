@@ -2,6 +2,7 @@ import { CompositeRenderer } from '../adapters/renderers/composite-renderer.js'
 import { MermaidRenderer } from '../adapters/renderers/mermaid-renderer.js'
 import { SvgRenderer } from '../adapters/renderers/svg-renderer.js'
 import { BrowserFilePort } from '../adapters/filesystem/browser-file-port.js'
+import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
 import { BrowserUploadFilePort } from '../adapters/filesystem/browser-upload-file-port.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import type { FilePort } from '../application/index.js'
@@ -44,6 +45,8 @@ flowchart LR
   SESSION --> BOTH[You + Codex]
 \`\`\`
 
+![SimpleMark asset](assets/simplemark-asset.svg)
+
 Stop is immediate control, not a message. It cancels the active request and
 rejects anything that arrives late. The rest should feel exactly like writing a
 note.
@@ -80,6 +83,7 @@ async function mount(
   app = await composeApp({
     ports: {
       file,
+      assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
       // One port, several renderers. DOT, KaTeX, Vega-Lite and Markmap join here.
       diagrams: new CompositeRenderer([new MermaidRenderer(), new SvgRenderer()]),
     },
@@ -144,6 +148,35 @@ function pickMarkdownUpload(): Promise<File> {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.md,.markdown,text/markdown,text/plain'
+    input.className = 'browser-file-picker'
+    input.tabIndex = -1
+    document.body.append(input)
+
+    const finish = (result: File | DOMException): void => {
+      input.remove()
+      if (result instanceof File) resolve(result)
+      else reject(result)
+    }
+    input.addEventListener('change', () => {
+      const file = input.files?.item(0)
+      finish(file ?? new DOMException('The user aborted a request.', 'AbortError'))
+    }, { once: true })
+    input.addEventListener('cancel', () => {
+      finish(new DOMException('The user aborted a request.', 'AbortError'))
+    }, { once: true })
+    input.click()
+  })
+}
+
+/**
+ * Browser-only selection. The `BrowserAssetReferencePort` turns this into a
+ * relative Markdown reference and says plainly that browsers cannot copy the
+ * picked file into the note's directory. Native APP-2 owns that explicit copy.
+ */
+function pickDocumentAsset(): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input')
+    input.type = 'file'
     input.className = 'browser-file-picker'
     input.tabIndex = -1
     document.body.append(input)

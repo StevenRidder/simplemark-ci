@@ -30,6 +30,8 @@ flowchart LR
   IN[Paste] --> OUT[Rendered]
 \`\`\`
 
+![SimpleMark asset](assets/simplemark-asset.svg)
+
 Closing prose line, kept verbatim.
 `
 
@@ -76,6 +78,35 @@ test('opens a real file: content renders, including the Mermaid diagram', async 
   await expect(page.locator(`${EDITOR} h1`)).toContainText('Renderer taxonomy')
   await expect(page.locator(`${EDITOR} table`)).toBeVisible()
   await expect(page.locator('.diagram .diagram-render svg')).toBeVisible()
+  await expect
+    .poll(() => page.locator(`${EDITOR} img[alt="SimpleMark asset"]`).evaluate(
+      (image: HTMLImageElement) => image.complete && image.naturalWidth > 0,
+    ))
+    .toBe(true)
+})
+
+test('a portable image reference saves to a real file and survives reopen', async ({ page }) => {
+  await openTheFile(page)
+
+  // The toolbar chooser is exercised in asset-links.spec.ts. This test uses
+  // the same application editor command but focuses on the real file handle:
+  // selected browser files cannot provide a persistent local path, so only a
+  // deliberate portable reference is saved.
+  await page.evaluate(() => window.simplemark!.editor.insertAsset({
+    kind: 'image', src: 'assets/architecture.png', label: 'Architecture diagram',
+  }))
+
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().dirty))
+    .toBe(true)
+  await page.evaluate(() => window.simplemark!.save())
+
+  const onDisk = await diskContent(page)
+  expect(onDisk).toContain('![Architecture diagram](assets/architecture.png)')
+  expect(onDisk).not.toMatch(/file:|blob:|data:|!\[\[/)
+
+  await openTheFile(page)
+  await expect(page.getByText('File unavailable: assets/architecture.png', { exact: true })).toBeVisible()
 })
 
 test('an edit is saved to the file and survives close-and-reopen', async ({ page }) => {

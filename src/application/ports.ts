@@ -40,6 +40,35 @@ export interface FilePort {
   save(handle: string, bytes: Uint8Array): Promise<void>
 }
 
+/** The only two asset forms that this product may write into Markdown. */
+export type AssetKind = 'image' | 'file'
+
+/**
+ * A portable reference chosen by a platform adapter.
+ *
+ * `src` is deliberately the string written into Markdown, never a browser
+ * object URL, an absolute operating-system path, or an adapter-private id.
+ */
+export interface AssetReference {
+  readonly kind: AssetKind
+  readonly src: string
+  readonly label: string
+  /** A named limitation the shell should show rather than hiding it. */
+  readonly notice?: string
+}
+
+/**
+ * Chooses a portable asset reference for the current document.
+ *
+ * Browser and native shells implement this differently: the browser can only
+ * create a reference to a file the person places beside the note, while the
+ * native shell may later offer an explicit copy into `assets/`. The editor and
+ * document session receive only ordinary Markdown either way.
+ */
+export interface AssetReferencePort {
+  chooseReference(): Promise<AssetReference | null>
+}
+
 /** The outcome of rendering diagram source. Failure is a value, never a throw. */
 export type RenderedDiagram =
   | { readonly ok: true; readonly svg: string }

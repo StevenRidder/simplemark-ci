@@ -290,7 +290,7 @@ test.describe('everyday correction controls', () => {
     await page.keyboard.type('destination')
     for (let i = 0; i < 'destination'.length; i += 1) await page.keyboard.press('Shift+ArrowLeft')
     await page.once('dialog', (dialog) => dialog.accept('https://example.invalid/destination'))
-    await page.getByRole('button', { name: 'Link' }).click()
+    await page.getByRole('button', { name: 'Link', exact: true }).click()
     await expect.poll(() => markdown(page)).toContain('[destination](https://example.invalid/destination)')
   })
 })
@@ -440,7 +440,8 @@ test('the quiet gutter drag reorders document blocks through the editor transact
 
 test('controls needing infrastructure stay disabled', async ({ page }) => {
   // SHELL-1 owns these; they must not pretend to work.
-  for (const name of ['Attach file', 'Search', 'Document list', 'New note', 'Work with AI']) {
+  for (const name of ['Search', 'Document list', 'New note', 'Work with AI']) {
     await expect(page.getByRole('button', { name })).toBeDisabled()
   }
+  await expect(page.getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
 })

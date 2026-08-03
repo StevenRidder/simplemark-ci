@@ -73,6 +73,8 @@ export interface WindowChromeOptions {
   readonly getOutline?: () => ReadonlyArray<{ level: number; text: string; pos: number }>
   /** Navigates the document to a heading picked in the contents popover. */
   readonly onNavigate?: (pos: number) => void
+  /** Inserts an ordinary Markdown image or file link through a platform port. */
+  readonly onInsertAsset?: (() => void) | undefined
 }
 
 export interface WindowChrome {
@@ -122,14 +124,6 @@ const TOOL_COMMANDS: ReadonlyArray<{ label: string; icon: string; command: Edito
     label: 'Convert to diagram',
     command: 'convertToDiagram',
     icon: '<rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="15" width="6" height="5" rx="1"/><path d="M9 6.5h5a3 3 0 0 1 3 3V15M12 12l5 3 4-3"/>',
-  },
-]
-
-const DEFERRED: ReadonlyArray<{ label: string; icon: string; owner: string }> = [
-  {
-    label: 'Attach file',
-    owner: 'the attachments work',
-    icon: '<path d="m20.5 11.5-8.8 8.8a6 6 0 0 1-8.5-8.5l9.5-9.5a4 4 0 0 1 5.7 5.7l-9.6 9.5a2 2 0 1 1-2.8-2.8l8.8-8.8"/>',
   },
 ]
 
@@ -557,11 +551,16 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       ),
     )
   }
-  for (const entry of DEFERRED) {
-    editTools.append(
-      svgButton('edit-tool', entry.label, entry.icon, { disabled: true, owner: entry.owner }),
-    )
+  const insertAsset = svgButton(
+    'edit-tool',
+    'Insert image or link file',
+    '<path d="m20.5 11.5-8.8 8.8a6 6 0 0 1-8.5-8.5l9.5-9.5a4 4 0 0 1 5.7 5.7l-9.6 9.5a2 2 0 1 1-2.8-2.8l8.8-8.8"/>',
+    options.onInsertAsset === undefined ? { disabled: true, owner: 'the portable file-link work' } : {},
+  )
+  if (options.onInsertAsset !== undefined) {
+    insertAsset.addEventListener('click', () => options.onInsertAsset?.())
   }
+  editTools.append(insertAsset)
   editTools.append(popover)
 
   // ---- right side ----

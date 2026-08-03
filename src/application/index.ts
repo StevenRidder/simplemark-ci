@@ -6,7 +6,15 @@
  * redirect, stop, revert) lands here in the local-editor and live-agent
  * deliverables. Today the module publishes its port contracts.
  */
-export type { FilePort, OpenedDocument, DiagramRenderer, RenderedDiagram } from './ports.js'
+export type {
+  FilePort,
+  OpenedDocument,
+  AssetKind,
+  AssetReference,
+  AssetReferencePort,
+  DiagramRenderer,
+  RenderedDiagram,
+} from './ports.js'
 export { DocumentSession } from './document-session.js'
 export type {
   DocumentSnapshot,

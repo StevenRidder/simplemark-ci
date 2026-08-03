@@ -779,6 +779,55 @@ section.editor {
   font-weight: 400;
 }
 
+/* Portable Markdown images and file references. The source remains an
+   ordinary relative `![alt](path)`; this frame simply ensures a browser's
+   inability to reach the local sibling is obvious rather than a broken icon. */
+.milkdown .ProseMirror .asset-image {
+  display: inline-block;
+  position: relative;
+  max-width: 100%;
+  margin: 10px 0;
+  vertical-align: middle;
+}
+
+.milkdown .ProseMirror .asset-image img {
+  display: block;
+  max-width: min(100%, 760px);
+  max-height: 560px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--soft);
+}
+
+.milkdown .ProseMirror .asset-image-edit-alt {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 6px;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  color: var(--ink-2);
+  font: 10px var(--sans);
+  opacity: 0;
+}
+
+.milkdown .ProseMirror .asset-image:hover .asset-image-edit-alt,
+.milkdown .ProseMirror .asset-image:focus-within .asset-image-edit-alt {
+  opacity: 1;
+}
+
+.milkdown .ProseMirror .asset-image-missing {
+  display: block;
+  max-width: 560px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--ink-3);
+  background: var(--soft);
+  font: 12px/1.45 var(--sans);
+}
+
 /* GFM constructs (DESIGN.md §6). Tables and task lists are portability tier 1
    (§5), so they have to look native rather than like an afterthought. */
 .milkdown .ProseMirror table {

@@ -1,9 +1,10 @@
-import type { DiagramRenderer, FilePort } from '../application/index.js'
+import type { AssetReferencePort, DiagramRenderer, FilePort } from '../application/index.js'
 import { DocumentSession } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import type { WindowChrome } from './ui/window-chrome.js'
+import type { SaveState } from './ui/window-chrome.js'
 import { DEFAULT_PREFERENCES, normalisePreferences, preferenceVariables } from './reader-preferences.js'
 import type { ReaderPreferences } from './reader-preferences.js'
 
@@ -24,6 +25,7 @@ import type { ReaderPreferences } from './reader-preferences.js'
 
 export interface AppPorts {
   readonly file: FilePort
+  readonly assets?: AssetReferencePort
   readonly diagrams: DiagramRenderer
 }
 
@@ -33,6 +35,8 @@ export interface AppComposition {
   readonly editor: MilkdownEditor
   /** Flushes any pending debounced save. */
   save(): Promise<void>
+  /** Shows a truthful platform or file-reference limitation in the shell. */
+  setStatus(state: SaveState, message: string): void
 }
 
 export interface ComposeOptions {
@@ -81,6 +85,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     onOpenFile: options.onOpenFile,
     openFileUnavailableReason: options.openFileUnavailableReason,
     onSave: () => void save(),
+    onInsertAsset: ports.assets === undefined
+      ? undefined
+      : () => void insertAsset(),
     preferences,
     onPreferences: (next) => {
       preferences = next
@@ -131,7 +138,25 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     },
   })
 
-  return { element: chrome.element, session, editor, save }
+  async function insertAsset(): Promise<void> {
+    try {
+      const reference = await ports.assets?.chooseReference()
+      if (reference === null || reference === undefined) return
+      editor?.insertAsset(reference)
+      chrome.setStatus('dirty', reference.notice ?? 'Portable reference added')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not choose a file'
+      chrome.setStatus('error', `File not linked — ${message}`)
+    }
+  }
+
+  return {
+    element: chrome.element,
+    session,
+    editor,
+    save,
+    setStatus: (state, message) => chrome.setStatus(state, message),
+  }
 }
 
 const PREFERENCES_KEY = 'simplemark.reader-preferences'

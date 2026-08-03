@@ -19,10 +19,11 @@ describe('languages', () => {
 })
 
 describe('ansi', () => {
-  it('turns SGR codes into classed spans and escapes markup', async () => {
+  it('turns SGR codes into styled spans and escapes markup', async () => {
     const result = await renderer.render('ansi', '[32m✓ ok[0m <script>')
     if (!result.ok) throw new Error(result.message)
-    expect(result.markup).toContain('class="ansi-32"')
+    // Colour detail lives in ansi-colour.test.ts; this pins the card contract.
+    expect(result.markup).toContain('var(--ansi-2)')
     expect(result.markup).toContain('✓ ok')
     expect(result.markup).not.toContain('<script>')
     expect(result.markup).toContain('&lt;script&gt;')

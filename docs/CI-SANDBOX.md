@@ -83,8 +83,15 @@ deleted automatically by `push`. A red run stays put for inspection; sweep lefto
 with:
 
 ```bash
-scripts/ci-sandbox.sh prune     # delete every sandbox branch except main
+scripts/ci-sandbox.sh prune     # delete merged sandbox branches
 ```
+
+`prune` keeps any branch that still exists on the canonical repo. We squash-merge,
+so a merged branch is deleted from `origin` and its original SHA is never an
+ancestor of `main` — which makes "still on origin" the honest signal for "someone
+may still be working on this". Deleting a live agent's sandbox branch mid-run
+breaks their gate for no gain. `prune --all` overrides when you know the
+remainder is abandoned.
 
 After the PR merges, refresh the dispatch baseline:
 

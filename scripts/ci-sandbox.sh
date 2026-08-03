@@ -108,7 +108,8 @@ Commands:
   doctor                Verify repo/remote/workflow/baseline/branch wiring
   protect-main          Require the sandbox status before canonical main can move
   delete                Delete <branch> from the CI sandbox remote
-  prune                 Delete every sandbox branch except main (all are ephemeral)
+  prune [--all]         Delete merged sandbox branches; keeps any still open on
+                        the canonical repo unless --all is given
   sync-main             Push local main to the CI sandbox (refresh baseline after merges)
   refresh-main          Fetch canonical main, then sync it to the CI sandbox
   open-pr               Push/wait on sandbox, push canonical, stamp, then open the PR
@@ -619,25 +620,43 @@ cmd_delete() {
   git -C "$ROOT" push "$CI_REMOTE" --delete "$branch"
 }
 
-# Sweep every ephemeral branch off the sandbox. Everything except main is by
-# definition disposable: push auto-deletes on green, so anything left over is a
-# red run someone finished inspecting or a branch pushed before auto-cleanup.
+# Sweep merged ephemeral branches off the sandbox.
+#
+# A sandbox branch is disposable only once its canonical counterpart is gone:
+# we squash-merge, so a merged branch is deleted from origin and its original
+# SHA is never an ancestor of main. That makes "still on origin" the honest
+# signal for "someone may still be working on this" — and deleting a live
+# agent's sandbox branch mid-run breaks their gate for no gain.
+#
+# --all overrides, for when you know the remaining branches are abandoned.
 cmd_prune() {
+  local force=0
+  [ "${1:-}" = "--all" ] && force=1
   need_tools; repo_root; ensure_remote
-  local refs branch count=0
+
+  local refs branch pruned=0 skipped=0
   refs="$({ GIT_TERMINAL_PROMPT=0 git -C "$ROOT" ls-remote "$CI_REMOTE_URL" 'refs/heads/*' 2>/dev/null || true; } \
     | awk '{print $2}' | sed 's|refs/heads/||' | grep -v '^main$' || true)"
   if [ -z "$refs" ]; then
     echo "ci-sandbox: nothing to prune — only main on $CI_REPO"
     return 0
   fi
+
   while IFS= read -r branch; do
     [ -n "$branch" ] || continue
+    if [ "$force" = 0 ] && git -C "$ROOT" ls-remote --exit-code "$ORIGIN_REMOTE" "refs/heads/${branch}" >/dev/null 2>&1; then
+      echo "ci-sandbox: keeping $branch — still open on $CANONICAL_REPO (unmerged or in flight)"
+      skipped=$((skipped + 1))
+      continue
+    fi
     echo "ci-sandbox: pruning $CI_REPO:$branch"
     git -C "$ROOT" push "$CI_REMOTE" --delete "$branch"
-    count=$((count + 1))
+    pruned=$((pruned + 1))
   done <<< "$refs"
-  echo "ci-sandbox: pruned $count ephemeral branch(es); $CI_REPO holds main only"
+
+  echo "ci-sandbox: pruned $pruned, kept $skipped still-open branch(es)"
+  [ "$skipped" -gt 0 ] && echo "ci-sandbox: re-run with --all to remove those too"
+  return 0
 }
 
 cmd_sync_main() {

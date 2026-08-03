@@ -74,6 +74,11 @@ export class DocumentSession {
     return { revision: this.#revision, markdown: this.markdown, dirty: this.#dirty }
   }
 
+  /** Opaque platform identity used only when another port resolves a link. */
+  documentHandle(): string {
+    return this.handle
+  }
+
   apply(transaction: DocumentTransaction): ApplyResult {
     if (transaction.expectedRevision !== this.#revision) {
       return {

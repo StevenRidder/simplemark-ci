@@ -13,6 +13,7 @@ import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import { OpenCancelled, TauriFilePort } from '../adapters/filesystem/tauri-file-port.js'
 import { TauriWorkspaceCatalogPort } from '../adapters/filesystem/tauri-workspace-catalog-port.js'
+import { TauriDocumentLinkPort } from '../adapters/filesystem/tauri-document-link-port.js'
 import type { FilePort, WorkspaceCatalog } from '../application/index.js'
 import { installNativeMenu } from './ui/native-menu.js'
 import { composeApp } from './bootstrap.js'
@@ -227,6 +228,7 @@ async function mount(
       // asset into the note's own directory is a native capability APP-2 does
       // not claim; the port says so rather than pretending.
       assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
+      links: new TauriDocumentLinkPort(invoke),
       diagrams: new CompositeRenderer([
         new MermaidRenderer(),
         new SvgRenderer(),

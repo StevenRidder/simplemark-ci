@@ -111,6 +111,8 @@ export interface MilkdownEditorOptions {
   readonly renderer: DiagramRenderer
   /** Called after every user edit, with the serialised document. */
   readonly onMarkdownChanged: (markdown: string) => void
+  /** Opens a rendered link through the shell's explicit platform boundary. */
+  readonly onOpenLink?: (href: string) => Promise<void>
 }
 
 export class MilkdownEditor {
@@ -207,9 +209,48 @@ export class MilkdownEditor {
       .create()
 
     const instance = new MilkdownEditor(editor, options.renderer)
+    instance.installLinkOpening(options.mount, options.onOpenLink)
     instance.installBlockReordering()
     instance.installTableControls()
     return instance
+  }
+
+  private installLinkOpening(
+    mount: HTMLElement,
+    onOpenLink: ((href: string) => Promise<void>) | undefined,
+  ): void {
+    mount.addEventListener('click', (event) => {
+      if (event.button !== 0) return
+      const target = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null
+      if (target === null) return
+      const href = target.getAttribute('href')?.trim()
+      if (href === undefined || href === '') return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (href.startsWith('#')) {
+        let wanted: string
+        try {
+          wanted = decodeURIComponent(href.slice(1)).toLocaleLowerCase()
+        } catch {
+          return
+        }
+        const slug = (text: string): string => text
+          .trim()
+          .toLocaleLowerCase()
+          .replace(/[^\p{Letter}\p{Number}\s-]/gu, '')
+          .replace(/\s+/g, '-')
+          .replace(/-+/g, '-')
+        const heading = [...mount.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')]
+          .find((candidate) => candidate.id.toLocaleLowerCase() === wanted || slug(candidate.textContent ?? '') === wanted)
+        heading?.scrollIntoView({ block: 'start' })
+        return
+      }
+
+      if (onOpenLink === undefined) return
+      void onOpenLink(href)
+    })
   }
 
   /**

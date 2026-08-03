@@ -102,6 +102,15 @@ export interface AssetReferencePort {
   chooseReference(): Promise<AssetReference | null>
 }
 
+/**
+ * Opens a link from the active document without changing the Markdown source.
+ * Relative targets are resolved by the platform adapter from `documentHandle`
+ * at click time, so a synced or cloned folder keeps working on another device.
+ */
+export interface DocumentLinkPort {
+  open(documentHandle: string, href: string): Promise<void>
+}
+
 /** The outcome of rendering diagram source. Failure is a value, never a throw. */
 export type RenderedDiagram =
   | { readonly ok: true; readonly markup: string }

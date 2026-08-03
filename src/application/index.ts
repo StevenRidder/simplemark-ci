@@ -15,6 +15,7 @@ export type {
   AssetKind,
   AssetReference,
   AssetReferencePort,
+  DocumentLinkPort,
   DiagramRenderer,
   RenderedDiagram,
 } from './ports.js'

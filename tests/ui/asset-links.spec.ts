@@ -62,3 +62,23 @@ test('a selected non-image is a normal portable Markdown link', async ({ page })
   await expect.poll(() => markdown(page)).toContain('[Decision PDF](assets/decision.pdf)')
   await expect(page.locator(`${editor} a`, { hasText: 'Decision PDF' })).toHaveAttribute('href', 'assets/decision.pdf')
 })
+
+test('clicking a rendered web link opens it instead of only moving the caret', async ({ page }) => {
+  await page.evaluate(() => {
+    const opened: string[] = []
+    window.open = ((url?: string | URL) => {
+      opened.push(String(url))
+      return null
+    }) as typeof window.open
+    Object.assign(window, { simplemarkOpenedLinks: opened })
+    const link = document.createElement('a')
+    link.href = 'https://example.com/portable-reference'
+    link.textContent = 'Portable reference'
+    document.querySelector('.milkdown .ProseMirror')!.append(link)
+  })
+
+  await page.getByRole('link', { name: 'Portable reference' }).click()
+  await expect.poll(() => page.evaluate(() =>
+    (window as Window & { simplemarkOpenedLinks?: string[] }).simplemarkOpenedLinks,
+  )).toEqual(['https://example.com/portable-reference'])
+})

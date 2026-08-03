@@ -1,4 +1,4 @@
-import type { AssetReferencePort, DiagramRenderer, FilePort } from '../application/index.js'
+import type { AssetReferencePort, DiagramRenderer, DocumentLinkPort, FilePort } from '../application/index.js'
 import { DocumentSession } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
@@ -32,6 +32,7 @@ import type { ReaderPreferences } from './reader-preferences.js'
 export interface AppPorts {
   readonly file: FilePort
   readonly assets?: AssetReferencePort
+  readonly links?: DocumentLinkPort
   readonly diagrams: DiagramRenderer
 }
 
@@ -244,6 +245,16 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     mount: chrome.editorHost,
     initialMarkdown: session.snapshot().markdown,
     renderer: ports.diagrams,
+    ...(ports.links === undefined ? {} : {
+      onOpenLink: async (href: string) => {
+          try {
+            await ports.links!.open(session.documentHandle(), href)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            chrome.setStatus('error', `Could not open link — ${message}`)
+          }
+        },
+    }),
     onMarkdownChanged: (markdown) => {
       const before = session.snapshot()
       const result = session.apply({

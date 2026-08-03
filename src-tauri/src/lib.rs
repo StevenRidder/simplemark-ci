@@ -21,6 +21,7 @@ use std::fs::{self, File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::mpsc::channel;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -138,6 +139,98 @@ fn read_note(path: &Path) -> Result<OpenedNote, String> {
         name,
         bytes: BASE64.encode(&bytes),
     })
+}
+
+#[derive(Debug, PartialEq)]
+enum ResolvedDocumentLink {
+    External(String),
+    Local(PathBuf),
+}
+
+/// Resolves portable Markdown links at click time from the note's current
+/// location. The Markdown never receives this absolute path; moving the whole
+/// folder to another device therefore keeps the same relative source valid.
+fn resolve_document_link(
+    document_handle: &str,
+    href: &str,
+) -> Result<ResolvedDocumentLink, String> {
+    let href = href.trim();
+    if href.is_empty() {
+        return Err("The link has no destination".to_string());
+    }
+
+    if let Ok(url) = Url::parse(href) {
+        return match url.scheme() {
+            "http" | "https" | "mailto" => Ok(ResolvedDocumentLink::External(url.to_string())),
+            "file" => Err(
+                "Absolute file links are tied to one machine; use a relative Markdown path"
+                    .to_string(),
+            ),
+            scheme => Err(format!("Links using {scheme}: are not allowed")),
+        };
+    }
+
+    let raw_path = Path::new(href.split(['?', '#']).next().unwrap_or_default());
+    if raw_path.is_absolute() || href.starts_with('~') {
+        return Err(
+            "Absolute file links are tied to one machine; use a relative Markdown path".to_string(),
+        );
+    }
+
+    let document = Path::new(document_handle);
+    let base = document
+        .parent()
+        .ok_or_else(|| "The open document has no containing folder".to_string())?;
+    let base_url = Url::from_directory_path(base)
+        .map_err(|_| "The document folder cannot resolve relative links".to_string())?;
+    let target_url = base_url
+        .join(href)
+        .map_err(|error| format!("The relative link is invalid: {error}"))?;
+    if target_url.scheme() != "file" {
+        return Err("The link does not resolve to a local file".to_string());
+    }
+    let target = target_url
+        .to_file_path()
+        .map_err(|_| "The local link is not a valid file path".to_string())?
+        .canonicalize()
+        .map_err(|error| format!("Linked file is unavailable: {error}"))?;
+    Ok(ResolvedDocumentLink::Local(target))
+}
+
+fn open_with_system(target: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("rundll32.exe");
+        command.arg("url.dll,FileProtocolHandler");
+        command
+    };
+    #[cfg(target_os = "linux")]
+    let mut command = Command::new("xdg-open");
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    return Err("Opening links is not supported on this platform".to_string());
+
+    command
+        .arg(target)
+        .spawn()
+        .map_err(|error| format!("The operating system could not open the link: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn open_document_link(app: AppHandle, document_handle: String, href: String) -> Result<(), String> {
+    let resolved = resolve_document_link(&document_handle, &href)?;
+    match resolved {
+        ResolvedDocumentLink::External(url) => open_with_system(&url),
+        ResolvedDocumentLink::Local(path) if is_markdown(&path) => {
+            // Markdown stays in this window regardless of the user's global
+            // Finder association. The existing queue is the sole open route.
+            queue_opened_paths(&app, vec![path]);
+            Ok(())
+        }
+        ResolvedDocumentLink::Local(path) => open_with_system(&path.to_string_lossy()),
+    }
 }
 
 fn is_markdown(path: &Path) -> bool {
@@ -460,6 +553,7 @@ pub fn run() {
             open_note,
             open_workspace_folder,
             read_note_at,
+            open_document_link,
             inspect_workspace_note,
             list_workspace,
             create_note,
@@ -494,6 +588,44 @@ mod tests {
     fn identical_content_hashes_identically() {
         assert_eq!(content_hash(b"# note\n"), content_hash(b"# note\n"));
         assert_ne!(content_hash(b"# note\n"), content_hash(b"# note"));
+    }
+
+    #[test]
+    fn relative_document_links_follow_the_folder_on_this_device() {
+        let directory = tempfile::tempdir().unwrap();
+        let note_dir = directory.path().join("notes");
+        let shared_dir = directory.path().join("shared");
+        fs::create_dir_all(&note_dir).unwrap();
+        fs::create_dir_all(&shared_dir).unwrap();
+        let note = note_dir.join("index.md");
+        let target = shared_dir.join("Decision One.pdf");
+        fs::write(&note, b"[Decision](../shared/Decision%20One.pdf)\n").unwrap();
+        fs::write(&target, b"pdf").unwrap();
+
+        assert_eq!(
+            resolve_document_link(
+                &note.to_string_lossy(),
+                "../shared/Decision%20One.pdf#page=2"
+            )
+            .unwrap(),
+            ResolvedDocumentLink::Local(target.canonicalize().unwrap())
+        );
+    }
+
+    #[test]
+    fn web_links_remain_web_links() {
+        assert_eq!(
+            resolve_document_link("/tmp/note.md", "https://example.com/docs?q=1#part").unwrap(),
+            ResolvedDocumentLink::External("https://example.com/docs?q=1#part".to_string())
+        );
+    }
+
+    #[test]
+    fn absolute_file_links_are_rejected_as_machine_specific() {
+        let error =
+            resolve_document_link("/device/notes/note.md", "file:///device-root/secret.pdf")
+                .unwrap_err();
+        assert!(error.contains("tied to one machine"));
     }
 
     #[test]

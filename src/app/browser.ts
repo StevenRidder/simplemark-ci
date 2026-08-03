@@ -6,6 +6,7 @@ import { GraphvizRenderer } from '../adapters/renderers/graphviz-renderer.js'
 import { KatexRenderer } from '../adapters/renderers/katex-renderer.js'
 import { BrowserFilePort } from '../adapters/filesystem/browser-file-port.js'
 import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
+import { BrowserDocumentLinkPort } from '../adapters/filesystem/browser-document-link-port.js'
 import { BrowserUploadFilePort } from '../adapters/filesystem/browser-upload-file-port.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import type { FilePort } from '../application/index.js'
@@ -170,6 +171,7 @@ async function mount(
     ports: {
       file,
       assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
+      links: new BrowserDocumentLinkPort(window),
       // One port, several renderers. DOT, KaTeX, Vega-Lite and Markmap join here.
       diagrams: new CompositeRenderer([
         new MermaidRenderer(),

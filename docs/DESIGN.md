@@ -283,6 +283,13 @@ The note index and document are independent scroll surfaces. The document keeps 
 proportional position indicator: its thumb length shows how much of the document is visible, its
 position shows the reader's place, and dragging it navigates the real document scroll range.
 
+Links are ordinary portable Markdown. `design.md`, `../research/source.pdf`, and
+`assets/diagram.svg` are stored unchanged and resolved from the open note's folder at click time;
+moving or syncing that folder to another device therefore preserves the relationship. Linked
+Markdown opens in the same SimpleMark window, web URLs open in the system browser, and other local
+files open in their system application. `file:///...`, `/Users/...`, drive-letter paths, and `~`
+paths are explicitly machine-specific and are rejected with a visible explanation.
+
 The shared web surface owns these panes, note selection, search, and focus mode. The native shell
 owns macOS window chrome, menus, filesystem access, and watching. In particular, the web view must
 never draw imitation traffic lights or an imitation macOS menu bar.

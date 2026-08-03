@@ -5,11 +5,13 @@ workflow: it fixes the target matrix, triggers, artifact names, checksums, reten
 permissions, release-note inputs, failure behavior, and required secrets, so that the
 workflows implementing it can be reviewed against something specific.
 
-No workflow file is added here. `src-tauri/` does not exist on `main` yet — APP-2 owns
-the real Tauri configuration and native bundle — and a release workflow written against
-a configuration that is not merged could only be a placeholder that succeeds without
-building anything. That is exactly what this contract forbids. The board tasks that add
-the executable wiring are listed in §12.
+This document added no workflow file of its own. When it was written `src-tauri/` did not
+exist on `main` — APP-2 owns the real Tauri configuration and native bundle — and a release
+workflow written against a configuration that is not merged could only be a placeholder that
+succeeds without building anything. That is exactly what this contract forbids. The board
+tasks that add the executable wiring are listed in §12; APP-5 has since landed the
+pull-request lane as
+[`.github/workflows/native-testbuild.yml`](../.github/workflows/native-testbuild.yml).
 
 ### Relationship to `RELEASE-TRUST.md`
 
@@ -353,9 +355,9 @@ something noticed at release time.
 
 | Task | Implements |
 |---|---|
-| APP-5 — private native test artifacts on every pull request | §2 PR trigger, §3, §4 test-build names, §7 PR retention, §8, §10 |
+| APP-5 — private native test artifacts on every pull request | §2 PR trigger, §3, §4 test-build names, §6's pull-request `.sha256` sidecar, §7 PR retention, §8, §10. Landed as [`.github/workflows/native-testbuild.yml`](../.github/workflows/native-testbuild.yml), with §10's byte-level artifact-type assertion in [`scripts/verify-native-artifact.mjs`](../scripts/verify-native-artifact.mjs). |
 | APP-6 — signing, notarization, and platform smoke-test gates | Already largely landed as `RELEASE-TRUST.md` and `scripts/verify-release-trust.mjs`. From this contract: §11's absent-secret behavior and the §3 cross-compile caveat, which costs the affected leg its native smoke test. |
-| APP-7 — publish tagged installer builds as a gated draft release | §2 tag trigger, §5, §6, §9, §7 release retention, §8 elevated job and `release-signing` environment, and invoking the release-trust gate per §10 |
+| APP-7 — publish tagged installer builds as a gated draft release | §2 tag trigger, §5, §6's `SHA256SUMS` manifest, §9, §7 release retention, §8 elevated job and `release-signing` environment, and invoking the release-trust gate per §10 |
 
 A workflow that satisfies its rows here satisfies its task. A workflow that needs to break
 a rule here changes this document first, in its own reviewed pull request — and if the rule

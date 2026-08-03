@@ -1,0 +1,201 @@
+# Private native test builds for every pull request.
+#
+# This is `docs/RELEASE-CONTRACT.md` §2's pull-request lane and nothing else: it
+# builds the four contracted desktop targets from APP-2's real Tauri application
+# and retains the installers as private Actions artifacts. It has no code path
+# that creates, updates, or touches a GitHub Release — that is APP-7's tag lane,
+# in its own workflow.
+#
+# `verify.yml` stays the fast admission and merge-queue gate. This workflow is
+# separate because a twenty-minute four-platform compile has no business sitting
+# in the path that decides whether a change may land.
+name: native test build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-testbuild-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.leg }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      # §10: one platform's failure still lets the other three report.
+      # Diagnosing "Linux is broken" is faster than "something is broken".
+      fail-fast: false
+      matrix:
+        include:
+          - leg: macos-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+            os: macos
+            arch: arm64
+          - leg: macos-x64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+            os: macos
+            arch: x64
+          - leg: windows-x64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundles: msi,nsis
+            os: windows
+            arch: x64
+          - leg: linux-x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+            os: linux
+            arch: x64
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Identify the tree being built
+        id: tree
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # §3: nothing is cross-compiled. Every runner is native to its own
+      # architecture, so this only ever confirms the host target is installed.
+      - name: Add the Rust target for this leg
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ matrix.leg }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ matrix.leg }}-cargo-
+
+      # §3: `libayatana-appindicator3-dev`, never the pre-Ayatana package — asking
+      # apt for both is a conflict, not belt and braces. `libfuse2` is for the
+      # AppImage bundling step, which runs after the slow part.
+      - name: Install the Linux system dependencies
+        if: matrix.os == 'linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf libfuse2
+
+      - name: Install the workspace dependencies
+        run: npm ci
+
+      # The log is captured to a file as well as the run log so that a failing
+      # leg leaves a downloadable record, not only a page in the Actions UI.
+      # `pipefail` is what keeps `tee` from turning a failed build green.
+      - name: Build the native package
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          npx tauri build --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" \
+            2>&1 | tee ".artifacts/native-build-${{ matrix.leg }}.log"
+
+      # §3 and §10: assert the bundle at the path Tauri wrote it to *before*
+      # renaming, so a Tauri release that changes its output layout fails here
+      # instead of uploading nothing. Then §10's real check — the bytes are read
+      # and the container signature asserted, because a zipped `dist/` renamed to
+      # `.dmg` is the worst failure available and the extension cannot catch it.
+      - name: Collect, name, and verify the installers
+        run: |
+          set -euo pipefail
+
+          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
+          # Kept relative to the workspace root on purpose. On the Windows
+          # runner these are Git Bash paths, and handing `/d/a/...` to a native
+          # Windows `node` depends on MSYS argument mangling to come out right.
+          out=".artifacts/testbuild"
+          mkdir -p "$out"
+
+          collect() {
+            format="$1"
+            pattern="$2"
+            final="$3"
+            directory="$bundle/$format"
+
+            if [ ! -d "$directory" ]; then
+              echo "native-testbuild: expected bundle directory $directory does not exist" >&2
+              exit 1
+            fi
+
+            source="$(find "$directory" -maxdepth 1 -type f -name "$pattern" | sort | head -n 1)"
+            if [ -z "$source" ]; then
+              echo "native-testbuild: no $pattern under $directory" >&2
+              exit 1
+            fi
+
+            cp "$source" "$out/$final"
+            node scripts/verify-native-artifact.mjs \
+              --target "${{ matrix.os }}" --artifact "$out/$final" --sha256-sidecar
+          }
+
+          case "${{ matrix.os }}" in
+            macos)
+              collect dmg '*.dmg' "SimpleMark-$version-macos-${{ matrix.arch }}.dmg"
+              ;;
+            windows)
+              collect msi '*.msi' "SimpleMark-$version-windows-x64.msi"
+              collect nsis '*.exe' "SimpleMark-$version-windows-x64-setup.exe"
+              ;;
+            linux)
+              collect appimage '*.AppImage' "SimpleMark-$version-linux-x64.AppImage"
+              collect deb '*.deb' "SimpleMark-$version-linux-x64.deb"
+              ;;
+            *)
+              echo "native-testbuild: unknown os ${{ matrix.os }}" >&2
+              exit 1
+              ;;
+          esac
+
+          ls -l "$out"
+
+      # §4: named for the commit, because the version of an unreleased tree is not
+      # meaningful and a tester reporting a bug quotes the artifact name.
+      # §7: seven days — the 90-day Actions default is wrong for unsigned private
+      # installers, which should not accumulate.
+      - name: Upload the private test build
+        uses: actions/upload-artifact@v6
+        with:
+          name: simplemark-testbuild-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.tree.outputs.short_sha }}
+          path: .artifacts/testbuild
+          if-no-files-found: error
+          retention-days: 7
+
+      # §10 permits `if: always()` on a diagnostic upload; it is the build output
+      # of a leg that may have just failed, and never becomes a shipped artifact.
+      - name: Upload the build log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: simplemark-build-log-${{ matrix.leg }}-${{ github.sha }}
+          path: .artifacts/native-build-${{ matrix.leg }}.log
+          if-no-files-found: warn
+          retention-days: 7

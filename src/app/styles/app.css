@@ -209,12 +209,13 @@ button[disabled] {
   bottom: 18px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 3px;
+  justify-content: flex-start;
+  gap: 2px;
+  width: 385px;
   padding: 1px 5px;
   border: 1px solid var(--line);
   border-radius: 11px;
-  background: color-mix(in srgb, var(--paper) 94%, var(--chrome));
+  background: color-mix(in srgb, var(--paper) 68%, var(--ink-3));
   box-shadow: 0 10px 30px rgb(40 35 29 / 16%);
   backdrop-filter: blur(18px);
   transform: translateX(-50%);
@@ -295,11 +296,16 @@ button[disabled] {
 .styles-control .styles-glyph-todo {
   width: 18px;
   height: 18px;
+  transform: translateX(-8px);
 }
 
 .styles-control .styles-glyph-list {
   width: 20px;
   height: 20px;
+}
+
+.styles-glyph-list circle {
+  fill: var(--danger) !important;
 }
 
 .styles-control .styles-glyph-highlight,
@@ -309,32 +315,48 @@ button[disabled] {
 }
 
 .styles-control .styles-glyph-link {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
+  transform: translateX(4px);
 }
 
 .styles-control .styles-glyph-table {
   width: 18px;
   height: 18px;
+  transform: translateX(7px);
 }
 
 .styles-control .styles-glyph-more {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
+  transform: translateX(11px);
 }
 
-.styles-control .styles-glyph-todo,
-.styles-control .styles-glyph-table,
-.styles-control .styles-glyph-asset {
+.styles-control .styles-glyph-todo {
   stroke-width: 1.8;
 }
 
-.styles-control .styles-glyph-highlight {
+.styles-control .styles-glyph-table {
   stroke-width: 1.7;
 }
 
+.styles-control .styles-glyph-asset {
+  stroke-width: 1.65;
+  transform: translateX(9px);
+}
+
+.styles-control .styles-glyph-highlight {
+  stroke-width: 1.6;
+}
+
+.styles-glyph-highlight .styles-highlight-wash {
+  stroke: var(--danger);
+  stroke-width: 3.2;
+  opacity: 0.22;
+}
+
 .styles-glyph-highlight .styles-highlight-swatch {
-  stroke: var(--accent);
+  stroke: var(--danger);
   stroke-width: 2.2;
 }
 
@@ -348,8 +370,44 @@ button[disabled] {
    its disclosure chevron. Keeping More at the ordinary control width is what
    makes the palette feel balanced instead of uniformly padded. */
 .styles-menu-wide > .styles-menu-trigger {
-  min-width: 43px;
-  width: 43px;
+  min-width: 39px;
+  width: 39px;
+}
+
+.styles-menu-headers > .styles-menu-trigger > .styles-letter {
+  transform: translateX(7px);
+}
+
+.styles-menu-headers > .styles-menu-trigger > .styles-disclosure {
+  transform: translate(7px, 0.25px);
+}
+
+.styles-menu-lists > .styles-menu-trigger > * {
+  transform: translateX(3px);
+}
+
+.styles-menu-lists > .styles-menu-trigger > .styles-disclosure {
+  margin-left: -3px;
+  transform: translate(3px, 0.25px);
+}
+
+.styles-menu-lists {
+  margin-right: 10px;
+}
+
+.styles-menu-highlight {
+  margin-right: 11px;
+}
+
+/* Bear's symbols are not mathematically centred inside equal hit targets.
+   These optical offsets preserve 31px controls while matching the observed
+   glyph rhythm: compact at the left, then slightly more air toward More. */
+.styles-menu-highlight > .styles-menu-trigger > .styles-glyph-highlight {
+  transform: translateX(9px);
+}
+
+.styles-menu-highlight > .styles-menu-trigger > .styles-disclosure {
+  transform: translate(9px, 0.25px);
 }
 
 .styles-strong strong {
@@ -358,6 +416,7 @@ button[disabled] {
 
 .styles-emphasis em {
   font: italic 18px/1 var(--serif);
+  transform: translateX(1px);
 }
 
 .styles-control:hover:not([disabled]),

@@ -40,6 +40,7 @@
     "micromark-util-classify-character": "^2.0.1",
     "micromark-util-resolve-all": "^2.0.1",
     "micromark-util-symbol": "^2.0.1",
-    "micromark-util-types": "^2.0.2"
+    "micromark-util-types": "^2.0.2",
+    "remark-math": "^6.0.0"
   }
 }

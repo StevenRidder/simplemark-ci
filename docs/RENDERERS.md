@@ -43,7 +43,7 @@ mini-applications or exposing a renderer cockpit.
 | **Document** | remark / ProseMirror | the `.md` itself | — | core | ✓ |
 | **Diagrams** | [Mermaid 11](https://mermaid.js.org/) | ` ```mermaid ` source | ~1.2 MB | core | ✓✓ |
 | **Graphs** ✅ | [`@hpcc-js/wasm-graphviz`](https://github.com/hpcc-systems/hpcc-js-wasm) | ` ```dot ` source | 801 KB lazy chunk | verified | ✓✓ |
-| **Math** ✅ | [KaTeX](https://katex.org/) | ` ```math ` source | ~255 KB + fonts | core | ✓✓ |
+| **Math** ✅ | [KaTeX](https://katex.org/) | `$$…$$` (display) | ~255 KB + fonts | core | ✓✓ |
 | **Code** | [Shiki](https://shiki.style/) | fenced code + lang | ~400 KB lazy | core | ✓ |
 | **Charts** | [Vega-Lite](https://vega.github.io/vega-lite/) | ` ```vega-lite ` JSON spec | ~1.1 MB | verified | ✓✓ |
 | **Mind maps** | [Markmap](https://markmap.js.org/) | the note's own headings | ~180 KB | verified | ✓ (implicit) |
@@ -196,15 +196,21 @@ dressed as a rendered one, which is precisely the silent-wrong-guess §4.4
 forbids. `trust: false` strips `\href`, `\url` and `\includegraphics`
 destinations entirely.
 
-**Storage.** Math stores as a ` ```math ` fence rather than `$$…$$`. The fence
-is what the existing code-block mechanism and the D7 source map already handle
-safely, GitHub renders ` ```math ` natively, and it avoids remark escaping
-backslashes in formulas. The `$$` delimiters are stripped on the way in, so the
-stored source is the expression itself.
+**Storage: `$$…$$`, the portable interchange form.** This shipped first as a
+` ```math ` fence, reusing the code-block mechanism — convenient, but divergent
+from what EDITOR-9 and the Bear inventory specify and from what Obsidian and
+Notion users expect. It now uses a dedicated `math_block` node with remark-math
+handling parse and serialise in both directions, so a file written elsewhere
+opens rendered and saves back unchanged.
 
-**Not included:** inline `$x$` math inside a paragraph. That needs a remark
-extension and a ProseMirror inline node rather than a paste sniffer, and it is
-its own task.
+**`singleDollarTextMath: false` is load-bearing.** With remark-math's default,
+`The licence costs $100 and renews for $250` parses the span between the two
+dollars as inline math and silently mangles the sentence. Requiring `$$` keeps
+prose with prices as prose — there is a test for exactly that line.
+
+**Not included:** inline `$x$` inside a paragraph. It needs a ProseMirror inline
+node and input rules on top of the remark extension, and it belongs to EDITOR-9
+alongside footnotes and callouts.
 
 ## 5. Later: the second tier
 

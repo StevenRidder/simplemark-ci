@@ -130,10 +130,16 @@ export interface PasteSnifferOptions {
 
 export const pasteSniffers = (options: PasteSnifferOptions) =>
   $prose((ctx: Ctx) => {
-    /** Replaces the current selection with a fenced code block. */
+    /**
+     * Replaces the current selection with the block that stores this language.
+     *
+     * Math gets its own node, which serialises to `$$…$$` — the portable
+     * interchange form. Everything else stores as a fenced code block.
+     */
     const insertFence = (view: EditorView, language: string, source: string): void => {
       const { schema } = view.state
-      const codeBlock = schema.nodes['code_block']
+      const target = language === 'math' ? schema.nodes['math_block'] : schema.nodes['code_block']
+      const codeBlock = target ?? schema.nodes['code_block']
       if (codeBlock === undefined) return
 
       // Two transactions on purpose (§4.3): the first inserts the raw pasted

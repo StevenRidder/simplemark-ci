@@ -1467,6 +1467,7 @@ section.editor {
 .milkdown .ProseMirror .sm-find-active {
   outline: 2px solid var(--accent);
   outline-offset: 0;
+}
 
 /* ---- paste-exhaust cards (RENDERERS.md, the exhaust tier) ---- */
 

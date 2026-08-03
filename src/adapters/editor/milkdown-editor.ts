@@ -59,6 +59,7 @@ import { foldingKey, foldingPlugin } from './folding.js'
 import { codeHighlightPlugin } from './code-highlight.js'
 import { findKey, findPlugin } from './find.js'
 import type { FindState } from './find.js'
+import { mathBlockSchema, mathRemark } from './math-block.js'
 import { pasteSniffers } from './paste-sniffers.js'
 
 /**
@@ -135,6 +136,12 @@ export class MilkdownEditor {
         return new DiagramNodeView(node, view, getPos, options.renderer)
       }
     })
+    // Display math renders through the same NodeView as a diagram fence: one
+    // rendered block, one editable source, one failure surface.
+    const mathView = $view(mathBlockSchema.node, () => {
+      return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
+        new DiagramNodeView(node, view, getPos, options.renderer)
+    })
     const imageView = $view(imageSchema.node, () => {
       return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
         new AssetImageNodeView(node, view, getPos)
@@ -189,7 +196,10 @@ export class MilkdownEditor {
       // active. Diagram fences keep their NodeView and stay unhighlighted.
       .use(codeHighlightPlugin(options.renderer.languages))
       .use(findPlugin)
+      .use(mathRemark)
+      .use(mathBlockSchema)
       .use(diagramView)
+      .use(mathView)
       .use(imageView)
       .create()
 

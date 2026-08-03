@@ -43,10 +43,17 @@ test('rendering a graph reaches no external host (D2: no network)', async ({ pag
 
 test('pasted DOT round-trips to the file as a portable dot fence', async ({ page }) => {
   await paste(page, 'digraph { a -> b }')
-  await expect(page.locator('.diagram .diagram-render svg').last()).toBeVisible({ timeout: 30_000 })
+
+  // Poll the serialised document rather than a locator: the fixture already
+  // contains a Mermaid diagram, so `.last()` matches before the DOT block has
+  // finished its async validate-then-convert and the assertion races the wasm.
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.editor.serialize()), {
+      timeout: 30_000,
+    })
+    .toContain('```dot')
 
   const markdown = await page.evaluate(() => window.simplemark!.editor.serialize())
-  expect(markdown).toContain('```dot')
   expect(markdown).toContain('digraph { a -> b }')
 })
 
@@ -75,22 +82,23 @@ test('pasted $$ display math typesets with KaTeX', async ({ page }) => {
   await expect(math.locator('.katex')).toBeVisible()
 })
 
-test('a pasted LaTeX environment typesets and stores as a math fence', async ({ page }) => {
+test('a pasted LaTeX environment typesets and stores as $$', async ({ page }) => {
   await paste(page, '\\begin{aligned}\n  a &= b + c \\\\\n  d &= e\n\\end{aligned}')
 
   await expect(page.locator('.math-block .katex').last()).toBeVisible()
   const markdown = await page.evaluate(() => window.simplemark!.editor.serialize())
-  expect(markdown).toContain('```math')
+  expect(markdown).toContain('$$')
+  expect(markdown).not.toContain('```math')
   expect(markdown).toContain('\\begin{aligned}')
 })
 
-test('the $$ delimiters are stripped from the stored source', async ({ page }) => {
+test('display math stores as a portable $$ block, not a fence', async ({ page }) => {
   await paste(page, '$$\\frac{1}{2}$$')
 
   const markdown = await page.evaluate(() => window.simplemark!.editor.serialize())
-  expect(markdown).toContain('```math')
-  expect(markdown).toContain('\\frac{1}{2}')
-  expect(markdown).not.toContain('$$\\frac')
+  // Portable interchange form: $$ on its own lines, the expression between.
+  expect(markdown).toMatch(/\$\$\n\\frac\{1\}\{2\}\n\$\$/)
+  expect(markdown).not.toContain('```math')
 })
 
 test('a dollar amount in prose is never claimed as math', async ({ page }) => {
@@ -107,4 +115,33 @@ test('undo restores the raw pasted text for both new formats', async ({ page }) 
   await page.keyboard.press('ControlOrMeta+z')
   await expect(page.locator('.math-block')).toHaveCount(0)
   await expect(page.locator(EDITOR)).toContainText('E = mc^2')
+})
+
+test('a file that already contains $$ math opens rendered, and stays $$ on save', async ({ page }) => {
+  const NOTE = '# Loaded\n\nBefore.\n\n$$\n\\int_0^1 x^2 dx = \\frac{1}{3}\n$$\n\nAfter.\n'
+  await page.addInitScript((content: string) => {
+    window.showOpenFilePicker = async () => {
+      const root = await navigator.storage.getDirectory()
+      const handle = await root.getFileHandle('math-note.md', { create: true })
+      if ((await handle.getFile()).size === 0) {
+        const w = await handle.createWritable()
+        await w.write(content)
+        await w.close()
+      }
+      return [handle]
+    }
+  }, NOTE)
+
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await page.getByRole('button', { name: 'Open file' }).click()
+  await expect(page.locator('.filename')).toContainText('math-note.md')
+
+  // The parse direction: math arriving from a file, not from a paste.
+  await expect(page.locator('.math-block .katex')).toBeVisible()
+
+  const markdown = await page.evaluate(() => window.simplemark!.editor.serialize())
+  expect(markdown).toContain('$$')
+  expect(markdown).not.toContain('```math')
+  expect(markdown).toContain('After.')
 })

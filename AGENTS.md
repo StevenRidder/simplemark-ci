@@ -117,6 +117,7 @@ scripts/ci-sandbox.sh open-pr <branch>
 | Durable architectural choice and rejected alternatives | `docs/decisions/` |
 | Current coding and placement rules | this file |
 | Product or protocol contract | the relevant spec under `docs/` |
+| What a build-and-release workflow must do | `docs/RELEASE-CONTRACT.md` |
 | Executable sequence for a phase | `docs/superpowers/plans/` |
 | Temporary execution sequence | the Switchboard `simplemark` board |
 | Spike evidence and verdicts | `spike/<name>/RESULT.md` |

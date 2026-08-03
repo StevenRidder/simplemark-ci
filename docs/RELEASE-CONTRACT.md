@@ -1,0 +1,312 @@
+# The SimpleMark release contract
+
+What any SimpleMark build-and-release workflow must do. This is a contract, not a
+workflow: it fixes the target matrix, triggers, artifact names, checksums, retention,
+permissions, release-note inputs, failure behavior, and required secrets, so that the
+workflows implementing it can be reviewed against something specific.
+
+No workflow file is added here. `src-tauri/` does not exist on `main` yet — APP-2 owns
+the real Tauri configuration and native bundle — and a release workflow written against
+a configuration that is not merged could only be a placeholder that succeeds without
+building anything. That is exactly what this contract forbids. The board tasks that add
+the executable wiring are listed in §12.
+
+## 1. Scope
+
+In scope — four desktop installer targets for the one shared application:
+
+| Platform | Architecture |
+|---|---|
+| macOS | arm64 (Apple Silicon) |
+| macOS | x86_64 (Intel) |
+| Windows | x86_64 |
+| Linux | x86_64 |
+
+Out of scope, with what would have to be true first:
+
+- **iOS.** APP-2's configuration has no iOS target, and iOS needs provisioning profiles,
+  a distribution certificate, and an App Store or TestFlight path that shares nothing
+  with the desktop bundle pipeline. It needs its own contract, not a row in this table.
+- **Auto-update.** `tauri-plugin-updater` requires an update endpoint, a signing keypair
+  whose private half must be held for the life of the product, and a public commitment to
+  a version sequence. That commitment is premature before the one-day dogfood verdict in
+  `docs/POC.md` decides whether SimpleMark continues. Deferring it is why
+  `TAURI_SIGNING_PRIVATE_KEY` is explicitly *not* in §11.
+- **Windows arm64 and Linux arm64.** Runner labels exist, but no one has asked for these
+  builds and each one added is a matrix leg that must stay green forever. Add on demand.
+- **App stores and package managers.** The Mac App Store, winget, Homebrew, and Flathub
+  are distribution channels layered on top of these artifacts, not replacements for them.
+
+This contract never redefines `src-tauri/tauri.conf.json`. Where it needs a bundle format
+that APP-2's configuration does not list, the workflow passes `--bundles` explicitly for
+that matrix leg (§3) rather than editing APP-2's file.
+
+## 2. Two triggers, and no third
+
+| Trigger | Produces | Visibility |
+|---|---|---|
+| `pull_request`, and `workflow_dispatch` on a branch | Private Actions artifacts (§7) | Repository collaborators only |
+| `push` of a tag matching `v*` | A **draft** GitHub Release | Nobody until a human publishes it |
+
+Rules:
+
+- A pull request build **never** creates, updates, or touches a GitHub Release.
+- A tag build **never** publishes. It creates the release with `draft: true`. Publishing
+  is a deliberate human action, which is what makes the draft a review point rather than
+  a formality.
+- `push` to `main` does **not** build installers. The `verify` gate on `main` stays fast;
+  a four-platform native build on every merge buys nothing that the PR build did not
+  already prove about the same tree.
+- No `schedule` trigger. Nightly builds nobody downloads are a way to burn Actions
+  minutes and accumulate green checkmarks that mean nothing.
+
+## 3. Build matrix
+
+Four legs. Each builds natively for its own architecture; nothing is cross-compiled.
+
+| Leg | Runner label | Rust target | Bundles |
+|---|---|---|---|
+| macOS arm64 | `macos-15` | `aarch64-apple-darwin` | `dmg` |
+| macOS x64 | `macos-15-intel` | `x86_64-apple-darwin` | `dmg` |
+| Windows x64 | `windows-2025` | `x86_64-pc-windows-msvc` | `msi`, `nsis` |
+| Linux x64 | `ubuntu-22.04` | `x86_64-unknown-linux-gnu` | `appimage`, `deb` |
+
+Runner labels are **pinned to explicit versions, never `-latest`**. A `-latest` label
+silently rolls to a new image, which means the compiler, SDK, and system libraries that
+shipped an installer can change without a single line of the repository changing. When a
+pinned label is deprecated, moving it is a reviewed change with a recorded reason, not a
+surprise.
+
+Why these labels:
+
+- **`ubuntu-22.04`, deliberately not the newest Ubuntu.** An AppImage or `.deb` linked
+  against a newer glibc will not start on an older distribution, and the failure is an
+  unreadable loader error on the user's machine rather than a red build. The oldest
+  supported runner sets the compatibility floor. Raise it only as a decision, never as a
+  side effect of taking the latest label.
+- **`macos-15-intel` for the x64 leg.** GitHub retires macOS runner images down to the
+  most recent two versions, and Intel labels are the ones that disappear first —
+  `macos-13` is already gone and `macos-14` is deprecated. If no standard Intel runner
+  remains, the fallback is to cross-compile `x86_64-apple-darwin` from an arm64 runner,
+  which Apple's toolchain supports. That fallback is a **recorded decision, not a silent
+  substitution**, because a cross-compiled leg cannot run its own smoke test (APP-6) —
+  the runner cannot execute the binary it just produced.
+- **`macos-15`, not `macos-14`.** `macos-14` is deprecated.
+
+Linux system dependencies, installed before the build:
+
+```text
+libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev
+libayatana-appindicator3-dev librsvg2-dev patchelf libfuse2
+```
+
+Two notes that cost a build each if they are learned the hard way:
+
+- **`libayatana-appindicator3-dev`, never `libappindicator3-dev`.** The second is the
+  pre-Ayatana package. Tauri v2 wants the Ayatana fork, and asking apt for both in one
+  command is not a belt-and-braces choice — it is a package conflict that fails the
+  install step.
+- **`libfuse2` is for AppImage, not for the compile.** Omitting it fails at bundling,
+  after the slow part, on a leg that had already compiled successfully.
+
+Each leg asserts its bundle exists at the path Tauri writes it to — under
+`src-tauri/target/<rust-target>/release/bundle/<format>/` when `--target` is passed — and
+then renames it to the §4 scheme. Asserting the source path before the rename is what
+catches a Tauri version that changes its output layout, instead of uploading nothing.
+
+## 4. Artifact names
+
+Published installers:
+
+```text
+SimpleMark-<version>-<os>-<arch>.<ext>
+```
+
+`<os>` is `macos`, `windows`, or `linux`. `<arch>` is `arm64` or `x64`. `<version>` is the
+tag version without the leading `v`.
+
+The NSIS installer is the one exception, and it takes a `-setup` discriminator before the
+extension. Both Windows bundles are installers, but only one of them has an extension that
+says so; `SimpleMark-0.3.1-windows-x64.exe` would be indistinguishable at a glance from the
+application executable that a user might expect to run directly.
+
+So a 0.3.1 release is exactly these six files:
+
+```text
+SimpleMark-0.3.1-macos-arm64.dmg
+SimpleMark-0.3.1-macos-x64.dmg
+SimpleMark-0.3.1-windows-x64.msi
+SimpleMark-0.3.1-windows-x64-setup.exe
+SimpleMark-0.3.1-linux-x64.AppImage
+SimpleMark-0.3.1-linux-x64.deb
+```
+
+Pull-request test artifacts are named for the commit, not the version, because the version
+of an unreleased tree is not meaningful:
+
+```text
+simplemark-testbuild-<os>-<arch>-<short-sha>
+```
+
+A tester who reports a bug quotes the artifact name, and the name identifies the exact
+tree. That is the whole reason the SHA is in it.
+
+## 5. One version number
+
+The tag is the source of truth. Before any build step runs, the workflow asserts that all
+three of these equal the tag version:
+
+- `package.json` → `version`
+- `src-tauri/tauri.conf.json` → `version`
+- `src-tauri/Cargo.toml` → `package.version`
+
+Any mismatch fails the workflow immediately, naming each file and the value it holds.
+
+This check is cheap and it is the one that matters most. Both versioned files currently
+read `0.0.0`. Without this gate the first real release ships as
+`SimpleMark-0.0.0-macos-arm64.dmg`, a build that reports the wrong version to every user
+who ever opens the About window, and the mistake is unfixable after publication.
+
+The check runs **before** the matrix, not inside it. Four platforms should not spend
+twenty minutes compiling to discover a typo in a version string.
+
+## 6. Checksums
+
+Every published artifact carries a SHA-256.
+
+- A single `SHA256SUMS` file is generated in one job after all four legs finish, covering
+  every artifact in the release, in `sha256sum -c` format. Generating it centrally is what
+  makes it a manifest of a complete release rather than four unrelated files.
+- `SHA256SUMS` is attached to the draft release alongside the installers.
+- Pull-request test artifacts each carry a `.sha256` sidecar, so a tester can prove which
+  binary they actually installed when they report what it did.
+
+Checksums are integrity, not authenticity — they prove an artifact was not corrupted in
+transit, not that it came from this project. Authenticity is signing, and signing is APP-6.
+The contract states both so the difference is never blurred in a release note.
+
+## 7. Retention
+
+| Artifact | Retention | Why |
+|---|---|---|
+| PR test builds | 7 days | Long enough to test a PR, short enough that unsigned private binaries do not accumulate. The 90-day Actions default is wrong for installers. |
+| Tag build job artifacts | 30 days | A handoff between the build jobs and the release job, and a short window to diagnose a bad release. |
+| Draft/published release assets | Indefinite | The release is the durable home. Nothing else needs to be. |
+
+## 8. Permissions
+
+The workflow declares `permissions: contents: read` at the top level. Exactly one job —
+the one that creates the draft release — elevates to `contents: write`, and it declares
+that at the job level.
+
+- No `id-token`, no `packages`, no `pull-requests`, no `actions: write`. None of them are
+  needed, and a build job that can write to the repository is a build job that can be
+  turned into a supply-chain problem by a dependency.
+- `actions/checkout` runs with `persist-credentials: false`, matching
+  `.github/workflows/verify.yml`. A build does not need a usable token sitting in
+  `.git/config` for every subsequent step and every script those steps invoke.
+- Third-party actions are pinned by **full commit SHA**, not by tag. A tag can be moved to
+  point at new code; a commit SHA cannot. First-party `actions/*` may be pinned by major
+  version, consistent with `verify.yml`.
+- Secrets are passed to the specific step that needs them, never declared at workflow level
+  where every step in every job inherits them.
+
+## 9. Release notes
+
+The draft release body is assembled from inputs, not generated prose:
+
+1. The `CHANGELOG.md` section for this version, if the file has one.
+2. Otherwise, commit subjects since the previous tag.
+3. Always appended, regardless of 1 or 2:
+   - the build matrix table with each artifact's SHA-256,
+   - the canonical source SHA the release was built from,
+   - the Switchboard task ids referenced by the pull requests merged since the last tag.
+
+A missing changelog section produces a **visible note in the body** saying so. It does not
+produce an empty release body, and it does not fail the build — the artifacts are still
+good. Whoever reviews the draft before publishing decides whether the note is acceptable.
+
+Nothing here writes marketing copy. A release note that describes what a human did not
+write is a release note nobody can trust.
+
+## 10. Failure is loud
+
+- No `continue-on-error`, no `|| true`, and no `if: always()` on any step whose output
+  becomes a shipped artifact. `if: always()` on a diagnostic upload is fine; on a build
+  step it manufactures a green release from a failed compile.
+- Every leg asserts its expected bundle exists at the expected path and is non-empty.
+  A missing or zero-byte bundle fails the job, naming the path that was expected.
+- **Artifact type is asserted, not assumed.** A `.dmg` must be an Apple Disk Image, an
+  `.msi` an MSI, an `.AppImage` an ELF executable. This is the specific rule that stops the
+  worst available failure: shipping a zipped `dist/` or a source archive under an installer
+  name, so a user downloads something that cannot possibly install.
+- `fail-fast: false` on the matrix, so one platform's failure still lets the other three
+  report. Diagnosing "Linux is broken" is faster than diagnosing "something is broken."
+- The release job requires **all four legs green**. `fail-fast: false` exists to improve
+  diagnosis, never to publish a partial release. A release missing a platform is worse
+  than no release, because it looks complete.
+- A required secret that is absent fails the job naming the secret. It never falls back to
+  an unsigned or ad-hoc-signed build. An unsigned installer that looks like a signed one is
+  a broken promise the user discovers at Gatekeeper, not at download.
+- The draft release is never published automatically, and the workflow has no code path
+  that publishes one.
+
+These restate the repository rule in `AGENTS.md`: failures are visible and local, and
+missing evidence never becomes a green result.
+
+## 11. Required secrets, by name
+
+Every secret is listed by name and purpose. No value appears in this repository, and none
+is echoed, printed, or written to a log or artifact by any step.
+
+macOS signing and notarization — consumed by both macOS legs, owned by APP-6:
+
+| Secret | Purpose |
+|---|---|
+| `APPLE_CERTIFICATE` | Developer ID Application certificate, base64-encoded `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | Password for that `.p12` |
+| `APPLE_SIGNING_IDENTITY` | Identity to sign with, e.g. `Developer ID Application: … (TEAMID)` |
+| `APPLE_ID` | Apple account used for notarization |
+| `APPLE_PASSWORD` | App-specific password for that account — never the account password |
+| `APPLE_TEAM_ID` | Team identifier notarization submits under |
+
+`APPLE_API_ISSUER` + `APPLE_API_KEY` + `APPLE_API_KEY_PATH` are the App Store Connect API
+alternative to `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID` for notarization. APP-6 picks
+one pair of mechanisms; both are named here so neither gets invented later.
+
+Windows signing — consumed by the Windows leg, owned by APP-6, which chooses one mechanism:
+
+| Mechanism | Secrets |
+|---|---|
+| Authenticode with a certificate file | `WINDOWS_CERTIFICATE` (base64 `.pfx`), `WINDOWS_CERTIFICATE_PASSWORD` |
+| Azure Trusted Signing | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` |
+
+Built in, never created:
+
+| Secret | Purpose |
+|---|---|
+| `GITHUB_TOKEN` | Creating the draft release and uploading assets. Scoped per §8. |
+
+No personal access token is used anywhere in the release path.
+
+Explicitly **not** required, and not to be added without retiring the §1 deferral:
+
+| Secret | Why absent |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | Updater artifact signing. Auto-update is deferred. |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Same. |
+
+Linux artifacts are unsigned. AppImage and `.deb` have no equivalent of Gatekeeper or
+SmartScreen, and `SHA256SUMS` (§6) is the integrity story there. This is stated so that
+"Linux is not signed" is a recorded decision rather than something noticed later.
+
+## 12. Which board task implements which section
+
+| Task | Implements |
+|---|---|
+| APP-5 — private native test artifacts on every pull request | §2 PR trigger, §3, §4 test-build names, §7 PR retention, §8, §10 |
+| APP-6 — signing, notarization, and platform smoke-test gates | §11 signing secrets and their absent-behavior, the smoke test each leg must pass, the §3 cross-compile caveat |
+| APP-7 — publish tagged installer builds as a gated draft release | §2 tag trigger, §5, §6, §9, §7 release retention, §8 elevated job |
+
+A workflow that satisfies its rows here satisfies its task. A workflow that needs to break
+a rule here changes this document first, in its own reviewed pull request.

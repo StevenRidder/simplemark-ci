@@ -70,7 +70,7 @@ test('sidebar typography uses Bear-sized macOS system text', async ({ page }) =>
   }
   expect(typography).toMatchObject({
     workspace: { size: '14px', weight: '600' },
-    navigation: { size: '14px', weight: '450' },
+    navigation: { size: '15px', weight: '450' },
     section: { size: '11px', weight: '600' },
     noteTitle: { size: '14px', weight: '600' },
     notePreview: { size: '13px', weight: '400' },
@@ -121,7 +121,7 @@ test('workspace controls are real while collaboration controls stay disabled', a
 })
 
 test('switches notes, filters the local index, creates a note, and can focus the page', async ({ page }) => {
-  await expect(page.getByLabel('Library')).toContainText('All Notes3')
+  await expect(page.getByLabel('Library')).toContainText('Open Notes3')
   await page.getByRole('button', { name: 'field-notes', exact: true }).click()
   await expect(page.locator('.filename')).toContainText('field-notes.md')
   await expect(page.locator(`${editor} h1`)).toContainText('Field notes')
@@ -133,6 +133,9 @@ test('switches notes, filters the local index, creates a note, and can focus the
 
   await page.getByRole('button', { name: 'Pin ideas' }).click()
   await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
+  // Pinning is an in-place sidebar state change, like Bear. It deliberately
+  // does not remount the shell or dismiss an active search.
+  await page.getByRole('button', { name: 'Close search' }).click()
 
   await page.getByRole('button', { name: 'Document list' }).click()
   await expect(page.locator('.workspace-body')).toHaveClass(/navigation-hidden/)

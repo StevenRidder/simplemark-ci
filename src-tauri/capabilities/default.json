@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window may open a file picker, move or zoom its native window, and call SimpleMark's own four commands. No filesystem, shell, or network permission is granted: every file touch goes through this crate's audited commands.",
+  "description": "The main window may open a file picker, move or zoom its native window, and call SimpleMark's audited note and workspace commands. No general filesystem, shell, or network permission is granted: every file touch goes through this crate's narrow commands.",
   "windows": ["main"],
   "permissions": [
     "core:default",

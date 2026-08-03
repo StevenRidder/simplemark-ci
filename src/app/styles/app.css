@@ -791,7 +791,7 @@ section.editor {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: 190px 310px minmax(0, 1fr);
+  grid-template-columns: 190px 285px minmax(0, 1fr);
   background: var(--paper);
 }
 
@@ -817,11 +817,14 @@ section.editor {
 .workspace-name {
   min-width: 0;
   margin-right: auto;
+  overflow: hidden;
   color: #f4f2eb;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .library-action,
@@ -834,6 +837,17 @@ section.editor {
   border-radius: 50%;
   background: transparent;
   color: #b9bbb5;
+}
+
+.library-action svg,
+.workspace-library-footer svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .library-action:not(:disabled):hover,
@@ -856,8 +870,15 @@ section.editor {
   gap: 1px;
 }
 
+.library-section-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  min-height: 39px;
+  padding: 12px 8px 5px 10px;
+}
+
 .library-section-label {
-  margin: 17px 10px 7px;
   color: #aeb0aa;
   font-size: 11px;
   font-weight: 600;
@@ -866,21 +887,83 @@ section.editor {
   text-transform: uppercase;
 }
 
+.library-section-action {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #aeb0aa;
+}
+
+.library-section-action:not(:disabled):hover {
+  background: rgb(255 255 255 / 8%);
+  color: #fff;
+}
+
+.library-section-action svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .folder-row {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
   gap: 5px;
   width: 100%;
   border: 0;
   border-radius: 8px;
-  min-height: 31px;
-  padding: 6px 10px;
+  min-height: 32px;
+  padding: 6px 9px;
   background: transparent;
   color: #d0d2cc;
   text-align: left;
-  font: 450 14px/1.2 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+  font: 450 15px/1.2 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
   letter-spacing: -0.005em;
+}
+
+.folder-row > span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: #aeb0aa;
+}
+
+.library-icon svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.folder-row.selected .library-icon,
+.folder-row:hover .library-icon {
+  color: currentColor;
+}
+
+.library-disclosure svg {
+  width: 16px;
+  height: 16px;
 }
 
 .folder-row:disabled {
@@ -1065,7 +1148,7 @@ section.editor {
 
 .note-items {
   display: grid;
-  gap: 3px;
+  gap: 0;
   padding: 7px;
 }
 
@@ -1074,9 +1157,23 @@ section.editor {
   grid-template-columns: minmax(0, 1fr) 26px;
   align-items: start;
   width: 100%;
-  min-height: 96px;
+  min-height: 70px;
   border-radius: 9px;
   background: transparent;
+}
+
+.note-item:not(.selected)::after {
+  content: '';
+  position: absolute;
+  right: 10px;
+  bottom: 0;
+  left: 14px;
+  height: 1px;
+  background: color-mix(in srgb, var(--line) 72%, transparent);
+}
+
+.note-item {
+  position: relative;
 }
 
 .note-item:hover,
@@ -1095,7 +1192,7 @@ section.editor {
   width: 100%;
   border: 0;
   border-radius: 8px;
-  padding: 13px 0 12px 14px;
+  padding: 10px 0 9px 12px;
   background: transparent;
   text-align: left;
 }
@@ -1128,7 +1225,7 @@ section.editor {
 }
 
 .workspace-notes[data-preview='small'] .note-item {
-  min-height: 62px;
+  min-height: 54px;
 }
 
 .workspace-notes[data-preview='small'] .note-select span {
@@ -1194,7 +1291,7 @@ section.editor {
 }
 
 .workspace-body[data-layout='notes'] {
-  grid-template-columns: 310px minmax(0, 1fr);
+  grid-template-columns: 285px minmax(0, 1fr);
 }
 
 .workspace-body[data-layout='notes'] .workspace-folders {

@@ -17,13 +17,13 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
@@ -43,6 +43,22 @@ pub struct OpenedNote {
     name: String,
     /// Base64 of the file's exact bytes.
     bytes: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceCatalogEntry {
+    handle: String,
+    name: String,
+    modified_ms: u64,
+    created_ms: u64,
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceCatalog {
+    handle: String,
+    name: String,
+    notes: Vec<WorkspaceCatalogEntry>,
 }
 
 /// What this process last wrote to each path, so the watcher can tell our own
@@ -84,6 +100,25 @@ async fn open_note(app: AppHandle) -> Result<Option<OpenedNote>, String> {
     read_note(&path).map(Some)
 }
 
+/// Prompts for a folder whose direct Markdown children become one collection.
+///
+/// Picking a folder is deliberately separate from opening a file: opening
+/// `Downloads/example.md` must never imply permission to adopt every Markdown
+/// file in Downloads.
+#[tauri::command]
+async fn open_workspace_folder(app: AppHandle) -> Result<Option<WorkspaceCatalog>, String> {
+    let picked = app.dialog().file().blocking_pick_folder();
+
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+
+    let directory = picked
+        .into_path()
+        .map_err(|error| format!("That folder has no readable path: {error}"))?;
+    workspace_catalog_for_directory(&directory).map(Some)
+}
+
 /// Reads a note that is already chosen — used by reopen and by the watcher.
 #[tauri::command]
 fn read_note_at(path: String) -> Result<OpenedNote, String> {
@@ -91,7 +126,8 @@ fn read_note_at(path: String) -> Result<OpenedNote, String> {
 }
 
 fn read_note(path: &Path) -> Result<OpenedNote, String> {
-    let bytes = fs::read(path).map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+    let bytes =
+        fs::read(path).map_err(|error| format!("Could not read {}: {error}", path.display()))?;
     let name = path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -102,6 +138,119 @@ fn read_note(path: &Path) -> Result<OpenedNote, String> {
         name,
         bytes: BASE64.encode(&bytes),
     })
+}
+
+fn is_markdown(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("md") || extension.eq_ignore_ascii_case("markdown")
+        })
+}
+
+fn millis(time: Result<SystemTime, std::io::Error>) -> u64 {
+    time.ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn catalog_entry(path: &Path) -> Result<WorkspaceCatalogEntry, String> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Could not inspect {}: {error}", path.display()))?;
+    Ok(WorkspaceCatalogEntry {
+        handle: path.display().to_string(),
+        name: path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string()),
+        modified_ms: millis(metadata.modified()),
+        created_ms: millis(metadata.created()),
+    })
+}
+
+fn inspected_workspace_note(path: &Path) -> Result<WorkspaceCatalog, String> {
+    let directory = path
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
+    Ok(WorkspaceCatalog {
+        handle: directory.display().to_string(),
+        name: directory
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| directory.display().to_string()),
+        notes: vec![catalog_entry(path)?],
+    })
+}
+
+fn workspace_catalog(path: &Path) -> Result<WorkspaceCatalog, String> {
+    let directory = path
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
+    workspace_catalog_for_directory(directory)
+}
+
+fn workspace_catalog_for_directory(directory: &Path) -> Result<WorkspaceCatalog, String> {
+    let mut notes = Vec::new();
+    for entry in fs::read_dir(directory)
+        .map_err(|error| format!("Could not list {}: {error}", directory.display()))?
+    {
+        let entry = entry.map_err(|error| format!("Could not read folder entry: {error}"))?;
+        let note_path = entry.path();
+        if !note_path.is_file() || !is_markdown(&note_path) {
+            continue;
+        }
+        notes.push(catalog_entry(&note_path)?);
+    }
+    notes.sort_by(|left, right| {
+        right
+            .modified_ms
+            .cmp(&left.modified_ms)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+    Ok(WorkspaceCatalog {
+        handle: directory.display().to_string(),
+        name: directory
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| directory.display().to_string()),
+        notes,
+    })
+}
+
+#[tauri::command]
+fn list_workspace(handle: String) -> Result<WorkspaceCatalog, String> {
+    workspace_catalog(Path::new(&handle))
+}
+
+#[tauri::command]
+fn inspect_workspace_note(handle: String) -> Result<WorkspaceCatalog, String> {
+    inspected_workspace_note(Path::new(&handle))
+}
+
+#[tauri::command]
+fn create_note(workspace_handle: String) -> Result<OpenedNote, String> {
+    let directory = PathBuf::from(&workspace_handle);
+    for number in 1..=10_000 {
+        let name = if number == 1 {
+            "Untitled.md".to_string()
+        } else {
+            format!("Untitled {number}.md")
+        };
+        let path = directory.join(name);
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                file.write_all(b"# New note\n\n")
+                    .map_err(|error| format!("Could not create {}: {error}", path.display()))?;
+                file.sync_all()
+                    .map_err(|error| format!("Could not finish {}: {error}", path.display()))?;
+                return read_note(&path);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(format!("Could not create {}: {error}", path.display())),
+        }
+    }
+    Err("Could not choose a unique Untitled note name".to_string())
 }
 
 /// Returns the next file macOS asked SimpleMark to open.
@@ -129,8 +278,25 @@ fn opened_markdown_paths(urls: &[Url]) -> Vec<PathBuf> {
         .collect()
 }
 
-fn queue_opened_notes(app: &AppHandle, urls: &[Url]) {
-    let paths = opened_markdown_paths(urls);
+fn opened_markdown_args(args: &[String], cwd: &str) -> Vec<PathBuf> {
+    args.iter()
+        .skip(1)
+        .filter_map(|arg| {
+            if let Ok(url) = Url::parse(arg) {
+                return url.to_file_path().ok();
+            }
+            let path = PathBuf::from(arg);
+            Some(if path.is_absolute() {
+                path
+            } else {
+                Path::new(cwd).join(path)
+            })
+        })
+        .filter(|path| is_markdown(path))
+        .collect()
+}
+
+fn queue_opened_paths(app: &AppHandle, paths: Vec<PathBuf>) {
     if paths.is_empty() {
         return;
     }
@@ -152,6 +318,10 @@ fn queue_opened_notes(app: &AppHandle, urls: &[Url]) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+fn queue_opened_notes(app: &AppHandle, urls: &[Url]) {
+    queue_opened_paths(app, opened_markdown_paths(urls));
 }
 
 /// Writes bytes atomically: temp file in the same directory, fsync, rename.
@@ -230,7 +400,10 @@ fn watch_note(app: AppHandle, handle: String) -> Result<(), String> {
         // Watch the directory, not the file: editors that save by rename
         // replace the inode, and a file watch would follow the old one into
         // oblivion and then report nothing forever.
-        if watcher.watch(&directory, RecursiveMode::NonRecursive).is_err() {
+        if watcher
+            .watch(&directory, RecursiveMode::NonRecursive)
+            .is_err()
+        {
             return;
         }
 
@@ -249,7 +422,9 @@ fn watch_note(app: AppHandle, handle: String) -> Result<(), String> {
             // Coalesce: one logical save produces several filesystem events.
             std::thread::sleep(Duration::from_millis(120));
 
-            let Ok(current) = fs::read(&path) else { continue };
+            let Ok(current) = fs::read(&path) else {
+                continue;
+            };
             let hash = content_hash(&current);
 
             let ours = app
@@ -272,12 +447,22 @@ fn watch_note(app: AppHandle, handle: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        // Must be the first plugin. A Finder open while SimpleMark is already
+        // running is a document transition in that window, never permission
+        // to create a second application process and another main window.
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            queue_opened_paths(app, opened_markdown_args(&args, &cwd));
+        }))
         .plugin(tauri_plugin_dialog::init())
         .manage(WriteLedger::default())
         .manage(OpenRequestQueue::default())
         .invoke_handler(tauri::generate_handler![
             open_note,
+            open_workspace_folder,
             read_note_at,
+            inspect_workspace_note,
+            list_workspace,
+            create_note,
             take_open_note_request,
             save_note,
             watch_note
@@ -324,6 +509,81 @@ mod tests {
                 PathBuf::from("/tmp/note.markdown"),
                 PathBuf::from("/tmp/README.MD")
             ]
+        );
+    }
+
+    #[test]
+    fn second_instance_arguments_keep_only_markdown_and_resolve_relative_paths() {
+        let args = vec![
+            "/Applications/SimpleMark.app/Contents/MacOS/simplemark".to_string(),
+            "next.md".to_string(),
+            "/tmp/also.markdown".to_string(),
+            "/tmp/ignore.txt".to_string(),
+        ];
+
+        assert_eq!(
+            opened_markdown_args(&args, "/tmp/notes"),
+            vec![
+                PathBuf::from("/tmp/notes/next.md"),
+                PathBuf::from("/tmp/also.markdown")
+            ]
+        );
+    }
+
+    #[test]
+    fn catalog_lists_only_markdown() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("first.md"), b"# First\n").unwrap();
+        fs::write(directory.path().join("second.markdown"), b"# Second\n").unwrap();
+        fs::write(directory.path().join("ignore.txt"), b"ignore").unwrap();
+
+        let catalog = workspace_catalog(&directory.path().join("first.md")).unwrap();
+        assert_eq!(catalog.notes.len(), 2);
+        assert!(catalog.notes.iter().any(|note| note.name == "first.md"));
+        assert!(catalog
+            .notes
+            .iter()
+            .any(|note| note.name == "second.markdown"));
+    }
+
+    #[test]
+    fn explicit_folder_catalog_lists_that_directory_only() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("first.md"), b"# First\n").unwrap();
+        fs::write(directory.path().join("ignore.txt"), b"ignore").unwrap();
+
+        let catalog = workspace_catalog_for_directory(directory.path()).unwrap();
+        assert_eq!(catalog.handle, directory.path().display().to_string());
+        assert_eq!(catalog.notes.len(), 1);
+        assert_eq!(catalog.notes[0].name, "first.md");
+    }
+
+    #[test]
+    fn inspecting_one_note_does_not_adopt_every_markdown_sibling() {
+        let directory = tempfile::tempdir().unwrap();
+        let opened = directory.path().join("opened.md");
+        fs::write(&opened, b"# Opened\n").unwrap();
+        fs::write(directory.path().join("unrelated.md"), b"# Unrelated\n").unwrap();
+
+        let catalog = inspected_workspace_note(&opened).unwrap();
+        assert_eq!(catalog.notes.len(), 1);
+        assert_eq!(catalog.notes[0].name, "opened.md");
+    }
+
+    #[test]
+    fn create_note_never_overwrites_an_existing_untitled_note() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("Untitled.md"), b"keep me").unwrap();
+
+        let created = create_note(directory.path().display().to_string()).unwrap();
+        assert_eq!(created.name, "Untitled 2.md");
+        assert_eq!(
+            fs::read(directory.path().join("Untitled.md")).unwrap(),
+            b"keep me"
+        );
+        assert_eq!(
+            fs::read(directory.path().join("Untitled 2.md")).unwrap(),
+            b"# New note\n\n"
         );
     }
 }

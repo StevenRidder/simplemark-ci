@@ -12,6 +12,8 @@
  */
 
 import type { DocumentCommandId } from '../../application/index.js'
+import { tablerIcon, tablerIconPaths } from './tabler-icons.js'
+import type { TablerIconName } from './tabler-icons.js'
 
 /**
  * The shell's command vocabulary is the shared registry's, not its own.
@@ -90,14 +92,32 @@ export interface WorkspaceNote {
   readonly pinned: boolean
 }
 
+/** One explicitly adopted local folder shown in the library sidebar. */
+export interface WorkspaceFolder {
+  readonly id: string
+  readonly name: string
+  readonly count: number
+}
+
 /** Shell-only navigation intent; it never reads or writes a document itself. */
 export interface WorkspaceOptions {
   readonly name: string
+  /** Label for the catalog currently shown in the middle pane. */
+  readonly collectionLabel?: string
+  /** Files explicitly opened through Finder or the file picker. */
+  readonly openNotesCount?: number
+  readonly folders?: readonly WorkspaceFolder[]
+  /** `open` or the handle of the selected folder collection. */
+  readonly activeCollectionId?: string
   readonly notes: readonly WorkspaceNote[]
   readonly activeNoteId: string
   readonly onSelectNote?: (id: string) => void
   readonly onCreateNote?: () => void
-  readonly onTogglePinned?: (id: string) => void
+  readonly onAddFolder?: () => void
+  /** `open` selects only explicitly opened files; any other id selects that folder. */
+  readonly onSelectCollection?: (id: string) => void
+  /** Persists the toggle and returns the authoritative next state. */
+  readonly onTogglePinned?: (id: string) => boolean
 }
 
 export type WorkspaceMode = 'all' | 'notes' | 'editor'
@@ -116,6 +136,8 @@ export interface WindowChrome {
   openContents(): void
   setWorkspaceMode(mode: WorkspaceMode): void
   workspaceMode(): WorkspaceMode
+  togglePinned(id: string): void
+  isPinned(id: string): boolean
 }
 
 /** A toolbar button that runs an editor command without stealing the selection. */
@@ -319,14 +341,14 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
   }
 
   const disclosureGlyph = '<svg class="styles-disclosure" viewBox="0 0 8 8" aria-hidden="true"><path d="m1.5 2.5 2.5 2.5 2.5-2.5"/></svg>'
-  const headerGlyph = `<span class="styles-letter">H</span>${disclosureGlyph}`
-  const listGlyph = `<svg class="styles-glyph-list" viewBox="0 0 24 24" aria-hidden="true"><circle cx="4.75" cy="6.5" r=".95"/><circle cx="4.75" cy="12" r=".95"/><circle cx="4.75" cy="17.5" r=".95"/><path d="M8.25 6.5h10.5M8.25 12h10.5M8.25 17.5h10.5"/></svg>${disclosureGlyph}`
-  const todoGlyph = '<svg class="styles-glyph-todo" viewBox="0 0 24 24" aria-hidden="true"><rect x="4.25" y="4.25" width="15.5" height="15.5" rx="2.75"/><path d="m8 12.15 2.65 2.7 5.55-6.1"/></svg>'
-  const linkGlyph = '<svg class="styles-glyph-link" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a4.8 4.8 0 0 0 6.8 0l2.25-2.25a4.8 4.8 0 0 0-6.8-6.8L11 5.2"/><path d="M14 11a4.8 4.8 0 0 0-6.8 0l-2.25 2.25a4.8 4.8 0 0 0 6.8 6.8L13 18.8"/></svg>'
-  const tableGlyph = '<svg class="styles-glyph-table" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.25"/><path d="M3 12h18M12 4v16"/></svg>'
-  const highlightGlyph = `<svg class="styles-glyph-highlight" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.2 3.9 5.9 5.9-9.35 9.35-6.85 1 1-6.85Z"/><path d="m12.25 5.85 5.9 5.9M4.9 13.3l5.85 5.85"/><path class="styles-highlight-wash" d="M5.5 21h10.5"/><path class="styles-highlight-swatch" d="M3.5 21h3.5"/></svg>${disclosureGlyph}`
-  const assetGlyph = '<svg class="styles-glyph-asset" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.25" y="3.5" width="14.25" height="12.75" rx="2.25"/><rect x="3.5" y="6.5" width="15.25" height="14" rx="2.25"/><circle cx="14" cy="10.5" r="1.1"/><path d="m5.75 18 3.55-3.75 2.7 2.45 2.05-2.05 3.2 3.1"/></svg>'
-  const moreGlyph = '<svg class="styles-glyph-more" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.15"/><circle cx="12" cy="12" r="1.15"/><circle cx="12" cy="19" r="1.15"/></svg>'
+  const headerGlyph = `${tablerIcon('heading', 'styles-glyph-heading')}${disclosureGlyph}`
+  const listGlyph = `${tablerIcon('list', 'styles-glyph-list')}${disclosureGlyph}`
+  const todoGlyph = tablerIcon('checkbox', 'styles-glyph-todo')
+  const linkGlyph = tablerIcon('link', 'styles-glyph-link')
+  const tableGlyph = tablerIcon('table', 'styles-glyph-table')
+  const highlightGlyph = `${tablerIcon('highlight', 'styles-glyph-highlight')}${disclosureGlyph}`
+  const assetGlyph = tablerIcon('photo', 'styles-glyph-asset')
+  const moreGlyph = tablerIcon('dots-vertical', 'styles-glyph-more')
 
   const headers = menu('Headers', headerGlyph, (panel) => {
     for (const level of [1, 2, 3, 4, 5, 6] as const) {
@@ -435,8 +457,8 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
     headers,
     command('Todo', 'taskList', 'styles-control styles-bar-overflow styles-todo', todoGlyph),
     lists,
-    command('Bold', 'bold', 'styles-control styles-bar-overflow styles-strong', '<strong>B</strong>'),
-    command('Italic', 'italic', 'styles-control styles-bar-overflow styles-emphasis', '<em>I</em>'),
+    command('Bold', 'bold', 'styles-control styles-bar-overflow styles-strong', tablerIcon('bold')),
+    command('Italic', 'italic', 'styles-control styles-bar-overflow styles-emphasis', tablerIcon('italic')),
     highlight,
     command('Link', 'link', 'styles-control styles-bar-overflow styles-link', linkGlyph),
     command('Tables', 'table', 'styles-control styles-bar-overflow styles-table', tableGlyph),
@@ -1023,11 +1045,17 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   let setWorkspaceMode = (_mode: WorkspaceMode): void => {}
   let getWorkspaceMode = (): WorkspaceMode => 'editor'
+  let toggleWorkspacePin = (_id: string): void => {}
+  let workspacePinState = (_id: string): boolean => false
 
   if (options.workspace === undefined) {
     windowEl.append(titlebar, documentSurface)
   } else {
     const workspace = options.workspace
+    const workspaceNotes = workspace.notes.map((note) => ({ ...note }))
+    const modifiedOrder = new Map(workspaceNotes.map((note, index) => [note.id, index]))
+    const pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
+    let pinSequence = 0
     const workspaceBody = document.createElement('div')
     workspaceBody.className = 'workspace-body'
 
@@ -1043,7 +1071,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     libraryOptions.type = 'button'
     libraryOptions.className = 'library-action'
     libraryOptions.setAttribute('aria-label', 'Sidebar options')
-    libraryOptions.textContent = '•••'
+    libraryOptions.innerHTML = tablerIcon('dots')
     libraryOptions.disabled = true
     libraryOptions.title = 'Sidebar options — available when a real folder catalog is connected'
     workspaceHeader.append(workspaceName, libraryOptions)
@@ -1056,14 +1084,14 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     libraryRows.className = 'library-rows'
     const makeLibraryRow = (
       label: string,
-      icon: string,
+      icon: TablerIconName,
       count: string,
       filter?: 'all' | 'pinned',
     ): HTMLButtonElement => {
       const row = document.createElement('button')
       row.type = 'button'
       row.className = 'folder-row'
-      row.innerHTML = `<span aria-hidden="true">${icon}</span><span>${label}</span><span class="folder-count">${count}</span>`
+      row.innerHTML = `<span class="library-icon" aria-hidden="true">${tablerIcon(icon)}</span><span>${label}</span><span class="folder-count">${count}</span>`
       if (filter === undefined) {
         row.disabled = true
         row.title = `${label} — available when a real folder catalog is connected`
@@ -1072,38 +1100,74 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       }
       return row
     }
-    const allNotes = makeLibraryRow('All Notes', '▤', String(workspace.notes.length), 'all')
-    const untagged = makeLibraryRow('Untagged', '◇', '—')
-    const todo = makeLibraryRow('Todo', '☑', '—')
-    const today = makeLibraryRow('Today', '◷', '—')
+    const allNotes = makeLibraryRow(
+      'Open Notes',
+      'notes',
+      String(workspace.openNotesCount ?? workspaceNotes.length),
+      'all',
+    )
+    const untagged = makeLibraryRow(
+      'Untagged',
+      'archive',
+      '—',
+    )
+    const todo = makeLibraryRow('Todo', 'square', '—')
+    const today = makeLibraryRow(
+      'Today',
+      'calendar',
+      '—',
+    )
     const pinned = makeLibraryRow(
       'Pinned',
-      '⌖',
-      String(workspace.notes.filter((note) => note.pinned).length),
+      'pin',
+      String(workspaceNotes.filter((note) => note.pinned).length),
       'pinned',
     )
-    const trash = makeLibraryRow('Trash', '⌫', '')
+    const trash = makeLibraryRow(
+      'Trash',
+      'trash',
+      '',
+    )
+    const folderHead = document.createElement('div')
+    folderHead.className = 'library-section-head'
     const folderLabel = document.createElement('div')
     folderLabel.className = 'library-section-label'
     folderLabel.textContent = 'Folders'
-    const folderRoot = document.createElement('button')
-    folderRoot.type = 'button'
-    folderRoot.className = 'folder-row folder-root'
-    folderRoot.innerHTML = `<span aria-hidden="true">⌄</span><span>${workspace.name}</span><span class="folder-count">${workspace.notes.length}</span>`
-    folderRoot.disabled = true
-    libraryRows.append(allNotes, untagged, todo, today, pinned, trash, folderLabel, folderRoot)
+    const addFolder = document.createElement('button')
+    addFolder.type = 'button'
+    addFolder.className = 'library-section-action'
+    addFolder.setAttribute('aria-label', 'Add folder')
+    addFolder.title = 'Add a Markdown folder'
+    addFolder.innerHTML = tablerIcon('folder-plus')
+    if (workspace.onAddFolder === undefined) {
+      addFolder.disabled = true
+      addFolder.title = 'Add Folder — available in the Mac app'
+    } else addFolder.addEventListener('click', () => workspace.onAddFolder?.())
+    folderHead.append(folderLabel, addFolder)
+
+    const folderRows = (workspace.folders ?? []).map((folder) => {
+      const row = document.createElement('button')
+      row.type = 'button'
+      row.className = 'folder-row folder-root'
+      row.dataset['folderId'] = folder.id
+      row.innerHTML = `<span class="library-icon" aria-hidden="true">${tablerIcon('folder')}</span><span>${folder.name}</span><span class="folder-count">${folder.count}</span>`
+      if (workspace.onSelectCollection === undefined) row.disabled = true
+      else row.addEventListener('click', () => workspace.onSelectCollection?.(folder.id))
+      return row
+    })
+    libraryRows.append(allNotes, untagged, todo, today, pinned, trash, folderHead, ...folderRows)
     const libraryFooter = document.createElement('div')
     libraryFooter.className = 'workspace-library-footer'
     const sync = document.createElement('button')
     sync.type = 'button'
     sync.setAttribute('aria-label', 'Folder sync status')
-    sync.textContent = '↻'
+    sync.innerHTML = tablerIcon('refresh')
     sync.disabled = true
     sync.title = 'Folder sync — available when a real folder catalog is connected'
     const settings = document.createElement('button')
     settings.type = 'button'
     settings.setAttribute('aria-label', 'Settings')
-    settings.textContent = '⚙'
+    settings.innerHTML = tablerIcon('settings')
     settings.disabled = true
     settings.title = 'Settings — not in this build'
     libraryFooter.append(sync, settings)
@@ -1124,12 +1188,12 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const searchButton = svgButton(
       'notes-action',
       'Search',
-      '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+      tablerIconPaths('search'),
     )
     const newNoteButton = svgButton(
       'notes-action',
       'New note',
-      '<path d="M12 20H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9"/><path d="m14 14 6-6-4-4-6 6-1 5 5-1Z"/>',
+      tablerIconPaths('pencil-plus'),
     )
     if (workspace.onCreateNote === undefined) {
       newNoteButton.disabled = true
@@ -1168,7 +1232,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     }
     const countRow = document.createElement('div')
     countRow.className = 'notes-menu-count'
-    countRow.textContent = `${workspace.notes.length} notes`
+    countRow.textContent = `${workspaceNotes.length} notes`
     const sortModified = menuRow('Sort by modification date')
     const sortTitle = menuRow('Sort by title')
     const previewSmall = menuRow('Small preview')
@@ -1177,7 +1241,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const exportNotes = menuRow('Export…')
     exportNotes.disabled = true
     exportNotes.title = 'Export — available when a real folder catalog is connected'
-    const showAll = menuRow('All Notes')
+    const showAll = menuRow('Open Notes')
     const showPinned = menuRow('Pinned')
     notesMenu.append(
       countRow,
@@ -1199,18 +1263,31 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
     const paintLibrary = (): void => {
       for (const row of [allNotes, pinned]) {
-        row.classList.toggle('selected', row.dataset['filter'] === noteFilter)
+        const allIsActive = workspace.activeCollectionId === undefined || workspace.activeCollectionId === 'open'
+        row.classList.toggle(
+          'selected',
+          row === pinned ? noteFilter === 'pinned' : noteFilter === 'all' && allIsActive,
+        )
       }
+      for (const row of folderRows) {
+        row.classList.toggle('selected', row.dataset['folderId'] === workspace.activeCollectionId)
+      }
+      allNotes.querySelector('.folder-count')!.textContent = String(
+        workspace.openNotesCount ?? workspaceNotes.length,
+      )
+      pinned.querySelector('.folder-count')!.textContent = String(
+        workspaceNotes.filter((note) => note.pinned).length,
+      )
     }
 
     const paintMenuState = (): void => {
-      notesTitle.innerHTML = `${noteFilter === 'pinned' ? 'Pinned' : 'All Notes'} <span aria-hidden="true">⌄</span>`
+      notesTitle.innerHTML = `${noteFilter === 'pinned' ? 'Pinned' : (workspace.collectionLabel ?? 'Open Notes')} <span aria-hidden="true">⌄</span>`
       sortModified.textContent = `${sortMode === 'modified' ? '✓  ' : ''}Sort by modification date`
       sortTitle.textContent = `${sortMode === 'title' ? '✓  ' : ''}Sort by title`
       previewSmall.textContent = `${previewDensity === 'small' ? '✓  ' : ''}Small preview`
       previewMedium.textContent = `${previewDensity === 'medium' ? '✓  ' : ''}Medium preview`
       previewLarge.textContent = `${previewDensity === 'large' ? '✓  ' : ''}Large preview`
-      showAll.textContent = `${noteFilter === 'all' ? '✓  ' : ''}All Notes`
+      showAll.textContent = `${noteFilter === 'all' ? '✓  ' : ''}Open Notes`
       showPinned.textContent = `${noteFilter === 'pinned' ? '✓  ' : ''}Pinned`
       noteList.dataset['preview'] = previewDensity
       paintLibrary()
@@ -1219,12 +1296,18 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const paintNotes = (): void => {
       const query = search.value.trim().toLocaleLowerCase()
       noteItems.replaceChildren()
-      const visibleNotes = [...workspace.notes]
+      const visibleNotes = [...workspaceNotes]
         .filter((note) => noteFilter === 'all' || note.pinned)
         .filter((note) => query === '' || `${note.title} ${note.preview}`.toLocaleLowerCase().includes(query))
         .sort((left, right) => {
           if (sortMode === 'title') return left.title.localeCompare(right.title)
-          return Number(right.pinned) - Number(left.pinned)
+          const pinDifference = Number(right.pinned) - Number(left.pinned)
+          if (pinDifference !== 0) return pinDifference
+          if (left.pinned && right.pinned) {
+            const recency = (pinOrder.get(right.id) ?? 0) - (pinOrder.get(left.id) ?? 0)
+            if (recency !== 0) return recency
+          }
+          return (modifiedOrder.get(left.id) ?? 0) - (modifiedOrder.get(right.id) ?? 0)
         })
       for (const note of visibleNotes) {
         const item = document.createElement('div')
@@ -1250,15 +1333,12 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         pin.className = 'note-pin'
         pin.setAttribute('aria-label', `${note.pinned ? 'Unpin' : 'Pin'} ${note.title}`)
         pin.title = note.pinned ? 'Unpin note' : 'Pin note'
-        pin.innerHTML =
-          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 4 6 6-3 1-4 4-1 5-2-2-6 2 2-6-2-2 5-1 4-4Z"/></svg>'
+        pin.innerHTML = tablerIcon('pin')
         pin.classList.toggle('pinned', note.pinned)
         if (workspace.onTogglePinned === undefined) {
           pin.disabled = true
           pin.title = 'Pin — available when a real folder catalog is connected'
-        } else {
-          pin.addEventListener('click', () => workspace.onTogglePinned?.(note.id))
-        }
+        } else pin.addEventListener('click', () => toggleWorkspacePin(note.id))
         item.append(select, pin)
         noteItems.append(item)
       }
@@ -1298,11 +1378,16 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       paintNotes()
       searchButton.focus()
     })
-    allNotes.addEventListener('click', () => {
+    const selectOpenNotes = (): void => {
+      if (workspace.onSelectCollection !== undefined && workspace.activeCollectionId !== 'open') {
+        workspace.onSelectCollection('open')
+        return
+      }
       noteFilter = 'all'
       paintMenuState()
       paintNotes()
-    })
+    }
+    allNotes.addEventListener('click', selectOpenNotes)
     pinned.addEventListener('click', () => {
       noteFilter = 'pinned'
       paintMenuState()
@@ -1332,10 +1417,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       })
     }
     showAll.addEventListener('click', () => {
-      noteFilter = 'all'
-      paintMenuState()
-      paintNotes()
       closeNotesMenu()
+      selectOpenNotes()
     })
     showPinned.addEventListener('click', () => {
       noteFilter = 'pinned'
@@ -1344,6 +1427,19 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       closeNotesMenu()
     })
     search.addEventListener('input', paintNotes)
+    toggleWorkspacePin = (id: string): void => {
+      const note = workspaceNotes.find((candidate) => candidate.id === id)
+      if (note === undefined || workspace.onTogglePinned === undefined) return
+      note.pinned = workspace.onTogglePinned(id)
+      // Bear treats a new pin as a fresh placement at the top. Unpinning
+      // returns the note to modification order instead of leaving it stranded.
+      if (note.pinned) pinOrder.set(note.id, ++pinSequence)
+      else pinOrder.delete(note.id)
+      paintMenuState()
+      paintNotes()
+    }
+    workspacePinState = (id: string): boolean =>
+      workspaceNotes.find((note) => note.id === id)?.pinned ?? false
     paintMenuState()
     paintNotes()
     noteList.append(notesHeader, notesMenu, noteItems)
@@ -1377,6 +1473,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     openContents: () => contentsButton.click(),
     setWorkspaceMode: (mode) => setWorkspaceMode(mode),
     workspaceMode: () => getWorkspaceMode(),
+    togglePinned: (id) => toggleWorkspacePin(id),
+    isPinned: (id) => workspacePinState(id),
     setStatus(state, message) {
       status.dataset['state'] = state
       status.textContent =

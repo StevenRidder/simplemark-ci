@@ -111,11 +111,11 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     void openDemoNote(id)
   }
 
-  const togglePinned = (id: string): void => {
+  const togglePinned = (id: string): boolean => {
     const note = DEMO_NOTES.find((candidate) => candidate.id === id)
-    if (note === undefined) return
+    if (note === undefined) return false
     note.pinned = !note.pinned
-    void openDemoNote(activeId, true)
+    return note.pinned
   }
 
   await openDemoNote(activeId)
@@ -126,7 +126,7 @@ function workspaceOptions(
   activeNoteId: string,
   onSelectNote: (id: string) => void,
   onCreateNote: () => void,
-  onTogglePinned: (id: string) => void,
+  onTogglePinned: (id: string) => boolean,
 ): WorkspaceOptions {
   return {
     name: 'SimpleMark',

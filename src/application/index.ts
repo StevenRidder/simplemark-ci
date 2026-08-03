@@ -9,6 +9,9 @@
 export type {
   FilePort,
   OpenedDocument,
+  WorkspaceCatalogEntry,
+  WorkspaceCatalog,
+  WorkspaceCatalogPort,
   AssetKind,
   AssetReference,
   AssetReferencePort,

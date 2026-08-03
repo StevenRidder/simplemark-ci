@@ -12,12 +12,15 @@ import { KatexRenderer } from '../adapters/renderers/katex-renderer.js'
 import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import { OpenCancelled, TauriFilePort } from '../adapters/filesystem/tauri-file-port.js'
-import type { FilePort } from '../application/index.js'
+import { TauriWorkspaceCatalogPort } from '../adapters/filesystem/tauri-workspace-catalog-port.js'
+import type { FilePort, WorkspaceCatalog } from '../application/index.js'
 import { installNativeMenu } from './ui/native-menu.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
+import { WorkspacePins } from './workspace-pins.js'
+import { WorkspaceCollections } from './workspace-collections.js'
 
 import './styles/tokens.css'
 import './styles/app.css'
@@ -53,6 +56,12 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
   let current: AppComposition
   let stopWatching: UnlistenFn | undefined
   let transition = Promise.resolve()
+  let activeHandle: string | undefined
+  let workspaceHandle: string | undefined
+  let activeCollectionId = 'open'
+  const collections = new WorkspaceCollections()
+  const catalogPort = new TauriWorkspaceCatalogPort(invoke)
+  const pins = new WorkspacePins(window.localStorage)
 
   const showOpenFailure = (error: unknown): void => {
     const message = error instanceof Error ? error.message : String(error)
@@ -79,15 +88,93 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
   const install = async (
     port: TauriFilePort,
     opened: { readonly handle: string; readonly name: string },
+    collectionId: string,
   ): Promise<void> => {
+    const inspected = await catalogPort.inspect(opened.handle)
+    const entry = inspected.notes[0]
+    if (entry === undefined) throw new Error(`Native inspection returned no note for ${opened.handle}`)
+    // Reopening a note makes it recent without duplicating it. Ordinary file
+    // opens are an explicit Open Notes list; only Open Folder may enumerate a
+    // whole directory (especially important for Downloads).
+    if (collectionId === 'open') {
+      collections.rememberOpened(entry)
+    }
+    activeCollectionId = collectionId
+    const catalog = collections.collection(collectionId, inspected.handle)
     await current.editor.destroy()
+    activeHandle = opened.handle
+    workspaceHandle = collectionId === 'open' ? inspected.handle : catalog.handle
     current = await mount(root, port, {
       filePath: opened.handle,
-      fileName: opened.name,
       onOpenFile: openFromPicker,
+      workspace: catalogWorkspace(catalog, opened.handle, pins, {
+        select: selectNote,
+        create: createNote,
+        addFolder: addFolder,
+        selectCollection,
+        togglePinned,
+        folders: collections.folders(),
+        activeCollectionId,
+        openNotesCount: collections.openedCount(),
+      }),
     })
     await watch(port, opened.handle)
   }
+
+  const openInCollection = (path: string, collectionId: string): void => {
+    if (path === activeHandle && collectionId === activeCollectionId) return
+    void enqueue(async () => {
+      await current.save()
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(path)
+      await install(port, opened, collectionId)
+    })
+  }
+
+  const selectNote = (path: string): void => openInCollection(path, activeCollectionId)
+
+  const selectCollection = (collectionId: string): void => {
+    if (collectionId === activeCollectionId) return
+    const catalog = collectionId === 'open'
+      ? collections.openNotes(workspaceHandle ?? '')
+      : collections.folder(collectionId)
+    const next = catalog?.notes.find((note) => note.handle === activeHandle) ?? catalog?.notes[0]
+    if (next === undefined) return
+    openInCollection(next.handle, collectionId)
+  }
+
+  const addFolder = (): void => {
+    void enqueue(async () => {
+      const catalog = await catalogPort.chooseFolder()
+      if (catalog === null) return
+      if (catalog.notes.length === 0) {
+        current.setStatus('error', `${catalog.name} contains no Markdown notes`)
+        return
+      }
+      collections.addFolder(catalog)
+      await current.save()
+      const next = catalog.notes.find((note) => note.handle === activeHandle) ?? catalog.notes[0]!
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(next.handle)
+      await install(port, opened, catalog.handle)
+    })
+  }
+
+  const createNote = (): void => {
+    if (workspaceHandle === undefined) return
+    void enqueue(async () => {
+      await current.save()
+      const created = await catalogPort.create(workspaceHandle!)
+      if (activeCollectionId !== 'open') {
+        collections.addFolder(await catalogPort.listAround(created.handle))
+      }
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(created.handle)
+      await install(port, opened, activeCollectionId)
+    })
+  }
+
+  const togglePinned = (handle: string): boolean => pins.toggle(handle)
 
   const openFromPicker = (): void => {
     void enqueue(async () => {
@@ -103,14 +190,14 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
       }
 
       await current.save()
-      await install(port, opened)
+      await install(port, opened, 'open')
     })
   }
 
   current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
     filePath: 'Demo workspace · open a file to work with your own Markdown',
-    fileName: WELCOME_NAME,
     onOpenFile: openFromPicker,
+    workspace: nativeWorkspace(WELCOME_NAME, addFolder),
   })
 
   return {
@@ -121,7 +208,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
       await current.save()
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(path)
-      await install(port, opened)
+      await install(port, opened, 'open')
     }),
   }
 }
@@ -129,7 +216,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
 async function mount(
   root: HTMLElement,
   file: FilePort,
-  options: { filePath: string; fileName: string; onOpenFile: () => void },
+  options: { filePath: string; onOpenFile: () => void; workspace: WorkspaceOptions },
 ): Promise<AppComposition> {
   let app: AppComposition
 
@@ -149,7 +236,7 @@ async function mount(
       ]),
     },
     filePath: options.filePath,
-    workspace: nativeWorkspace(options.fileName),
+    workspace: options.workspace,
     chromeMode: 'macos',
     // The native menubar is the complete command surface. The small floating
     // palette is the fast, Apple Notes-style reach shown in the approved
@@ -173,17 +260,12 @@ async function mount(
   return app
 }
 
-/**
- * APP-2 shows the shared workspace around the one file it actually owns.
- *
- * It deliberately does not copy the browser's demo catalog or pretend that a
- * folder was scanned. New Note and Pin stay disabled until SHELL-2 provides a
- * real catalog; the selected local file and all three shared panes are real.
- */
-function nativeWorkspace(fileName: string): WorkspaceOptions {
+/** The welcome state is honest until a real local note supplies a folder. */
+function nativeWorkspace(fileName: string, onAddFolder?: () => void): WorkspaceOptions {
   return {
     name: 'SimpleMark',
     activeNoteId: fileName,
+    ...(onAddFolder === undefined ? {} : { onAddFolder }),
     notes: [
       {
         id: fileName,
@@ -194,6 +276,57 @@ function nativeWorkspace(fileName: string): WorkspaceOptions {
       },
     ],
   }
+}
+
+function catalogWorkspace(
+  catalog: WorkspaceCatalog,
+  activeNoteId: string,
+  pins: WorkspacePins,
+  actions: {
+    readonly select: (id: string) => void
+    readonly create: () => void
+    readonly addFolder: () => void
+    readonly selectCollection: (id: string) => void
+    readonly togglePinned: (id: string) => boolean
+    readonly folders: readonly WorkspaceCatalog[]
+    readonly activeCollectionId: string
+    readonly openNotesCount: number
+  },
+): WorkspaceOptions {
+  return {
+    name: 'SimpleMark',
+    collectionLabel: catalog.name,
+    openNotesCount: actions.openNotesCount,
+    folders: actions.folders.map((folder) => ({
+      id: folder.handle,
+      name: folder.name,
+      count: folder.notes.length,
+    })),
+    activeCollectionId: actions.activeCollectionId,
+    activeNoteId,
+    onSelectNote: actions.select,
+    onCreateNote: actions.create,
+    onAddFolder: actions.addFolder,
+    onSelectCollection: actions.selectCollection,
+    onTogglePinned: actions.togglePinned,
+    notes: catalog.notes.map((note) => ({
+      id: note.handle,
+      title: note.name.replace(/\.(md|markdown)$/i, ''),
+      preview: 'Local Markdown file',
+      updatedLabel: relativeDate(note.modifiedMs),
+      pinned: pins.has(note.handle),
+    })),
+  }
+}
+
+function relativeDate(modifiedMs: number): string {
+  if (modifiedMs === 0) return 'Unknown'
+  const elapsed = Math.max(0, Date.now() - modifiedMs)
+  if (elapsed < 60_000) return 'Now'
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m`
+  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h`
+  if (elapsed < 172_800_000) return 'Yesterday'
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(modifiedMs)
 }
 
 /**

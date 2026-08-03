@@ -1,5 +1,10 @@
 # Native workspace and menu contract
 
+Behavioral acceptance for both left panes is defined by
+[`SIDEBAR-PARITY-TEST-PLAN.md`](SIDEBAR-PARITY-TEST-PLAN.md). The reference is Bear's useful state
+transitions, not screenshot similarity, and native filesystem evidence is required before a
+browser-fixture behavior is called complete.
+
 **Status:** approved interaction direction, 2026-08-03
 **Applies to:** `SHELL-1`, `APP-2`, and `SHELL-2`
 
@@ -15,7 +20,7 @@ native macOS menubar
 ┌──────────────┬──────────────────────┬──────────────────────────────────┐
 │ Library      │ Notes                │ Document                         │
 │              │                      │                                  │
-│ All Notes    │ title · preview      │ rendered, directly editable      │
+│ Open Notes   │ title · preview      │ rendered, directly editable      │
 │ Untagged     │ modified time · pin  │ Markdown                          │
 │ Todo         │                      │                                  │
 │ Today        │                      │ contextual styles bar when asked │
@@ -39,15 +44,20 @@ The left pane is deliberately small. It contains rebuildable views over the Mark
 second note store:
 
 ```text
-All Notes · Untagged · Todo · Today · Pinned · Trash
+Open Notes · Untagged · Todo · Today · Pinned · Trash
 Folders
-  chosen-folder
-  optional tags/folder groups later
+  project-notes
+  research
+  [+ Add Folder]
 ```
 
-Unavailable catalog-backed views remain visibly disabled in the demo shell. They become enabled
-only when `SHELL-2` connects a real folder catalog. The dark sidebar is a stable visual anchor; it
-must not compete with the document.
+Opening a native note adds only that file to Open Notes. It never silently adopts siblings from a
+broad directory such as Downloads. **Add Folder** is the explicit boundary: it adopts the direct
+Markdown children as a named collection, and several collections can remain in the library so the
+person can switch the middle pane between them. Open Notes contains only files explicitly opened
+through Finder or the file picker; clicking it exits folder mode immediately. New Note writes into the active folder. Untagged, Todo,
+Today, Trash, recursive folder watching, and sync stay visibly disabled until their own acceptance
+slices land. The dark sidebar is a stable visual anchor; it must not compete with the document.
 
 ## Notes pane
 
@@ -55,7 +65,7 @@ The middle pane follows the restraint observed directly in Bear. Its normal head
 three things:
 
 ```text
-[All Notes ▾]                                  [Search] [New Note]
+[Open Notes ▾]                                 [Search] [New Note]
 ```
 
 Search expands in place and replaces that header until dismissed. New Note is one click. The title
@@ -66,7 +76,7 @@ menu carries less-frequent list configuration:
 Sorting: modification date · creation date later · title
 Preview: small · medium · large · hide attachments later
 Export…
-All Notes · Untagged · Todo · Today · Pinned · Trash
+Open Notes · Untagged · Todo · Today · Pinned · Trash
 ```
 
 Each note row contains title, a restrained preview, modified time, and a quiet pin. Pinned notes sort
@@ -74,8 +84,9 @@ first in modification order. Pin is always visible for pinned notes and otherwis
 hover/focus. Selection uses a neutral surface change rather than a loud accent stripe.
 
 The shared shell owns layout, selection intent, in-place filtering, pin intent, density, and pane
-visibility. It does not scan folders or write Markdown. The browser may demonstrate this contract
-with an explicitly labelled in-memory catalog; `SHELL-2` supplies real catalog authority later.
+visibility. It does not scan folders or write Markdown. The browser demonstrates this contract
+with an explicitly labelled in-memory catalog; the native workspace adapter supplies the real
+non-recursive local catalog and collision-safe note creation.
 
 ## Native menus
 
@@ -157,18 +168,18 @@ future hosted client ─┘
 1. **SHELL-1:** shared Bear-quality workspace using the safe demo catalog.
 2. **APP-2:** native Tauri window, filesystem commands, and genuine macOS menu bridge using the
    shared shell and command registry.
-3. **SHELL-2:** real-folder catalog, rebuildable search index, stable identity, watching, and
-   external-change/conflict states.
+3. **SHELL-2:** real-folder catalog and stable path identity first; then rebuildable indexing,
+   folder watching, Trash, and external-change/conflict states as independent tested slices.
 
-This order produces something visible quickly without hiding the fact that the first note list is a
-demo catalog rather than a real folder.
+The browser note list remains a labelled fixture. The native list is accepted only with temporary
+real-file and installed-app evidence; the detailed matrix lives in the sidebar parity plan.
 
 ## Acceptance
 
 1. Search is absent until requested, expands in the notes header, receives focus, filters instantly,
    and returns to the normal header without moving the document.
 2. New Note is one click in the notes pane and opens the created note.
-3. All Notes and Pinned views, modification/title sorting, and small/medium/large previews work in
+3. Open Notes and Pinned views, modification/title sorting, and small/medium/large previews work in
    the shared shell.
 4. Library, note list, and document collapse to three/two/one-pane layouts without losing editor
    state.

@@ -40,6 +40,39 @@ export interface FilePort {
   save(handle: string, bytes: Uint8Array): Promise<void>
 }
 
+/** One portable Markdown file discovered beside the active document. */
+export interface WorkspaceCatalogEntry {
+  /** Opaque, stable identity. Native uses the canonical absolute path. */
+  readonly handle: string
+  readonly name: string
+  readonly modifiedMs: number
+  readonly createdMs: number
+}
+
+/** A non-recursive local folder whose Markdown files form the visible catalog. */
+export interface WorkspaceCatalog {
+  readonly handle: string
+  readonly name: string
+  readonly notes: readonly WorkspaceCatalogEntry[]
+}
+
+/**
+ * Discovers and creates notes around the active document.
+ *
+ * It intentionally owns no filtering, selection, pinning, or Markdown parsing.
+ * Those are application/shell concerns; native and future browser adapters only
+ * translate their platform's folder capability into this contract.
+ */
+export interface WorkspaceCatalogPort {
+  /** Describes only the explicitly opened note and its containing directory. */
+  inspect(documentHandle: string): Promise<WorkspaceCatalog>
+  /** Lets the person explicitly adopt one folder as a visible collection. */
+  chooseFolder(): Promise<WorkspaceCatalog | null>
+  /** Full-folder discovery, reserved for an explicit Open Folder action. */
+  listAround(documentHandle: string): Promise<WorkspaceCatalog>
+  create(workspaceHandle: string): Promise<OpenedDocument>
+}
+
 /** The only two asset forms that this product may write into Markdown. */
 export type AssetKind = 'image' | 'file'
 

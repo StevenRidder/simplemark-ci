@@ -156,7 +156,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         chrome.setWorkspaceMode('editor')
         return
       case 'togglePinned':
-        options.workspace?.onTogglePinned?.(options.workspace.activeNoteId)
+        chrome.togglePinned(options.workspace?.activeNoteId ?? '')
         return
     }
   }
@@ -183,7 +183,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       const active = options.workspace?.notes.find((note) => note.id === options.workspace?.activeNoteId)
       return {
         enabled: options.workspace?.onTogglePinned !== undefined && active !== undefined,
-        checked: active?.pinned ?? false,
+        checked: active === undefined ? false : chrome.isPinned(active.id),
       }
     }
     if (id === 'toggleStylesBar') return { enabled: true, checked: chrome.stylesBarVisible() }

@@ -1227,3 +1227,142 @@ section.editor {
     padding-right: 14px;
   }
 }
+
+/*
+ * Syntax highlighting (EDITOR-7). Classes come from the lowlight token walk in
+ * adapters/editor/code-highlight.ts; colours come from the reader theme.
+ * Comments reuse the quiet ink so they recede on every background.
+ */
+.milkdown .ProseMirror pre .hl-comment,
+.milkdown .ProseMirror pre .hl-quote {
+  color: var(--ink-3);
+  font-style: italic;
+}
+
+.milkdown .ProseMirror pre .hl-keyword,
+.milkdown .ProseMirror pre .hl-selector-tag,
+.milkdown .ProseMirror pre .hl-doctag {
+  color: var(--code-keyword);
+}
+
+.milkdown .ProseMirror pre .hl-string,
+.milkdown .ProseMirror pre .hl-regexp,
+.milkdown .ProseMirror pre .hl-addition {
+  color: var(--code-string);
+}
+
+.milkdown .ProseMirror pre .hl-number,
+.milkdown .ProseMirror pre .hl-literal,
+.milkdown .ProseMirror pre .hl-symbol,
+.milkdown .ProseMirror pre .hl-bullet {
+  color: var(--code-number);
+}
+
+.milkdown .ProseMirror pre .hl-title,
+.milkdown .ProseMirror pre .hl-section {
+  color: var(--code-function);
+}
+
+.milkdown .ProseMirror pre .hl-type,
+.milkdown .ProseMirror pre .hl-built_in,
+.milkdown .ProseMirror pre .hl-class {
+  color: var(--code-type);
+}
+
+.milkdown .ProseMirror pre .hl-variable,
+.milkdown .ProseMirror pre .hl-template-variable,
+.milkdown .ProseMirror pre .hl-attr,
+.milkdown .ProseMirror pre .hl-attribute,
+.milkdown .ProseMirror pre .hl-property,
+.milkdown .ProseMirror pre .hl-deletion {
+  color: var(--code-variable);
+}
+
+.milkdown .ProseMirror pre .hl-meta,
+.milkdown .ProseMirror pre .hl-link {
+  color: var(--code-meta);
+}
+
+/*
+ * In-document find (EDITOR-7). A floating pill over the editor section —
+ * temporary by construction: closed means removed match decorations and no
+ * residue anywhere.
+ */
+.find-bar {
+  display: none;
+  position: absolute;
+  z-index: 22;
+  top: 12px;
+  right: 18px;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 7px;
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(32, 29, 24, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.find-bar.open {
+  display: flex;
+}
+
+.find-bar input {
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: 13px var(--sans);
+  width: 170px;
+  padding: 2px 4px;
+}
+
+.find-bar input::placeholder {
+  color: var(--ink-3);
+}
+
+.find-count {
+  font: 11px var(--sans);
+  color: var(--ink-3);
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
+.find-bar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.find-bar button:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.find-bar button svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.milkdown .ProseMirror .sm-find-match {
+  background: var(--accent-soft);
+  border-radius: 2px;
+}
+
+.milkdown .ProseMirror .sm-find-active {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}

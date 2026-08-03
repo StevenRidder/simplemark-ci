@@ -2,6 +2,7 @@ import type { AssetReferencePort, DiagramRenderer, FilePort } from '../applicati
 import { DocumentSession } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
+import { createFindBar } from './ui/find-bar.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import type { WindowChrome } from './ui/window-chrome.js'
 import type { SaveState } from './ui/window-chrome.js'
@@ -136,6 +137,22 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         saveTimer = setTimeout(() => void save(), autosaveMs)
       }
     },
+  })
+
+  // In-document find (EDITOR-7): a temporary overlay in the editor section,
+  // never a titlebar control. Cmd/Ctrl+F opens it wherever focus is inside the
+  // app; the browser's own page-find is deliberately overridden because the
+  // page IS the document.
+  const findBar = createFindBar({
+    onQuery: (query) => editor?.setFindQuery(query) ?? { count: 0, active: -1 },
+    onStep: (direction) => editor?.findStep(direction) ?? { count: 0, active: -1 },
+  })
+  chrome.editorHost.parentElement?.append(findBar.element)
+  chrome.element.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+      event.preventDefault()
+      findBar.open()
+    }
   })
 
   async function insertAsset(): Promise<void> {

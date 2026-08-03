@@ -56,6 +56,9 @@ import {
   toggleHighlightCommand,
 } from './highlight-mark.js'
 import { foldingKey, foldingPlugin } from './folding.js'
+import { codeHighlightPlugin } from './code-highlight.js'
+import { findKey, findPlugin } from './find.js'
+import type { FindState } from './find.js'
 import { pasteSniffers } from './paste-sniffers.js'
 
 /**
@@ -181,6 +184,11 @@ export class MilkdownEditor {
       // Quiet gutter folding (EDITOR-3). View state only: a fold hides content
       // with decorations and never changes the serialised Markdown.
       .use(foldingPlugin)
+      // Syntax highlighting and in-document find (EDITOR-7). Both are
+      // decoration-only: the serialised Markdown is byte-identical with either
+      // active. Diagram fences keep their NodeView and stay unhighlighted.
+      .use(codeHighlightPlugin(options.renderer.languages))
+      .use(findPlugin)
       .use(diagramView)
       .use(imageView)
       .create()
@@ -924,6 +932,48 @@ export class MilkdownEditor {
         view.state.tr.setSelection(Selection.near(view.state.doc.resolve(pos + 1))).scrollIntoView(),
       )
       view.focus()
+    })
+  }
+
+  /**
+   * Sets or clears the in-document find query (EDITOR-7).
+   *
+   * Returns the resulting match count and active index so the overlay can
+   * paint "2 of 14" without holding any document state of its own.
+   */
+  setFindQuery(query: string): { count: number; active: number } {
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.setMeta(findKey, { query }))
+      const found = findKey.getState(view.state) as FindState
+      if (found.active >= 0) this.revealAndScrollTo(found.matches[found.active]!.from)
+      return { count: found.matches.length, active: found.active }
+    })
+  }
+
+  /** Moves to the next or previous match, unfolding whatever hides it. */
+  findStep(direction: 1 | -1): { count: number; active: number } {
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.setMeta(findKey, { step: direction }))
+      const found = findKey.getState(view.state) as FindState
+      if (found.active >= 0) this.revealAndScrollTo(found.matches[found.active]!.from)
+      return { count: found.matches.length, active: found.active }
+    })
+  }
+
+  /**
+   * Scrolls a document position into view, revealing folds first — a match
+   * inside a folded section must become visible, not be "navigated to" while
+   * display:none (the same rule contents navigation follows).
+   */
+  private revealAndScrollTo(pos: number): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.setMeta(foldingKey, { reveal: pos }))
+      const dom = view.domAtPos(Math.min(pos, view.state.doc.content.size)).node
+      const element = dom instanceof HTMLElement ? dom : dom.parentElement
+      element?.scrollIntoView({ block: 'center' })
     })
   }
 

@@ -141,3 +141,52 @@
   --reader-para-space: 21px;
   --reader-indent: 0;
 }
+
+/*
+ * Code token colours (EDITOR-7). One variable per token family, defined per
+ * reader background, so highlighted fences follow White/Tan/Night exactly like
+ * prose does. Hues are borrowed from Atom's One Light / One Dark and kept
+ * slightly muted — code should read as part of the page, not a billboard.
+ */
+:root {
+  --code-keyword: #a626a4;
+  --code-string: #50a14f;
+  --code-number: #986801;
+  --code-function: #4078f2;
+  --code-type: #c18401;
+  --code-variable: #e45649;
+  --code-meta: #0184bc;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --code-keyword: #c678dd;
+    --code-string: #98c379;
+    --code-number: #d19a66;
+    --code-function: #61afef;
+    --code-type: #e5c07b;
+    --code-variable: #e06c75;
+    --code-meta: #56b6c2;
+  }
+}
+
+:root[data-reader-theme='white'],
+:root[data-reader-theme='tan'] {
+  --code-keyword: #a626a4;
+  --code-string: #50a14f;
+  --code-number: #986801;
+  --code-function: #4078f2;
+  --code-type: #c18401;
+  --code-variable: #e45649;
+  --code-meta: #0184bc;
+}
+
+:root[data-reader-theme='night'] {
+  --code-keyword: #c678dd;
+  --code-string: #98c379;
+  --code-number: #d19a66;
+  --code-function: #61afef;
+  --code-type: #e5c07b;
+  --code-variable: #e06c75;
+  --code-meta: #56b6c2;
+}

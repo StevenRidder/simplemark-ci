@@ -336,8 +336,8 @@ test.describe('reader typography is document-level (D6)', () => {
   test('the three backgrounds change the whole page', async ({ page }) => {
     await page.getByRole('button', { name: 'Text formatting' }).click()
 
-    await page.getByRole('button', { name: 'black background' }).click()
-    await expect(page.locator('html')).toHaveAttribute('data-reader-theme', 'black')
+    await page.getByRole('button', { name: 'night background' }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-reader-theme', 'night')
     expect(await paper(page)).toBe('#0d0d0d')
 
     await page.getByRole('button', { name: 'white background' }).click()
@@ -372,13 +372,13 @@ test.describe('reader typography is document-level (D6)', () => {
 
   test('preferences survive a reload', async ({ page }) => {
     await page.getByRole('button', { name: 'Text formatting' }).click()
-    await page.getByRole('button', { name: 'black background' }).click()
+    await page.getByRole('button', { name: 'night background' }).click()
     await page.getByRole('button', { name: 'Larger text' }).click()
 
     await page.reload()
     await page.waitForFunction(() => window.simplemark !== undefined)
 
-    await expect(page.locator('html')).toHaveAttribute('data-reader-theme', 'black')
+    await expect(page.locator('html')).toHaveAttribute('data-reader-theme', 'night')
     const scale = await page.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue('--reader-scale').trim(),
     )

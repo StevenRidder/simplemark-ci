@@ -3,10 +3,15 @@ import { describe, expect, test } from 'vitest'
 import {
   DEFAULT_PREFERENCES,
   FONT_FAMILIES,
+  INDENTATIONS,
+  LINE_HEIGHTS,
+  PARAGRAPH_SPACINGS,
   READER_THEMES,
+  READING_WIDTHS,
   TEXT_SCALES,
   nextScale,
   normalisePreferences,
+  preferenceVariables,
 } from '../../src/app/reader-preferences.js'
 
 /**
@@ -25,10 +30,14 @@ describe('reader preferences', () => {
     expect(DEFAULT_PREFERENCES.theme).toBe('tan')
     expect(DEFAULT_PREFERENCES.family).toBe('serif')
     expect(DEFAULT_PREFERENCES.scale).toBe(1)
+    expect(DEFAULT_PREFERENCES.width).toBe('normal')
+    expect(DEFAULT_PREFERENCES.leading).toBe('normal')
+    expect(DEFAULT_PREFERENCES.spacing).toBe('normal')
+    expect(DEFAULT_PREFERENCES.indent).toBe('none')
   })
 
-  test('offers the three Safari-Reader backgrounds', () => {
-    expect(READER_THEMES).toEqual(['white', 'tan', 'black'])
+  test('offers the three reader backgrounds by their product names', () => {
+    expect(READER_THEMES).toEqual(['white', 'tan', 'night'])
   })
 
   test('offers a curated set of faces, not a system font dump', () => {
@@ -36,6 +45,14 @@ describe('reader preferences', () => {
     expect(FONT_FAMILIES.length).toBeGreaterThan(1)
     expect(FONT_FAMILIES.length).toBeLessThanOrEqual(6)
     expect(FONT_FAMILIES.map((f) => f.id)).toContain('serif')
+  })
+
+  test('every layout preference is a small curated step set, never a slider', () => {
+    for (const steps of [READING_WIDTHS, LINE_HEIGHTS, PARAGRAPH_SPACINGS]) {
+      expect(steps.length).toBeGreaterThanOrEqual(2)
+      expect(steps.length).toBeLessThanOrEqual(5)
+    }
+    expect(INDENTATIONS).toEqual(['none', 'first-line'])
   })
 })
 
@@ -59,8 +76,33 @@ describe('nextScale', () => {
 
 describe('normalisePreferences', () => {
   test('accepts a well-formed stored value', () => {
-    const stored = { theme: 'black', family: 'mono', scale: TEXT_SCALES[0] }
+    const stored = {
+      theme: 'night',
+      family: 'mono',
+      scale: TEXT_SCALES[0],
+      width: 'wide',
+      leading: 'tight',
+      spacing: 'airy',
+      indent: 'first-line',
+    }
     expect(normalisePreferences(stored)).toEqual(stored)
+  })
+
+  test('maps the pre-EDITOR-3 `black` theme onto `night`', () => {
+    // The dark background was renamed, not removed. A person who chose it
+    // before the rename must not wake up on warm paper.
+    expect(normalisePreferences({ theme: 'black' }).theme).toBe('night')
+  })
+
+  test('fills fields a pre-EDITOR-3 record does not have', () => {
+    // Adding a preference in a release must never wipe existing choices.
+    const legacy = { theme: 'white', family: 'mono', scale: TEXT_SCALES[0] }
+    expect(normalisePreferences(legacy)).toEqual({
+      ...DEFAULT_PREFERENCES,
+      theme: 'white',
+      family: 'mono',
+      scale: TEXT_SCALES[0],
+    })
   })
 
   // Persisted preferences are untrusted input: a stale build, a hand-edited
@@ -69,11 +111,46 @@ describe('normalisePreferences', () => {
   test.each([
     ['null', null],
     ['a string', 'tan'],
-    ['an unknown theme', { theme: 'neon', family: 'serif', scale: 1 }],
-    ['an unknown family', { theme: 'tan', family: 'comic', scale: 1 }],
-    ['a scale outside the allowed steps', { theme: 'tan', family: 'serif', scale: 99 }],
-    ['a missing field', { theme: 'tan' }],
-  ])('falls back to defaults for %s', (_label, value) => {
+  ])('falls back to defaults wholesale for %s', (_label, value) => {
     expect(normalisePreferences(value)).toEqual(DEFAULT_PREFERENCES)
+  })
+
+  test.each([
+    ['an unknown theme', { theme: 'neon' }],
+    ['an unknown family', { family: 'comic' }],
+    ['a scale outside the allowed steps', { scale: 99 }],
+    ['an unknown width', { width: 'sprawling' }],
+    ['an unknown leading', { leading: 3 }],
+    ['an unknown spacing', { spacing: 'huge' }],
+    ['an unknown indentation', { indent: true }],
+  ])('repairs %s to its default without touching the rest', (_label, corrupt) => {
+    const rest = { theme: 'white', family: 'mono' }
+    const repaired = normalisePreferences({ ...rest, ...corrupt })
+    const corruptKey = Object.keys(corrupt)[0] as keyof typeof DEFAULT_PREFERENCES
+    expect(repaired[corruptKey]).toEqual(DEFAULT_PREFERENCES[corruptKey])
+  })
+})
+
+describe('preferenceVariables', () => {
+  test('resolves every layout preference to a CSS custom property', () => {
+    const variables = preferenceVariables({
+      ...DEFAULT_PREFERENCES,
+      width: 'wide',
+      leading: 'open',
+      spacing: 'compact',
+      indent: 'first-line',
+    })
+    expect(variables['--reader-width']).toBe('860px')
+    expect(variables['--reader-leading']).toBe('1.9')
+    expect(variables['--reader-para-space']).toBe('12px')
+    expect(variables['--reader-indent']).not.toBe('0')
+  })
+
+  test('the defaults reproduce the approved wireframe values exactly', () => {
+    const variables = preferenceVariables(DEFAULT_PREFERENCES)
+    expect(variables['--reader-width']).toBe('680px')
+    expect(variables['--reader-leading']).toBe('1.68')
+    expect(variables['--reader-para-space']).toBe('21px')
+    expect(variables['--reader-indent']).toBe('0')
   })
 })

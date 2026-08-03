@@ -106,8 +106,8 @@
   --shadow: 0 24px 75px rgba(0, 0, 0, 0.14), 0 2px 9px rgba(0, 0, 0, 0.07);
 }
 
-/* True black paper, not the dim-grey dark scheme. */
-:root[data-reader-theme='black'] {
+/* Night: true black paper, not the dim-grey dark scheme. */
+:root[data-reader-theme='night'] {
   color-scheme: dark;
   --canvas: #000000;
   --paper: #0d0d0d;
@@ -128,10 +128,16 @@
 }
 
 /*
- * Global text scale. One multiplier, applied where body text is sized, so
- * "bigger" means the whole document and never one selection (D6).
+ * Reader layout variables (D6, EDITOR-3). One value each for scale, face,
+ * column width, leading, block rhythm, and first-line indent — applied at the
+ * root so a preference always means the whole document and never a selection.
+ * Defaults reproduce the approved wireframe exactly.
  */
 :root {
   --reader-scale: 1;
   --reader-body: var(--serif);
+  --reader-width: 680px;
+  --reader-leading: 1.68;
+  --reader-para-space: 21px;
+  --reader-indent: 0;
 }

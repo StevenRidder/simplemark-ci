@@ -88,6 +88,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       savePreferences(storage, next)
     },
     onContinueWriting: () => editor?.continueAfterLastBlock(),
+    // The temporary contents popover (EDITOR-3) reads the outline fresh on
+    // every open and navigates through the editor — the chrome itself never
+    // holds document state.
+    getOutline: () => editor?.outline() ?? [],
+    onNavigate: (pos) => editor?.navigateToHeading(pos),
     onCommand: (command: EditorCommand) => {
       if (command === 'convertToDiagram') {
         void editor?.convertBlockToDiagram()

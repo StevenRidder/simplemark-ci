@@ -12,10 +12,13 @@
  * state, and the document does not know it exists.
  *
  * The Safari Reader model: choose a background, a face, and a size, and the
- * *whole* page follows.
+ * *whole* page follows. EDITOR-3 widens the set to Bear's full reader panel:
+ * reading width, line height, paragraph spacing, and first-line indentation —
+ * each a small set of curated steps, never a free slider, so every combination
+ * has been looked at.
  */
 
-export const READER_THEMES = ['white', 'tan', 'black'] as const
+export const READER_THEMES = ['white', 'tan', 'night'] as const
 export type ReaderTheme = (typeof READER_THEMES)[number]
 
 /**
@@ -52,10 +55,46 @@ export type FontFamilyId = (typeof FONT_FAMILIES)[number]['id']
 export const TEXT_SCALES = [0.85, 0.925, 1, 1.1, 1.25, 1.4] as const
 export type TextScale = (typeof TEXT_SCALES)[number]
 
+/** Reading width. `normal` is the approved wireframe's 680px column. */
+export const READING_WIDTHS = [
+  { id: 'narrow', label: 'Narrow', px: 560 },
+  { id: 'normal', label: 'Normal', px: 680 },
+  { id: 'wide', label: 'Wide', px: 860 },
+] as const
+export type ReadingWidthId = (typeof READING_WIDTHS)[number]['id']
+
+/** Body line height. `normal` is the approved wireframe's 1.68 leading. */
+export const LINE_HEIGHTS = [
+  { id: 'tight', label: 'Tight', value: 1.45 },
+  { id: 'normal', label: 'Normal', value: 1.68 },
+  { id: 'open', label: 'Open', value: 1.9 },
+] as const
+export type LineHeightId = (typeof LINE_HEIGHTS)[number]['id']
+
+/** Space between top-level blocks. `normal` is the wireframe's 21px rhythm. */
+export const PARAGRAPH_SPACINGS = [
+  { id: 'compact', label: 'Compact', px: 12 },
+  { id: 'normal', label: 'Normal', px: 21 },
+  { id: 'airy', label: 'Airy', px: 32 },
+] as const
+export type ParagraphSpacingId = (typeof PARAGRAPH_SPACINGS)[number]['id']
+
+/**
+ * First-line paragraph indentation, the book convention. Off by default: the
+ * wireframe separates paragraphs by spacing, and both at once is neither
+ * convention.
+ */
+export const INDENTATIONS = ['none', 'first-line'] as const
+export type IndentationId = (typeof INDENTATIONS)[number]
+
 export interface ReaderPreferences {
   readonly theme: ReaderTheme
   readonly family: FontFamilyId
   readonly scale: TextScale
+  readonly width: ReadingWidthId
+  readonly leading: LineHeightId
+  readonly spacing: ParagraphSpacingId
+  readonly indent: IndentationId
 }
 
 /** The approved wireframe look (§10.4): warm paper, serif body, no zoom. */
@@ -63,6 +102,10 @@ export const DEFAULT_PREFERENCES: ReaderPreferences = {
   theme: 'tan',
   family: 'serif',
   scale: 1,
+  width: 'normal',
+  leading: 'normal',
+  spacing: 'normal',
+  indent: 'none',
 }
 
 /** Steps to the next allowed size, clamping at both ends. */
@@ -83,32 +126,52 @@ export function nextScale(current: number, direction: 'up' | 'down'): TextScale 
  * Validates whatever came out of storage.
  *
  * Persisted preferences are untrusted input — a stale build, a hand-edited
- * localStorage, or a future version can all produce nonsense. An unreadable
- * page is a worse outcome than losing a preference, so anything unrecognised
- * falls back to the defaults wholesale rather than being partially repaired.
+ * localStorage, or a future version can all produce nonsense. Each field is
+ * validated on its own and falls back to its own default: adding a preference
+ * in a release must never wipe the choices a person already made, and one
+ * corrupt field is no reason to lose the other six.
+ *
+ * The pre-EDITOR-3 dark theme was stored as `black`; it maps to `night` so an
+ * existing choice survives the rename.
  */
 export function normalisePreferences(value: unknown): ReaderPreferences {
   if (typeof value !== 'object' || value === null) return DEFAULT_PREFERENCES
 
   const candidate = value as Partial<Record<keyof ReaderPreferences, unknown>>
-  const theme = candidate.theme
-  const family = candidate.family
-  const scale = candidate.scale
+  const theme = candidate.theme === 'black' ? 'night' : candidate.theme
 
-  const themeOk = READER_THEMES.some((known) => known === theme)
-  const familyOk = FONT_FAMILIES.some((known) => known.id === family)
-  const scaleOk = TEXT_SCALES.some((known) => known === scale)
-
-  if (!themeOk || !familyOk || !scaleOk) return DEFAULT_PREFERENCES
-
-  return { theme: theme as ReaderTheme, family: family as FontFamilyId, scale: scale as TextScale }
+  return {
+    theme: READER_THEMES.find((known) => known === theme) ?? DEFAULT_PREFERENCES.theme,
+    family:
+      FONT_FAMILIES.find((known) => known.id === candidate.family)?.id ??
+      DEFAULT_PREFERENCES.family,
+    scale: TEXT_SCALES.find((known) => known === candidate.scale) ?? DEFAULT_PREFERENCES.scale,
+    width:
+      READING_WIDTHS.find((known) => known.id === candidate.width)?.id ??
+      DEFAULT_PREFERENCES.width,
+    leading:
+      LINE_HEIGHTS.find((known) => known.id === candidate.leading)?.id ??
+      DEFAULT_PREFERENCES.leading,
+    spacing:
+      PARAGRAPH_SPACINGS.find((known) => known.id === candidate.spacing)?.id ??
+      DEFAULT_PREFERENCES.spacing,
+    indent:
+      INDENTATIONS.find((known) => known === candidate.indent) ?? DEFAULT_PREFERENCES.indent,
+  }
 }
 
 /** Resolves preferences to the CSS custom properties the stylesheet reads. */
 export function preferenceVariables(preferences: ReaderPreferences): Record<string, string> {
   const family = FONT_FAMILIES.find((candidate) => candidate.id === preferences.family)
+  const width = READING_WIDTHS.find((candidate) => candidate.id === preferences.width)
+  const leading = LINE_HEIGHTS.find((candidate) => candidate.id === preferences.leading)
+  const spacing = PARAGRAPH_SPACINGS.find((candidate) => candidate.id === preferences.spacing)
   return {
     '--reader-body': family?.stack ?? FONT_FAMILIES[0].stack,
     '--reader-scale': String(preferences.scale),
+    '--reader-width': `${width?.px ?? 680}px`,
+    '--reader-leading': String(leading?.value ?? 1.68),
+    '--reader-para-space': `${spacing?.px ?? 21}px`,
+    '--reader-indent': preferences.indent === 'first-line' ? '1.4em' : '0',
   }
 }

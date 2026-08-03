@@ -37,7 +37,14 @@ export type EditorCommand =
   | 'redo'
   | 'convertToDiagram'
 
-import { FONT_FAMILIES, READER_THEMES, nextScale } from '../reader-preferences.js'
+import {
+  FONT_FAMILIES,
+  LINE_HEIGHTS,
+  PARAGRAPH_SPACINGS,
+  READER_THEMES,
+  READING_WIDTHS,
+  nextScale,
+} from '../reader-preferences.js'
 import type { ReaderPreferences } from '../reader-preferences.js'
 
 export type SaveState = 'saved' | 'dirty' | 'error'
@@ -59,6 +66,13 @@ export interface WindowChromeOptions {
   readonly openFileUnavailableReason?: string | undefined
   /** Saves the current document without moving focus away from the canvas. */
   readonly onSave: () => void
+  /**
+   * The document's headings, read fresh each time the temporary contents
+   * popover opens (EDITOR-3). The chrome never touches the editor itself.
+   */
+  readonly getOutline?: () => ReadonlyArray<{ level: number; text: string; pos: number }>
+  /** Navigates the document to a heading picked in the contents popover. */
+  readonly onNavigate?: (pos: number) => void
 }
 
 export interface WindowChrome {
@@ -229,6 +243,78 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   })
   left.append(saveButton)
 
+  // ---- temporary contents (EDITOR-3) ----
+  // A popover, deliberately not a sidebar: it opens over the page, lists the
+  // headings, navigates, and closes. There is no persistent outline surface.
+  const contentsButton = document.createElement('button')
+  contentsButton.type = 'button'
+  contentsButton.className = 'tool contents'
+  contentsButton.setAttribute('aria-label', 'Contents')
+  contentsButton.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h12M4 12h16M7 18h13"/></svg>'
+
+  const contentsPopover = document.createElement('div')
+  contentsPopover.className = 'contents-popover'
+  contentsPopover.setAttribute('aria-label', 'Table of contents')
+
+  if (options.getOutline !== undefined && options.onNavigate !== undefined) {
+    const getOutline = options.getOutline
+    const onNavigate = options.onNavigate
+    contentsButton.title = 'Contents'
+
+    const closeContents = (): void => {
+      contentsPopover.classList.remove('open')
+      document.removeEventListener('mousedown', onOutsidePress, true)
+      document.removeEventListener('keydown', onEscape, true)
+    }
+    const onOutsidePress = (event: MouseEvent): void => {
+      const target = event.target
+      if (target instanceof Node && (contentsPopover.contains(target) || contentsButton.contains(target)))
+        return
+      closeContents()
+    }
+    const onEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') closeContents()
+    }
+
+    contentsButton.addEventListener('click', () => {
+      if (contentsPopover.classList.contains('open')) {
+        closeContents()
+        return
+      }
+      // Built fresh on every open: the popover is temporary, so it never holds
+      // a stale copy of the document's structure.
+      contentsPopover.replaceChildren()
+      const outline = getOutline()
+      if (outline.length === 0) {
+        const empty = document.createElement('div')
+        empty.className = 'contents-empty'
+        empty.textContent = 'No headings in this document'
+        contentsPopover.append(empty)
+      }
+      for (const entry of outline) {
+        const item = document.createElement('button')
+        item.type = 'button'
+        item.textContent = entry.text === '' ? '(untitled heading)' : entry.text
+        item.dataset['level'] = String(entry.level)
+        item.addEventListener('mousedown', (event) => {
+          // mousedown so the editor keeps focus; navigation sets the caret.
+          event.preventDefault()
+          closeContents()
+          onNavigate(entry.pos)
+        })
+        contentsPopover.append(item)
+      }
+      contentsPopover.classList.add('open')
+      document.addEventListener('mousedown', onOutsidePress, true)
+      document.addEventListener('keydown', onEscape, true)
+    })
+  } else {
+    contentsButton.disabled = true
+    contentsButton.title = 'Contents — not available in this shell'
+  }
+  left.append(contentsButton, contentsPopover)
+
   const filename = document.createElement('div')
   filename.className = 'filename'
   filename.append(options.fileName)
@@ -355,6 +441,73 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     return button
   })
 
+  // ---- reader layout (EDITOR-3): width, leading, spacing, indent ----
+  // Each is a labelled row of curated steps, mirroring Bear's reader panel.
+  // Document-level always: these buttons never look at the selection.
+  function stepRow<Id extends string>(
+    label: string,
+    steps: ReadonlyArray<{ id: Id; label: string }>,
+    selected: () => string,
+    apply: (id: Id) => ReaderPreferences,
+  ): { row: HTMLDivElement; paint: () => void } {
+    const row = document.createElement('div')
+    row.className = 'pref-row'
+    const caption = document.createElement('span')
+    caption.textContent = label
+    const group = document.createElement('div')
+    group.className = 'steps'
+    const buttons = steps.map((step) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = step.label
+      button.dataset['step'] = step.id
+      button.setAttribute('aria-label', `${step.label} ${label.toLowerCase()}`)
+      button.addEventListener('mousedown', (event) => {
+        event.preventDefault()
+        emitPreferences(apply(step.id))
+      })
+      group.append(button)
+      return button
+    })
+    row.append(caption, group)
+    return {
+      row,
+      paint: () => {
+        for (const button of buttons) {
+          button.classList.toggle('selected', button.dataset['step'] === selected())
+        }
+      },
+    }
+  }
+
+  const widthRow = stepRow(
+    'Width',
+    READING_WIDTHS,
+    () => preferences.width,
+    (width) => ({ ...preferences, width }),
+  )
+  const leadingRow = stepRow(
+    'Leading',
+    LINE_HEIGHTS,
+    () => preferences.leading,
+    (leading) => ({ ...preferences, leading }),
+  )
+  const spacingRow = stepRow(
+    'Spacing',
+    PARAGRAPH_SPACINGS,
+    () => preferences.spacing,
+    (spacing) => ({ ...preferences, spacing }),
+  )
+  const indentRow = stepRow(
+    'Indent',
+    [
+      { id: 'none', label: 'None' },
+      { id: 'first-line', label: 'First line' },
+    ] as const,
+    () => preferences.indent,
+    (indent) => ({ ...preferences, indent }),
+  )
+
   function paintPreferenceUi(): void {
     for (const button of themeButtons) {
       button.classList.toggle('selected', button.dataset['theme'] === preferences.theme)
@@ -362,10 +515,26 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     for (const button of familyButtons) {
       button.classList.toggle('selected', button.dataset['family'] === preferences.family)
     }
+    widthRow.paint()
+    leadingRow.paint()
+    spacingRow.paint()
+    indentRow.paint()
   }
   paintPreferenceUi()
 
-  popover.append(headingRow, styleRow, inlineRow, moveRow, familyRow, themeRow, sizeRow)
+  popover.append(
+    headingRow,
+    styleRow,
+    inlineRow,
+    moveRow,
+    familyRow,
+    widthRow.row,
+    leadingRow.row,
+    spacingRow.row,
+    indentRow.row,
+    themeRow,
+    sizeRow,
+  )
   // Suppress mousedown so opening the popover cannot move focus away from the
   // editor. Every command inside it acts on the live selection, and a toolbar
   // that quietly collapses your selection before running a command on it is a

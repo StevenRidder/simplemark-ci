@@ -337,7 +337,7 @@ button[disabled] {
   background: #fffefa;
   box-shadow: inset 0 0 0 6px #f0ece1;
 }
-.swatch-black {
+.swatch-night {
   background: #0d0d0d;
 }
 
@@ -376,6 +376,52 @@ button[disabled] {
   font-size: 19px;
 }
 
+/* Layout preference rows (EDITOR-3): width, leading, spacing, indent. Each is
+   a quiet segmented control — a label and two or three named steps. */
+.pref-row {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.pref-row > span {
+  font: 500 10px var(--sans);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-left: 4px;
+}
+
+.pref-row .steps {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
+}
+
+.pref-row .steps button {
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  padding: 5px 2px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.pref-row .steps button:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.pref-row .steps button.selected {
+  background: var(--accent-soft);
+  color: #8b5b1f;
+}
+
 .status {
   /* Save messages have different lengths. Keep their slot stable so changing
      from Saved to Unsaved changes never nudges the formatting controls. */
@@ -410,7 +456,10 @@ button[disabled] {
   color: var(--danger);
 }
 
-.editor {
+/* section.editor, not .editor: Milkdown also puts an `editor` class on the
+   ProseMirror div itself, and an unscoped rule made that div a clipping scroll
+   container — which silently swallowed the fold gutter's hit-testing. */
+section.editor {
   flex: 1;
   overflow: auto;
   position: relative;
@@ -419,7 +468,9 @@ button[disabled] {
 }
 
 .page {
-  width: min(680px, calc(100% - 64px));
+  /* Reading width is a document-level preference (D6/EDITOR-3), clamped so a
+     wide column can never underlap the window edge. */
+  width: min(var(--reader-width), calc(100% - 64px));
   margin: 0 auto;
   padding: 68px 0 140px;
 }
@@ -466,13 +517,19 @@ button[disabled] {
      stealing text selection from the page itself. */
   padding-left: 26px;
   /* D6: family and size are document-level preferences, never per selection. */
-  font: calc(18px * var(--reader-scale)) / 1.68 var(--reader-body);
+  font: calc(18px * var(--reader-scale)) / var(--reader-leading) var(--reader-body);
   letter-spacing: -0.003em;
   color: var(--ink);
 }
 
 .milkdown .ProseMirror > * {
-  margin: 0 0 21px;
+  margin: 0 0 var(--reader-para-space);
+}
+
+/* First-line indentation, the book convention. Top-level prose only: list
+   items, code, and headings never indent. */
+.milkdown .ProseMirror > p {
+  text-indent: var(--reader-indent);
 }
 
 /* The handle is quiet until a block is the thing being corrected. The whole
@@ -576,6 +633,150 @@ button[disabled] {
 
 .milkdown .ProseMirror a {
   color: var(--accent);
+}
+
+/*
+ * Folding (EDITOR-3). Quiet gutter chevrons: invisible until the block is
+ * hovered, always visible while folded so hidden content is never a secret.
+ * Folding is view state only — the source Markdown does not change.
+ */
+.milkdown .ProseMirror .sm-foldable {
+  position: relative;
+}
+
+.sm-fold-chevron {
+  position: absolute;
+  top: 0.32em;
+  left: -26px;
+}
+
+/* Top-level foldables share their gutter with the six-dot drag handle
+   (left:-22px, EDITOR-2), so their chevron sits one step further out. */
+.milkdown .ProseMirror > .sm-foldable > .sm-fold-chevron {
+  left: -48px;
+}
+
+.sm-fold-chevron {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink-3);
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, transform 120ms ease;
+  user-select: none;
+}
+
+.sm-fold-chevron svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.milkdown .ProseMirror .sm-foldable:hover > .sm-fold-chevron,
+.sm-fold-chevron.is-folded {
+  opacity: 1;
+}
+
+.sm-fold-chevron:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.sm-fold-chevron.is-folded {
+  transform: rotate(-90deg);
+  color: var(--accent);
+}
+
+/* Folded content is hidden from view, never removed from the document. */
+.milkdown .ProseMirror .sm-fold-hidden {
+  display: none;
+}
+
+/* A folded heading keeps a quiet ellipsis so collapsed content is signalled. */
+.milkdown .ProseMirror .sm-fold-head::after {
+  content: ' …';
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+/*
+ * Temporary contents popover (EDITOR-3). A popover anchored to the titlebar —
+ * deliberately not a sidebar: it opens over the page, navigates, and closes.
+ */
+.titlebar .left {
+  /* Anchors the contents popover to the leading control cluster. */
+  position: relative;
+}
+
+.contents-popover {
+  display: none;
+  position: absolute;
+  z-index: 24;
+  top: 36px;
+  left: 0;
+  min-width: 220px;
+  max-width: 300px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 7px;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  box-shadow: 0 14px 42px rgba(32, 29, 24, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.contents-popover.open {
+  display: block;
+}
+
+.contents-popover .contents-empty {
+  padding: 8px 10px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.contents-popover button {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  text-align: left;
+  padding: 6px 10px;
+  font: 500 12px/1.35 var(--sans);
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contents-popover button:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.contents-popover button[data-level='2'] {
+  padding-left: 22px;
+}
+
+.contents-popover button[data-level='3'],
+.contents-popover button[data-level='4'],
+.contents-popover button[data-level='5'],
+.contents-popover button[data-level='6'] {
+  padding-left: 34px;
+  font-weight: 400;
 }
 
 /* GFM constructs (DESIGN.md §6). Tables and task lists are portability tier 1

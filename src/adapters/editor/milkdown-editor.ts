@@ -52,6 +52,7 @@ import {
   highlightSchema,
   toggleHighlightCommand,
 } from './highlight-mark.js'
+import { foldingKey, foldingPlugin } from './folding.js'
 import { pasteSniffers } from './paste-sniffers.js'
 
 /**
@@ -170,6 +171,9 @@ export class MilkdownEditor {
       .use(pasteSniffers({ renderer: options.renderer }))
       .use(clipboard)
       .use(listener)
+      // Quiet gutter folding (EDITOR-3). View state only: a fold hides content
+      // with decorations and never changes the serialised Markdown.
+      .use(foldingPlugin)
       .use(diagramView)
       .create()
 
@@ -847,6 +851,47 @@ export class MilkdownEditor {
         )
         return
       }
+    })
+  }
+
+  /**
+   * The document's headings, for the temporary contents popover (EDITOR-3).
+   *
+   * Read from the live ProseMirror document, not the DOM: a folded section's
+   * headings are display-none but still part of the document, and the contents
+   * list must be able to navigate to them.
+   */
+  outline(): ReadonlyArray<{ level: number; text: string; pos: number }> {
+    return this.editor.action((ctx) => {
+      const doc = ctx.get(editorViewCtx).state.doc
+      const entries: Array<{ level: number; text: string; pos: number }> = []
+      doc.forEach((child, offset) => {
+        if (child.type.name === 'heading') {
+          entries.push({
+            level: child.attrs['level'] as number,
+            text: child.textContent,
+            pos: offset,
+          })
+        }
+      })
+      return entries
+    })
+  }
+
+  /**
+   * Moves the caret to a heading and scrolls it into view, unfolding whatever
+   * hides it first — navigating to an invisible place is not navigation.
+   */
+  navigateToHeading(pos: number): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const heading = view.state.doc.nodeAt(pos)
+      if (heading === null || heading.type.name !== 'heading') return
+      view.dispatch(view.state.tr.setMeta(foldingKey, { reveal: pos }))
+      view.dispatch(
+        view.state.tr.setSelection(Selection.near(view.state.doc.resolve(pos + 1))).scrollIntoView(),
+      )
+      view.focus()
     })
   }
 

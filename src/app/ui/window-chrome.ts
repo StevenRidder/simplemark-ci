@@ -318,20 +318,22 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
     return group
   }
 
-  const headerGlyph = '<span class="styles-letter">H</span><span class="styles-chevron" aria-hidden="true">⌄</span>'
-  const listGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h10M8 12h10M8 17h10"/><path d="M4 7h.01M4 12h.01M4 17h.01"/></svg><span class="styles-chevron" aria-hidden="true">⌄</span>'
-  const todoGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="m7 12 3 3 7-7"/></svg>'
+  const disclosureGlyph = '<svg class="styles-disclosure" viewBox="0 0 8 8" aria-hidden="true"><path d="m1.5 2.5 2.5 2.5 2.5-2.5"/></svg>'
+  const headerGlyph = `<span class="styles-letter">H</span>${disclosureGlyph}`
+  const listGlyph = `<svg class="styles-glyph-list" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h10M8 12h10M8 17h10"/><path d="M4.25 7h.01M4.25 12h.01M4.25 17h.01"/></svg>${disclosureGlyph}`
+  const todoGlyph = '<svg class="styles-glyph-todo" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.25"/><path d="m7.5 12 3 3 6.5-7"/></svg>'
   const linkGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>'
   const tableGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16"/></svg>'
-  const highlightGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 4.5 5 5-8.7 8.7-6.2 1.2 1.2-6.2Z"/><path d="m12.5 6.5 5 5M4 21h16"/></svg><span class="styles-chevron" aria-hidden="true">⌄</span>'
-  const assetGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="14" height="12" rx="2"/><path d="m6.5 15 3.2-3.3 2.4 2.3 1.8-1.7 3.1 2.9"/><circle cx="14.5" cy="8.5" r="1"/><path d="M8 19h10a2 2 0 0 0 2-2V9"/></svg>'
-  const moreGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.25"/><circle cx="12" cy="12" r="1.25"/><circle cx="12" cy="19" r="1.25"/></svg>'
+  const highlightGlyph = `<svg class="styles-glyph-highlight" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 4.5 5 5-8.7 8.7-6.2 1.2 1.2-6.2Z"/><path d="m12.5 6.5 5 5M4 21h16"/></svg>${disclosureGlyph}`
+  const assetGlyph = '<svg class="styles-glyph-asset" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="14" height="12" rx="2"/><path d="m6.5 15 3.2-3.3 2.4 2.3 1.8-1.7 3.1 2.9"/><circle cx="14.5" cy="8.5" r="1"/><path d="M8 19h10a2 2 0 0 0 2-2V9"/></svg>'
+  const moreGlyph = '<svg class="styles-glyph-more" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.35"/><circle cx="12" cy="12" r="1.35"/><circle cx="12" cy="19" r="1.35"/></svg>'
 
   const headers = menu('Headers', headerGlyph, (panel) => {
     for (const level of [1, 2, 3, 4, 5, 6] as const) {
       panel.append(command(`Heading ${level}`, `heading${level}`))
     }
   })
+  headers.classList.add('styles-menu-wide')
   const lists = menu('Lists', listGlyph, (panel) => {
     panel.append(
       command('List', 'bulletList'),
@@ -354,12 +356,14 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
       command('Separator', 'divider'),
     )
   })
+  lists.classList.add('styles-menu-wide')
   const highlight = menu('Highlight', highlightGlyph, (panel) => {
     panel.append(command('Default', 'highlight'))
     for (const colour of ['Green', 'Red', 'Blue', 'Yellow', 'Purple']) {
       panel.append(unavailable(colour, 'Markdown highlight colours are not portable'))
     }
   })
+  highlight.classList.add('styles-menu-wide')
   const more = menu('More', moreGlyph, (panel) => {
     // Bear's exact primary menu. Unsupported source formats remain visible but
     // honestly disabled rather than silently acquiring proprietary Markdown.

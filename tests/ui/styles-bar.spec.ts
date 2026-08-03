@@ -48,8 +48,11 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
     position: 'absolute',
     bottom: '18px',
     radius: '11px',
-    size: [340, 41],
-    buttonSizes: Array.from({ length: 10 }, () => [31, 29]),
+    size: [367, 35],
+    buttonSizes: [
+      [43, 29], [31, 29], [43, 29], [31, 29], [31, 29],
+      [43, 29], [31, 29], [31, 29], [31, 29], [31, 29],
+    ],
   })
 
   await selectNewWord(page, 'calm controls')

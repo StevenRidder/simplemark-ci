@@ -210,8 +210,8 @@ button[disabled] {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 5px;
+  gap: 1px;
+  padding: 2px 5px;
   border: 1px solid var(--line);
   border-radius: 11px;
   background: color-mix(in srgb, var(--paper) 94%, var(--chrome));
@@ -269,7 +269,7 @@ button[disabled] {
   height: 16px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.7;
+  stroke-width: 1.65;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -280,19 +280,47 @@ button[disabled] {
 }
 
 .styles-letter {
-  font: 650 13px/1 var(--sans);
+  font: 600 14px/1 var(--sans);
+  letter-spacing: -0.25px;
 }
 
-.styles-chevron {
-  margin-left: -2px;
+.styles-control .styles-disclosure {
+  width: 8px;
+  height: 8px;
   color: var(--ink-3);
-  font-size: 9px;
+  stroke-width: 1.4;
+  transform: translateY(0.25px);
+}
+
+.styles-control .styles-glyph-todo {
+  width: 15px;
+  height: 15px;
+}
+
+.styles-control .styles-glyph-list,
+.styles-control .styles-glyph-highlight,
+.styles-control .styles-glyph-asset {
+  width: 17px;
+  height: 17px;
+}
+
+.styles-control .styles-glyph-more {
+  width: 14px;
+  height: 14px;
 }
 
 .styles-menu-trigger {
   grid-auto-flow: column;
   grid-auto-columns: max-content;
-  gap: 1px;
+  gap: 3px;
+}
+
+/* Bear gives compound controls enough horizontal air for both the glyph and
+   its disclosure chevron. Keeping More at the ordinary control width is what
+   makes the palette feel balanced instead of uniformly padded. */
+.styles-menu-wide > .styles-menu-trigger {
+  min-width: 43px;
+  width: 43px;
 }
 
 .styles-strong strong {

@@ -105,6 +105,48 @@ with the release evidence:
 }
 ```
 
+### Collecting it
+
+Write that file with [`../scripts/collect-platform-smoke.mjs`](../scripts/collect-platform-smoke.mjs)
+rather than by hand. A hand-written evidence file is the one thing that can
+drift from the bytes it describes, and this gate is only worth having if it
+cannot be satisfied by an optimistic JSON file.
+
+```sh
+node scripts/collect-platform-smoke.mjs \
+  --target macos \
+  --artifact SimpleMark-0.1.0-macos-arm64.dmg \
+  --commit "$(git rev-parse HEAD)" \
+  --out platform-smoke-macos.json \
+  --tester "Name <email>" \
+  --attest openApprovedMarkdown,editSaveReopen,externalChangeHandled
+```
+
+It splits the evidence by what can honestly produce it:
+
+| Field | How it is established |
+| --- | --- |
+| `artifact.sha256` | read off the bytes |
+| artifact type | asserted by `verify-native-artifact.mjs`; a renamed archive is refused |
+| `checks.install` | the installer is really installed — DMG mounted and the `.app` copied out, AppImage made executable and unpacked, MSI/NSIS silently installed |
+| `checks.open` | the installed binary is really launched and must stay alive |
+| `trust.*` | queried from the OS — `codesign`, `spctl`, `stapler` on macOS; `Get-AuthenticodeSignature` on Windows |
+| the other three `checks` | recorded only from `--attest`, and only with a named `--tester` |
+
+`--attest` refuses `install` and `open`: those are measured here and can never
+be asserted. Any check that was not performed stays `false`, the command exits
+non-zero, and it names what will fail — so incomplete evidence is visible when
+it is collected rather than at the promotion gate.
+
+Run it on the target OS, against the exact artifact from the draft, then attach
+the result to that draft so `release-promote.yml` can find it:
+
+```sh
+gh release upload v0.1.0 platform-smoke-macos.json
+```
+
+### Verifying it
+
 The check command is deliberately simple and fails closed:
 
 ```sh

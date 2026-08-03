@@ -21,7 +21,7 @@ import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
 import { WorkspacePins } from './workspace-pins.js'
-import { WorkspaceCollections } from './workspace-collections.js'
+import { WorkspaceCollections, WorkspaceFolderStore } from './workspace-collections.js'
 
 import './styles/tokens.css'
 import './styles/app.css'
@@ -44,6 +44,7 @@ import './styles/app.css'
 export async function start(root: HTMLElement): Promise<AppComposition> {
   const controller = await startNative(root)
   await installOpenRequestBridge(controller)
+  await installMarkdownDropBridge(controller)
   return controller.current()
 }
 
@@ -63,6 +64,8 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
   const collections = new WorkspaceCollections()
   const catalogPort = new TauriWorkspaceCatalogPort(invoke)
   const pins = new WorkspacePins(window.localStorage)
+  const folderStore = new WorkspaceFolderStore(window.localStorage)
+  const watchedFolders = new Set<string>()
 
   const showOpenFailure = (error: unknown): void => {
     const message = error instanceof Error ? error.message : String(error)
@@ -84,6 +87,16 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
         `Changed on disk by another program — ${event.payload.split('/').pop() ?? 'this note'}`,
       )
     })
+  }
+
+  const watchFolder = async (handle: string): Promise<void> => {
+    if (watchedFolders.has(handle)) return
+    await invoke('watch_workspace_folder', { handle })
+    watchedFolders.add(handle)
+  }
+
+  const persistFolders = (): void => {
+    folderStore.save(collections.folders().map((folder) => folder.handle))
   }
 
   const install = async (
@@ -153,6 +166,8 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
         return
       }
       collections.addFolder(catalog)
+      persistFolders()
+      await watchFolder(catalog.handle)
       await current.save()
       const next = catalog.notes.find((note) => note.handle === activeHandle) ?? catalog.notes[0]!
       const port = new TauriFilePort(invoke)
@@ -195,10 +210,68 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     })
   }
 
+  for (const handle of folderStore.load()) {
+    try {
+      const catalog = await catalogPort.listFolder(handle)
+      collections.addFolder(catalog)
+      await watchFolder(catalog.handle)
+    } catch {
+      // A moved or disconnected folder is omitted rather than resurrected
+      // from stale metadata. The next successful save repairs persistence.
+    }
+  }
+  persistFolders()
+
   current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
     filePath: 'Demo workspace · open a file to work with your own Markdown',
     onOpenFile: openFromPicker,
-    workspace: nativeWorkspace(WELCOME_NAME, addFolder),
+    workspace: nativeWorkspace(WELCOME_NAME, {
+      addFolder,
+      selectCollection,
+      folders: collections.folders(),
+    }),
+  })
+
+  await listen<string>('workspace-folder-changed', (event) => {
+    void enqueue(async () => {
+      const previous = collections.folder(event.payload)
+      if (previous === undefined) return
+      const refreshed = await catalogPort.listFolder(event.payload)
+      if (catalogMembership(previous) === catalogMembership(refreshed)) return
+      collections.addFolder(refreshed)
+      persistFolders()
+
+      const activeWasRemoved = activeHandle !== undefined
+        && previous.notes.some((note) => note.handle === activeHandle)
+        && !refreshed.notes.some((note) => note.handle === activeHandle)
+      if (activeWasRemoved) {
+        current.setStatus('error', 'The open note was removed from disk — your editor was left untouched')
+        return
+      }
+
+      if (activeHandle === undefined) {
+        await current.destroy()
+        current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
+          filePath: 'Demo workspace · open a file to work with your own Markdown',
+          onOpenFile: openFromPicker,
+          workspace: nativeWorkspace(WELCOME_NAME, {
+            addFolder,
+            selectCollection,
+            folders: collections.folders(),
+          }),
+        })
+        return
+      }
+
+      await current.save()
+      const activeCatalog = collections.collection(activeCollectionId, activeHandle)
+      const next = activeCatalog.notes.find((note) => note.handle === activeHandle)
+        ?? activeCatalog.notes[0]
+      if (next === undefined) return
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(next.handle)
+      await install(port, opened, activeCollectionId)
+    })
   })
 
   return {
@@ -263,11 +336,29 @@ async function mount(
 }
 
 /** The welcome state is honest until a real local note supplies a folder. */
-function nativeWorkspace(fileName: string, onAddFolder?: () => void): WorkspaceOptions {
+function nativeWorkspace(
+  fileName: string,
+  actions?: {
+    readonly addFolder: () => void
+    readonly selectCollection: (id: string) => void
+    readonly folders: readonly WorkspaceCatalog[]
+  },
+): WorkspaceOptions {
   return {
     name: 'SimpleMark',
+    collectionLabel: 'Open Notes',
+    activeCollectionId: 'open',
     activeNoteId: fileName,
-    ...(onAddFolder === undefined ? {} : { onAddFolder }),
+    openNotesCount: 0,
+    ...(actions === undefined ? {} : {
+      onAddFolder: actions.addFolder,
+      onSelectCollection: actions.selectCollection,
+      folders: actions.folders.map((folder) => ({
+        id: folder.handle,
+        name: folder.name,
+        count: folder.notes.length,
+      })),
+    }),
     notes: [
       {
         id: fileName,
@@ -278,6 +369,10 @@ function nativeWorkspace(fileName: string, onAddFolder?: () => void): WorkspaceO
       },
     ],
   }
+}
+
+function catalogMembership(catalog: WorkspaceCatalog): string {
+  return catalog.notes.map((note) => note.handle).sort().join('\n')
 }
 
 function catalogWorkspace(
@@ -313,6 +408,8 @@ function catalogWorkspace(
     onTogglePinned: actions.togglePinned,
     notes: catalog.notes.map((note) => ({
       id: note.handle,
+      identifier: note.name,
+      portableLink: `./${note.name}`,
       title: note.name.replace(/\.(md|markdown)$/i, ''),
       preview: 'Local Markdown file',
       updatedLabel: relativeDate(note.modifiedMs),
@@ -410,6 +507,27 @@ async function installOpenRequestBridge(controller: NativeController): Promise<v
 
   await listen<void>('open-note-requested', schedule)
   schedule()
+}
+
+/** Dropped Markdown files behave like Finder opens: adopt, never copy. */
+async function installMarkdownDropBridge(controller: NativeController): Promise<void> {
+  const windowHandle = getCurrentWindow()
+  await windowHandle.onDragDropEvent((event) => {
+    const noteList = document.querySelector<HTMLElement>('.workspace-notes')
+    if (event.payload.type === 'enter' || event.payload.type === 'over') {
+      noteList?.classList.add('accepting-note-drop')
+      return
+    }
+    noteList?.classList.remove('accepting-note-drop')
+    if (event.payload.type !== 'drop') return
+
+    const paths = event.payload.paths.filter((path) => /\.(md|markdown)$/i.test(path))
+    if (paths.length === 0) {
+      controller.current().setStatus('error', 'Drop a Markdown file to add it to Open Notes')
+      return
+    }
+    for (const path of paths) void controller.openPath(path)
+  })
 }
 
 /** Same ordinary file input the browser shell uses; the webview supports it. */

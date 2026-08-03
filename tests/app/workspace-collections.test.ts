@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WorkspaceCatalog, WorkspaceCatalogEntry } from '../../src/application/index.js'
-import { WorkspaceCollections } from '../../src/app/workspace-collections.js'
+import {
+  WorkspaceCollections,
+  WorkspaceFolderStore,
+} from '../../src/app/workspace-collections.js'
 
 const note = (handle: string): WorkspaceCatalogEntry => ({
   handle,
@@ -54,5 +57,29 @@ describe('WorkspaceCollections', () => {
     expect(collections.collection('open', '/').notes.map((entry) => entry.handle)).toEqual([
       '/loose.md',
     ])
+  })
+})
+
+describe('WorkspaceFolderStore', () => {
+  it('persists only unique adopted folder handles', () => {
+    const values = new Map<string, string>()
+    const storage = {
+      getItem: (key: string): string | null => values.get(key) ?? null,
+      setItem: (key: string, value: string): void => { values.set(key, value) },
+    }
+    const store = new WorkspaceFolderStore(storage)
+
+    store.save(['/project-a', '/research', '/project-a'])
+
+    expect(store.load()).toEqual(['/project-a', '/research'])
+  })
+
+  it('treats corrupt or obsolete persisted data as empty', () => {
+    const storage = {
+      getItem: (): string | null => '{not-json',
+      setItem: (): void => {},
+    }
+
+    expect(new WorkspaceFolderStore(storage).load()).toEqual([])
   })
 })

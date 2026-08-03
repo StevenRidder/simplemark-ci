@@ -43,6 +43,18 @@ describe('TauriWorkspaceCatalogPort', () => {
     expect(calls).toEqual([{ command: 'list_workspace', args: { handle: '/notes/a.md' } }])
   })
 
+  it('refreshes an already adopted folder by its own handle', async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = []
+    const invoke: TauriInvoke = async <T>(command: string, args?: Record<string, unknown>) => {
+      calls.push({ command, ...(args === undefined ? {} : { args }) })
+      return { handle: '/notes', name: 'notes', notes: [] } as T
+    }
+
+    await new TauriWorkspaceCatalogPort(invoke).listFolder('/notes')
+
+    expect(calls).toEqual([{ command: 'list_workspace_folder', args: { handle: '/notes' } }])
+  })
+
   it('adopts every Markdown note only after an explicit folder choice', async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = []
     const invoke: TauriInvoke = async <T>(command: string, args?: Record<string, unknown>) => {

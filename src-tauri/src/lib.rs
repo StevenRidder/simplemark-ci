@@ -317,6 +317,11 @@ fn list_workspace(handle: String) -> Result<WorkspaceCatalog, String> {
 }
 
 #[tauri::command]
+fn list_workspace_folder(handle: String) -> Result<WorkspaceCatalog, String> {
+    workspace_catalog_for_directory(Path::new(&handle))
+}
+
+#[tauri::command]
 fn inspect_workspace_note(handle: String) -> Result<WorkspaceCatalog, String> {
     inspected_workspace_note(Path::new(&handle))
 }
@@ -537,6 +542,48 @@ fn watch_note(app: AppHandle, handle: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Watches one explicitly adopted folder for Markdown membership changes.
+///
+/// The event names the folder only. TypeScript re-lists it through the catalog
+/// port, keeping filesystem observation out of the shared application model.
+#[tauri::command]
+fn watch_workspace_folder(app: AppHandle, handle: String) -> Result<(), String> {
+    let directory = PathBuf::from(&handle);
+    if !directory.is_dir() {
+        return Err(format!("{handle} is not a readable folder"));
+    }
+
+    std::thread::spawn(move || {
+        let (sender, receiver) = channel::<notify::Result<Event>>();
+        let Ok(mut watcher) = notify::recommended_watcher(sender) else {
+            return;
+        };
+        if watcher
+            .watch(&directory, RecursiveMode::NonRecursive)
+            .is_err()
+        {
+            return;
+        }
+
+        for event in receiver {
+            let Ok(event) = event else { continue };
+            if !matches!(
+                event.kind,
+                EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_)
+            ) {
+                continue;
+            }
+            if !event.paths.iter().any(|path| is_markdown(path)) {
+                continue;
+            }
+            std::thread::sleep(Duration::from_millis(120));
+            let _ = app.emit("workspace-folder-changed", directory.display().to_string());
+        }
+    });
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -556,10 +603,12 @@ pub fn run() {
             open_document_link,
             inspect_workspace_note,
             list_workspace,
+            list_workspace_folder,
             create_note,
             take_open_note_request,
             save_note,
-            watch_note
+            watch_note,
+            watch_workspace_folder
         ])
         .build(tauri::generate_context!())
         .expect("SimpleMark failed to start");

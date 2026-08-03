@@ -86,6 +86,10 @@ export interface WindowChromeOptions {
 /** A compact, derived note index entry. Markdown remains the only durable source. */
 export interface WorkspaceNote {
   readonly id: string
+  /** File name or another shell-defined identity safe to expose to a person. */
+  readonly identifier?: string
+  /** Portable document-relative link; native shells must never put an absolute path here. */
+  readonly portableLink?: string
   readonly title: string
   readonly preview: string
   readonly updatedLabel: string
@@ -1348,6 +1352,67 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const noteItems = document.createElement('div')
     noteItems.className = 'note-items'
 
+    const noteContextMenu = document.createElement('div')
+    noteContextMenu.className = 'note-context-menu'
+    noteContextMenu.hidden = true
+    noteContextMenu.setAttribute('role', 'menu')
+    let contextNote: WorkspaceNote | undefined
+    const contextRow = (
+      label: string,
+      action?: () => void,
+    ): HTMLButtonElement => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'note-context-row'
+      button.textContent = label
+      button.setAttribute('role', 'menuitem')
+      if (action === undefined) button.disabled = true
+      else button.addEventListener('click', () => {
+        action()
+        noteContextMenu.hidden = true
+      })
+      return button
+    }
+    const copyText = (text: string | undefined): void => {
+      if (text === undefined) return
+      const write = navigator.clipboard?.writeText(text)
+      if (write === undefined) {
+        window.prompt('Copy', text)
+        return
+      }
+      void write.catch(() => { window.prompt('Copy', text) })
+    }
+    const contextPin = contextRow('Pin To Top', () => {
+      if (contextNote !== undefined) toggleWorkspacePin(contextNote.id)
+    })
+    const contextOpen = contextRow('Open', () => {
+      if (contextNote !== undefined) workspace.onSelectNote?.(contextNote.id)
+    })
+    const contextCopyLink = contextRow('Copy Link', () => copyText(contextNote?.portableLink))
+    const contextCopyIdentifier = contextRow(
+      'Copy Identifier',
+      () => copyText(contextNote?.identifier ?? contextNote?.title),
+    )
+    const contextNewWindow = contextRow('Open In New Window')
+    contextNewWindow.title = 'Multiple document windows are not implemented yet'
+    const contextDelete = contextRow('Delete')
+    contextDelete.title = 'Delete will be enabled only with recoverable Trash support'
+    const contextDuplicate = contextRow('Duplicate')
+    contextDuplicate.title = 'Duplicate is not implemented yet'
+    const contextDivider = (): HTMLHRElement => document.createElement('hr')
+    noteContextMenu.append(
+      contextPin,
+      contextDivider(),
+      contextOpen,
+      contextCopyLink,
+      contextCopyIdentifier,
+      contextDivider(),
+      contextNewWindow,
+      contextDelete,
+      contextDivider(),
+      contextDuplicate,
+    )
+
     const paintLibrary = (): void => {
       for (const row of [allNotes, pinned]) {
         const allIsActive = workspace.activeCollectionId === undefined || workspace.activeCollectionId === 'open'
@@ -1426,6 +1491,24 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
           pin.disabled = true
           pin.title = 'Pin — available when a real folder catalog is connected'
         } else pin.addEventListener('click', () => toggleWorkspacePin(note.id))
+        item.addEventListener('contextmenu', (event) => {
+          event.preventDefault()
+          contextNote = note
+          contextPin.textContent = note.pinned ? 'Unpin' : 'Pin To Top'
+          contextPin.disabled = workspace.onTogglePinned === undefined
+          contextOpen.disabled = workspace.onSelectNote === undefined
+          contextCopyLink.disabled = note.portableLink === undefined
+          noteContextMenu.hidden = false
+          noteContextMenu.style.left = `${event.clientX}px`
+          noteContextMenu.style.top = `${event.clientY}px`
+          requestAnimationFrame(() => {
+            const bounds = noteContextMenu.getBoundingClientRect()
+            noteContextMenu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - bounds.width - 8))}px`
+            noteContextMenu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - bounds.height - 8))}px`
+            const first = noteContextMenu.querySelector<HTMLButtonElement>('button:not(:disabled)')
+            first?.focus()
+          })
+        })
         item.append(select, pin)
         noteItems.append(item)
       }
@@ -1442,14 +1525,17 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     })
     windowEl.addEventListener('mousedown', (event) => {
       const target = event.target
-      if (!(target instanceof Node) || notesMenu.hidden) return
-      if (!notesMenu.contains(target) && !notesTitle.contains(target)) closeNotesMenu()
+      if (!(target instanceof Node)) return
+      if (!notesMenu.hidden && !notesMenu.contains(target) && !notesTitle.contains(target)) closeNotesMenu()
+      if (!noteContextMenu.hidden && !noteContextMenu.contains(target)) noteContextMenu.hidden = true
     })
     windowEl.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return
       if (!notesMenu.hidden) {
         closeNotesMenu()
         notesTitle.focus()
+      } else if (!noteContextMenu.hidden) {
+        noteContextMenu.hidden = true
       } else if (notesHeader.classList.contains('searching')) {
         closeSearch.click()
       }
@@ -1529,7 +1615,10 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       workspaceNotes.find((note) => note.id === id)?.pinned ?? false
     paintMenuState()
     paintNotes()
-    noteList.append(notesHeader, notesMenu, noteItems)
+    noteItems.addEventListener('scroll', () => {
+      noteContextMenu.hidden = true
+    })
+    noteList.append(notesHeader, notesMenu, noteItems, noteContextMenu)
 
     const applyWorkspaceMode = (mode: WorkspaceMode): void => {
       workspaceBody.dataset['layout'] = mode

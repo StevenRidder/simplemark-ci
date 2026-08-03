@@ -70,7 +70,7 @@ test('sidebar typography uses Bear-sized macOS system text', async ({ page }) =>
   }
   expect(typography).toMatchObject({
     workspace: { size: '14px', weight: '600' },
-    navigation: { size: '15px', weight: '450' },
+    navigation: { size: '15.5px', weight: '450' },
     section: { size: '11px', weight: '600' },
     noteTitle: { size: '14px', weight: '600' },
     notePreview: { size: '13px', weight: '400' },

@@ -35,6 +35,12 @@ export class TauriWorkspaceCatalogPort implements WorkspaceCatalogPort {
     return this.invoke<NativeWorkspaceCatalog>('list_workspace', { handle: documentHandle })
   }
 
+  async listFolder(workspaceHandle: string): Promise<WorkspaceCatalog> {
+    return this.invoke<NativeWorkspaceCatalog>('list_workspace_folder', {
+      handle: workspaceHandle,
+    })
+  }
+
   async create(workspaceHandle: string): Promise<OpenedDocument> {
     const note = await this.invoke<NativeNote>('create_note', { workspaceHandle })
     return {

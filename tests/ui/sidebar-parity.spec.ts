@@ -117,3 +117,18 @@ test('L1-120 visible sidebar controls expose names and honest disabled states', 
   await expect(library.getByRole('button', { name: 'Today' })).toBeDisabled()
   await expect(library.getByRole('button', { name: 'Trash' })).toBeDisabled()
 })
+
+test('L2-070 right-click exposes Bear-familiar actions without faking unsafe ones', async ({ page }) => {
+  await page.getByRole('button', { name: 'ideas', exact: true }).click({ button: 'right' })
+  const menu = page.getByRole('menu')
+
+  await expect(menu).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: 'Pin To Top' })).toBeEnabled()
+  await expect(menu.getByRole('menuitem', { name: 'Open', exact: true })).toBeEnabled()
+  await expect(menu.getByRole('menuitem', { name: 'Open In New Window' })).toBeDisabled()
+  await expect(menu.getByRole('menuitem', { name: 'Delete' })).toBeDisabled()
+  await expect(menu.getByRole('menuitem', { name: 'Duplicate' })).toBeDisabled()
+
+  await menu.getByRole('menuitem', { name: 'Pin To Top' }).click()
+  await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
+})

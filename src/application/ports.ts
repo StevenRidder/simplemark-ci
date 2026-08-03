@@ -70,6 +70,8 @@ export interface WorkspaceCatalogPort {
   chooseFolder(): Promise<WorkspaceCatalog | null>
   /** Full-folder discovery, reserved for an explicit Open Folder action. */
   listAround(documentHandle: string): Promise<WorkspaceCatalog>
+  /** Refreshes one folder the person already adopted. */
+  listFolder(workspaceHandle: string): Promise<WorkspaceCatalog>
   create(workspaceHandle: string): Promise<OpenedDocument>
 }
 

@@ -79,6 +79,14 @@ export interface ComposeOptions {
   readonly onOpenFile?: () => void
   /** Shown on the disabled open control when onOpenFile is absent. */
   readonly openFileUnavailableReason?: string
+  /**
+   * Platform hook for handing the rendered document to the operating system's
+   * print service. Both shells have one — the browser's own `window.print()`
+   * and, on macOS, the native print panel — so this is wiring, not a
+   * capability the shells differ on. What both then print is decided entirely
+   * by `styles/print.css`, never here.
+   */
+  readonly onPrint?: () => void
   /** Shared navigation supplied by the platform composition root. */
   readonly workspace?: WorkspaceOptions
   /** Which platform owns the application chrome around the shared workspace. */
@@ -137,6 +145,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       case 'save':
         void save()
         return
+      case 'print':
+        options.onPrint?.()
+        return
       case 'insertAsset':
         void insertAsset()
         return
@@ -180,6 +191,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     }
     if (id === 'openFolder') return { enabled: false, checked: false }
     if (id === 'openFile') return { enabled: options.onOpenFile !== undefined, checked: false }
+    if (id === 'print') return { enabled: options.onPrint !== undefined, checked: false }
     if (id === 'insertAsset') return { enabled: ports.assets !== undefined, checked: false }
     if (id === 'newNote') return { enabled: options.workspace?.onCreateNote !== undefined, checked: false }
     if (id === 'togglePinned') {

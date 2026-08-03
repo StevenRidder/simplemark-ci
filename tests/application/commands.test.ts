@@ -92,4 +92,15 @@ describe('the command registry', () => {
     const file = MENUS.find((menu) => menu.label === 'File')
     expect(menuCommandIds([file!])).toEqual(expect.arrayContaining(['newNote', 'openFolder', 'openFile', 'save']))
   })
+
+  it('ends File with Print alone, where macOS puts it', () => {
+    // Its own section, so the menu renders a rule above it. Print grouped with
+    // Save reads as a second way to keep the file rather than a way out of it.
+    const file = MENUS.find((menu) => menu.label === 'File')
+    expect(file!.sections.at(-1)).toEqual(['print'])
+    expect(COMMANDS.print.accelerator).toBe('CmdOrCtrl+P')
+    // The shell owns it: printing is an OS service, not an editor transaction,
+    // and nothing about it may reach the document.
+    expect(COMMANDS.print.target).toBe('shell')
+  })
 })

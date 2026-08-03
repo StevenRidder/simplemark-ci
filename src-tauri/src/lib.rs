@@ -675,6 +675,21 @@ fn watch_workspace_folder(app: AppHandle, handle: String) -> Result<(), String> 
     Ok(())
 }
 
+/// Raises the operating system's print panel for the document window.
+///
+/// This exists because WKWebView leaves the webview's own `window.print()`
+/// unanswered — the browser shell's one-liner has no macOS equivalent, so the
+/// panel must be opened from the native side. It stays a transport all the
+/// same: pagination, what is hidden, and what a page looks like are decided by
+/// the shared print stylesheet, and this function neither reads the document
+/// nor knows that it is Markdown.
+#[tauri::command]
+fn print_note(window: tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .print()
+        .map_err(|error| format!("Could not open the print panel: {error}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -702,6 +717,7 @@ pub fn run() {
             trash_note,
             take_open_note_request,
             save_note,
+            print_note,
             watch_note,
             watch_workspace_folder
         ])

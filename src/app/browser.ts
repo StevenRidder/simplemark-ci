@@ -16,6 +16,7 @@ import type { WorkspaceOptions } from './ui/window-chrome.js'
 
 import './styles/tokens.css'
 import './styles/app.css'
+import './styles/print.css'
 
 /**
  * The browser development entrypoint (ADR-0001 §Browser development shell).
@@ -206,6 +207,7 @@ async function mount(
     // replacement on explicit Save because the web platform never exposes the
     // original path for writing.
     onOpenFile: () => void openRealFile(root, app, canWriteOriginal),
+    onPrint: () => window.print(),
   })
 
   root.replaceChildren(app.element)

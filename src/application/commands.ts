@@ -55,6 +55,7 @@ export type DocumentCommandId =
   | 'openFolder'
   | 'newNote'
   | 'save'
+  | 'print'
   | 'find'
   | 'contents'
   | 'toggleStylesBar'
@@ -136,6 +137,7 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   openFolder: { id: 'openFolder', label: 'Open Folder…', target: 'shell' },
   newNote: { id: 'newNote', label: 'New Note', target: 'shell', accelerator: 'CmdOrCtrl+N' },
   save: { id: 'save', label: 'Save', target: 'shell', accelerator: 'CmdOrCtrl+S' },
+  print: { id: 'print', label: 'Print…', target: 'shell', accelerator: 'CmdOrCtrl+P' },
   find: { id: 'find', label: 'Find in Document…', target: 'shell', accelerator: 'CmdOrCtrl+F' },
   contents: { id: 'contents', label: 'Contents', target: 'shell', accelerator: 'CmdOrCtrl+Shift+O' },
   toggleStylesBar: {
@@ -174,7 +176,8 @@ export interface MenuSpec {
 export const MENUS: readonly MenuSpec[] = [
   {
     label: 'File',
-    sections: [['newNote'], ['openFolder', 'openFile'], ['save']],
+    // Print sits alone at the bottom, the place every macOS File menu puts it.
+    sections: [['newNote'], ['openFolder', 'openFile'], ['save'], ['print']],
   },
   {
     label: 'Edit',

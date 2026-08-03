@@ -26,6 +26,7 @@ import { WorkspaceCollections, WorkspaceFolderStore } from './workspace-collecti
 
 import './styles/tokens.css'
 import './styles/app.css'
+import './styles/print.css'
 
 /**
  * The macOS entrypoint (ADR-0001 §Web and native shells).
@@ -395,6 +396,10 @@ async function mount(
     // interactive wireframe; it is not a second menu row.
     stylesBarDefault: true,
     onOpenFile: options.onOpenFile,
+    // WKWebView never answers the webview's own `window.print()`, so the panel
+    // has to be raised from the native side. What lands on paper is still the
+    // shared print stylesheet — this only opens the door.
+    onPrint: () => void invoke('print_note'),
   })
 
   root.replaceChildren(app.element)

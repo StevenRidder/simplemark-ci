@@ -48,7 +48,7 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
     position: 'absolute',
     bottom: '18px',
     radius: '11px',
-    size: [367, 35],
+    size: [385, 33],
     buttonSizes: [
       [43, 29], [31, 29], [43, 29], [31, 29], [31, 29],
       [43, 29], [31, 29], [31, 29], [31, 29], [31, 29],

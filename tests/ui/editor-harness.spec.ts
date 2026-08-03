@@ -44,6 +44,40 @@ test('renders the approved wireframe chrome', async ({ page }) => {
   expect(bodyFont).toMatch(/Iowan Old Style|New York|Palatino|Georgia|serif/)
 })
 
+test('sidebar typography uses Bear-sized macOS system text', async ({ page }) => {
+  const typography = await page.evaluate(() => {
+    const metrics = (selector: string) => {
+      const style = getComputedStyle(document.querySelector(selector)!)
+      return {
+        family: style.fontFamily,
+        size: style.fontSize,
+        weight: style.fontWeight,
+        lineHeight: style.lineHeight,
+      }
+    }
+    return {
+      workspace: metrics('.workspace-name'),
+      navigation: metrics('.folder-row:not(.selected)'),
+      section: metrics('.library-section-label'),
+      noteTitle: metrics('.note-select strong'),
+      notePreview: metrics('.note-select span'),
+      noteTime: metrics('.note-select time'),
+    }
+  })
+
+  for (const value of Object.values(typography)) {
+    expect(value.family).toMatch(/-apple-system|BlinkMacSystemFont|SF Pro Text/)
+  }
+  expect(typography).toMatchObject({
+    workspace: { size: '14px', weight: '600' },
+    navigation: { size: '14px', weight: '450' },
+    section: { size: '11px', weight: '600' },
+    noteTitle: { size: '14px', weight: '600' },
+    notePreview: { size: '13px', weight: '400' },
+    noteTime: { size: '12px' },
+  })
+})
+
 test('save-state wording does not move the formatting controls', async ({ page }) => {
   const formatting = page.locator('.edit-tools')
   const before = await formatting.boundingBox()

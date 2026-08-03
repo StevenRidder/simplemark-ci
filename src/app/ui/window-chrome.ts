@@ -320,12 +320,12 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
 
   const disclosureGlyph = '<svg class="styles-disclosure" viewBox="0 0 8 8" aria-hidden="true"><path d="m1.5 2.5 2.5 2.5 2.5-2.5"/></svg>'
   const headerGlyph = `<span class="styles-letter">H</span>${disclosureGlyph}`
-  const listGlyph = `<svg class="styles-glyph-list" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h10M8 12h10M8 17h10"/><path d="M4.25 7h.01M4.25 12h.01M4.25 17h.01"/></svg>${disclosureGlyph}`
-  const todoGlyph = '<svg class="styles-glyph-todo" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.25"/><path d="m7.5 12 3 3 6.5-7"/></svg>'
-  const linkGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>'
-  const tableGlyph = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16"/></svg>'
-  const highlightGlyph = `<svg class="styles-glyph-highlight" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 4.5 5 5-8.7 8.7-6.2 1.2 1.2-6.2Z"/><path d="m12.5 6.5 5 5M4 21h16"/></svg>${disclosureGlyph}`
-  const assetGlyph = '<svg class="styles-glyph-asset" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="14" height="12" rx="2"/><path d="m6.5 15 3.2-3.3 2.4 2.3 1.8-1.7 3.1 2.9"/><circle cx="14.5" cy="8.5" r="1"/><path d="M8 19h10a2 2 0 0 0 2-2V9"/></svg>'
+  const listGlyph = `<svg class="styles-glyph-list" viewBox="0 0 24 24" aria-hidden="true"><circle cx="4.5" cy="6.5" r="1.15"/><circle cx="4.5" cy="12" r="1.15"/><circle cx="4.5" cy="17.5" r="1.15"/><path d="M8 6.5h11M8 12h11M8 17.5h11"/></svg>${disclosureGlyph}`
+  const todoGlyph = '<svg class="styles-glyph-todo" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="m7.5 12.1 3 3.1 6.4-7.1"/></svg>'
+  const linkGlyph = '<svg class="styles-glyph-link" viewBox="0 0 24 24" aria-hidden="true"><path d="m9.4 14.6-1.8 1.8a4.1 4.1 0 0 1-5.8-5.8l3.1-3.1a4.1 4.1 0 0 1 5.8 0"/><path d="m14.6 9.4 1.8-1.8a4.1 4.1 0 1 1 5.8 5.8l-3.1 3.1a4.1 4.1 0 0 1-5.8 0"/><path d="m8.5 15.5 7-7"/></svg>'
+  const tableGlyph = '<svg class="styles-glyph-table" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.75" y="3.75" width="18.5" height="16.5" rx="2.5"/><path d="M2.75 10.25h18.5M9 3.75v16.5M15.25 3.75v16.5"/></svg>'
+  const highlightGlyph = `<svg class="styles-glyph-highlight" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.8 3.8 5.4 5.4-9.6 9.6-6.8 1.4 1.4-6.8Z"/><path d="m12.8 5.8 5.4 5.4"/><path class="styles-highlight-swatch" d="M3.5 21h12"/></svg>${disclosureGlyph}`
+  const assetGlyph = '<svg class="styles-glyph-asset" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3.5" width="15" height="13.5" rx="2.5"/><rect x="3" y="6.5" width="15" height="14" rx="2.5"/><circle cx="13.8" cy="10.6" r="1.25"/><path d="m5.7 18 3.6-3.8 2.7 2.5 2.1-2.1 3.2 3.1"/></svg>'
   const moreGlyph = '<svg class="styles-glyph-more" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.35"/><circle cx="12" cy="12" r="1.35"/><circle cx="12" cy="19" r="1.35"/></svg>'
 
   const headers = menu('Headers', headerGlyph, (panel) => {

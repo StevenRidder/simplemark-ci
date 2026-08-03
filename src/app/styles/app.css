@@ -210,8 +210,8 @@ button[disabled] {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  padding: 2px 5px;
+  gap: 3px;
+  padding: 1px 5px;
   border: 1px solid var(--line);
   border-radius: 11px;
   background: color-mix(in srgb, var(--paper) 94%, var(--chrome));
@@ -269,7 +269,7 @@ button[disabled] {
   height: 16px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.65;
+  stroke-width: 1.75;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -280,33 +280,62 @@ button[disabled] {
 }
 
 .styles-letter {
-  font: 600 14px/1 var(--sans);
+  font: 600 17px/1 var(--sans);
   letter-spacing: -0.25px;
 }
 
 .styles-control .styles-disclosure {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   color: var(--ink-3);
   stroke-width: 1.4;
   transform: translateY(0.25px);
 }
 
 .styles-control .styles-glyph-todo {
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
 }
 
-.styles-control .styles-glyph-list,
+.styles-control .styles-glyph-list {
+  width: 20px;
+  height: 20px;
+}
+
 .styles-control .styles-glyph-highlight,
 .styles-control .styles-glyph-asset {
+  width: 19px;
+  height: 19px;
+}
+
+.styles-control .styles-glyph-link {
   width: 17px;
   height: 17px;
 }
 
+.styles-control .styles-glyph-table {
+  width: 18px;
+  height: 18px;
+}
+
 .styles-control .styles-glyph-more {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
+}
+
+.styles-control .styles-glyph-todo,
+.styles-control .styles-glyph-table,
+.styles-control .styles-glyph-asset {
+  stroke-width: 1.8;
+}
+
+.styles-control .styles-glyph-highlight {
+  stroke-width: 1.7;
+}
+
+.styles-glyph-highlight .styles-highlight-swatch {
+  stroke: var(--accent);
+  stroke-width: 2.2;
 }
 
 .styles-menu-trigger {
@@ -324,11 +353,11 @@ button[disabled] {
 }
 
 .styles-strong strong {
-  font: 700 14px/1 var(--sans);
+  font: 700 16px/1 var(--sans);
 }
 
 .styles-emphasis em {
-  font: italic 16px/1 var(--serif);
+  font: italic 18px/1 var(--serif);
 }
 
 .styles-control:hover:not([disabled]),
@@ -714,6 +743,8 @@ section.editor {
   border-right: 1px solid var(--line);
   background: #343632;
   color: #f4f2eb;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+  font-optical-sizing: auto;
 }
 
 .workspace-library-head {
@@ -728,8 +759,9 @@ section.editor {
   min-width: 0;
   margin-right: auto;
   color: #f4f2eb;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1.2;
   letter-spacing: -0.01em;
 }
 
@@ -766,11 +798,12 @@ section.editor {
 }
 
 .library-section-label {
-  margin: 17px 10px 6px;
+  margin: 17px 10px 7px;
   color: #aeb0aa;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.07em;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.065em;
   text-transform: uppercase;
 }
 
@@ -782,11 +815,13 @@ section.editor {
   width: 100%;
   border: 0;
   border-radius: 8px;
-  padding: 8px 10px;
+  min-height: 31px;
+  padding: 6px 10px;
   background: transparent;
-  color: #c3c5bf;
+  color: #d0d2cc;
   text-align: left;
-  font-size: 12px;
+  font: 450 14px/1.2 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+  letter-spacing: -0.005em;
 }
 
 .folder-row:disabled {
@@ -807,7 +842,7 @@ section.editor {
 
 .folder-count {
   color: #9ea09a;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -820,6 +855,8 @@ section.editor {
   min-width: 0;
   border-right: 1px solid var(--line);
   background: color-mix(in srgb, var(--paper) 89%, var(--chrome));
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+  font-optical-sizing: auto;
 }
 
 .notes-header {
@@ -842,7 +879,7 @@ section.editor {
   padding: 6px 6px 6px 0;
   background: transparent;
   color: var(--ink);
-  font: 600 14px var(--sans);
+  font: 600 14px/1.2 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
   letter-spacing: -0.01em;
 }
 
@@ -904,7 +941,7 @@ section.editor {
   padding: 0 12px;
   background: var(--paper);
   color: var(--ink);
-  font: 12px var(--sans);
+  font: 13px -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
 }
 
 .workspace-search:focus {
@@ -978,7 +1015,7 @@ section.editor {
   grid-template-columns: minmax(0, 1fr) 26px;
   align-items: start;
   width: 100%;
-  min-height: 88px;
+  min-height: 96px;
   border-radius: 9px;
   background: transparent;
 }
@@ -1007,7 +1044,8 @@ section.editor {
 .note-select strong {
   overflow: hidden;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1017,15 +1055,17 @@ section.editor {
   grid-column: 1 / -1;
   overflow: hidden;
   color: var(--ink-3);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .note-select time {
   color: var(--ink-3);
-  font-size: 10px;
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .workspace-notes[data-preview='small'] .note-item {

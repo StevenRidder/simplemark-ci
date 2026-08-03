@@ -101,7 +101,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     }
     activeCollectionId = collectionId
     const catalog = collections.collection(collectionId, inspected.handle)
-    await current.editor.destroy()
+    await current.destroy()
     activeHandle = opened.handle
     workspaceHandle = collectionId === 'open' ? inspected.handle : catalog.handle
     current = await mount(root, port, {

@@ -279,6 +279,9 @@ is open.** The left pane is a small folder/source list; the middle pane is a spa
 note index (title, one-line preview, modified time, and a quiet pin); the right pane is the document. The index is
 derived from the Markdown folder, never a second source of truth. Both panes can collapse into a
 single-document focus view. There is no permanent activity, chat, agent, or inspector rail.
+The note index and document are independent scroll surfaces. The document keeps a quiet, persistent,
+proportional position indicator: its thumb length shows how much of the document is visible, its
+position shows the reader's place, and dragging it navigates the real document scroll range.
 
 The shared web surface owns these panes, note selection, search, and focus mode. The native shell
 owns macOS window chrome, menus, filesystem access, and watching. In particular, the web view must

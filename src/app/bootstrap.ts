@@ -39,6 +39,8 @@ export interface AppComposition {
   readonly element: HTMLElement
   readonly session: DocumentSession
   readonly editor: MilkdownEditor
+  /** Tears down the editor and presentation observers before remounting. */
+  destroy(): Promise<void>
   /** Flushes any pending debounced save. */
   save(): Promise<void>
   /** Shows a truthful platform or file-reference limitation in the shell. */
@@ -302,6 +304,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     commandState,
     session,
     editor,
+    async destroy() {
+      clearTimeout(saveTimer)
+      chrome.dispose()
+      await editor.destroy()
+    },
     save,
     setStatus: (state, message) => chrome.setStatus(state, message),
   }

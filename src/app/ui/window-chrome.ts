@@ -138,6 +138,8 @@ export interface WindowChrome {
   workspaceMode(): WorkspaceMode
   togglePinned(id: string): void
   isPinned(id: string): boolean
+  /** Releases observers owned by this detached presentation tree. */
+  dispose(): void
 }
 
 /** A toolbar button that runs an editor command without stealing the selection. */
@@ -562,6 +564,90 @@ function installStylesBarDragging(
   // panes or window size change. Repaint converts it through CSS; the next
   // drag clamps it precisely to the current surface.
   paint()
+}
+
+/**
+ * Keeps a quiet, always-legible document position indicator in sync with the
+ * actual editor scroller. macOS overlay scrollbars can disappear completely,
+ * which removes both the document-length cue and the reader's current place.
+ * This is presentation only: the browser's scroll position remains authority.
+ */
+function installDocumentScrollIndicator(
+  scroller: HTMLElement,
+  surface: HTMLElement,
+  content: HTMLElement,
+): () => void {
+  const track = document.createElement('div')
+  track.className = 'document-scroll-track'
+  track.setAttribute('aria-hidden', 'true')
+  const thumb = document.createElement('div')
+  thumb.className = 'document-scroll-thumb'
+  track.append(thumb)
+  surface.append(track)
+
+  let frame: number | undefined
+  let drag: { pointerId: number; startY: number; startScrollTop: number } | undefined
+  let disposed = false
+
+  const paint = (): void => {
+    frame = undefined
+    const viewport = scroller.clientHeight
+    const contentHeight = scroller.scrollHeight
+    const trackHeight = track.clientHeight
+    const scrollRange = Math.max(0, contentHeight - viewport)
+    const visibleRatio = contentHeight === 0 ? 1 : Math.min(1, viewport / contentHeight)
+    const thumbHeight = Math.min(trackHeight, Math.max(34, trackHeight * visibleRatio))
+    const travel = Math.max(0, trackHeight - thumbHeight)
+    const progress = scrollRange === 0 ? 0 : scroller.scrollTop / scrollRange
+
+    track.classList.toggle('is-scrollable', scrollRange > 1)
+    thumb.style.height = `${thumbHeight}px`
+    thumb.style.transform = `translateY(${travel * progress}px)`
+  }
+
+  const schedulePaint = (): void => {
+    if (disposed || frame !== undefined) return
+    frame = window.requestAnimationFrame(paint)
+  }
+
+  scroller.addEventListener('scroll', schedulePaint, { passive: true })
+  const resizeObserver = typeof ResizeObserver === 'undefined'
+    ? undefined
+    : new ResizeObserver(schedulePaint)
+  resizeObserver?.observe(scroller)
+  resizeObserver?.observe(content)
+  const mutationObserver = new MutationObserver(schedulePaint)
+  mutationObserver.observe(content, { childList: true, subtree: true, characterData: true })
+
+  thumb.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || !track.classList.contains('is-scrollable')) return
+    drag = { pointerId: event.pointerId, startY: event.clientY, startScrollTop: scroller.scrollTop }
+    thumb.setPointerCapture(event.pointerId)
+    thumb.classList.add('is-dragging')
+    event.preventDefault()
+  })
+  thumb.addEventListener('pointermove', (event) => {
+    if (drag?.pointerId !== event.pointerId) return
+    const travel = track.clientHeight - thumb.clientHeight
+    const scrollRange = scroller.scrollHeight - scroller.clientHeight
+    if (travel > 0) scroller.scrollTop = drag.startScrollTop + ((event.clientY - drag.startY) / travel) * scrollRange
+  })
+  const finishDrag = (event: PointerEvent): void => {
+    if (drag?.pointerId !== event.pointerId) return
+    thumb.releasePointerCapture(event.pointerId)
+    drag = undefined
+    thumb.classList.remove('is-dragging')
+  }
+  thumb.addEventListener('pointerup', finishDrag)
+  thumb.addEventListener('pointercancel', finishDrag)
+
+  schedulePaint()
+  return () => {
+    disposed = true
+    if (frame !== undefined) window.cancelAnimationFrame(frame)
+    resizeObserver?.disconnect()
+    mutationObserver.disconnect()
+  }
 }
 
 export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
@@ -1031,6 +1117,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   const documentSurface = document.createElement('div')
   documentSurface.className = 'document-surface'
   documentSurface.append(stylesBar, editorSection)
+  const disposeDocumentScrollIndicator = installDocumentScrollIndicator(editorSection, documentSurface, page)
   windowEl.addEventListener('pointerdown', (event) => {
     if (event.target instanceof Node && !stylesBar.contains(event.target)) {
       stylesBar.dispatchEvent(new Event('simplemark-close-menus'))
@@ -1475,6 +1562,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     workspaceMode: () => getWorkspaceMode(),
     togglePinned: (id) => toggleWorkspacePin(id),
     isPinned: (id) => workspacePinState(id),
+    dispose: disposeDocumentScrollIndicator,
     setStatus(state, message) {
       status.dataset['state'] = state
       status.textContent =

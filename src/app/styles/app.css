@@ -781,8 +781,13 @@ section.editor {
      or paragraph remains directly manipulable instead of sitting under the
      palette. */
   scroll-padding-bottom: 76px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
+  /* The persistent document indicator beside this scroller supplies a stable,
+     proportional length/position cue even when macOS hides overlay bars. */
+  scrollbar-width: none;
+}
+
+section.editor::-webkit-scrollbar {
+  display: none;
 }
 
 /* SHELL-1 — the shared Notes-style workspace. The browser and native shells
@@ -995,6 +1000,10 @@ section.editor {
 .workspace-notes {
   position: relative;
   min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
   border-right: 1px solid var(--line);
   background: color-mix(in srgb, var(--paper) 89%, var(--chrome));
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
@@ -1148,8 +1157,24 @@ section.editor {
 
 .note-items {
   display: grid;
+  align-content: start;
   gap: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink-3) 42%, transparent) transparent;
   padding: 7px;
+}
+
+.note-items::-webkit-scrollbar {
+  width: 9px;
+}
+
+.note-items::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-3) 42%, transparent) content-box;
 }
 
 .note-item {
@@ -1279,6 +1304,50 @@ section.editor {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.document-scroll-track {
+  position: absolute;
+  z-index: 8;
+  top: 12px;
+  right: 3px;
+  bottom: 12px;
+  width: 10px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+:root[data-shell='native'] .document-scroll-track {
+  /* The native titlebar lives inside the document pane. Begin the reading
+     indicator below it, alongside the actual page rather than the chrome. */
+  top: 62px;
+}
+
+.document-scroll-track.is-scrollable {
+  opacity: 1;
+}
+
+.document-scroll-thumb {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  width: 5px;
+  min-height: 34px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-3) 48%, transparent);
+  cursor: default;
+  pointer-events: auto;
+  transition: width 100ms ease, background-color 100ms ease;
+  will-change: transform;
+}
+
+.document-scroll-track:hover .document-scroll-thumb,
+.document-scroll-thumb.is-dragging {
+  right: 1px;
+  width: 7px;
+  background: color-mix(in srgb, var(--ink-2) 66%, transparent);
 }
 
 .workspace-body.navigation-hidden {

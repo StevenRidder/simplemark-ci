@@ -87,7 +87,7 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     if (note === undefined || port === undefined || (id === activeId && current !== undefined && !force)) return
     if (current !== undefined) {
       await current.save()
-      await current.editor.destroy()
+      await current.destroy()
     }
     activeId = id
     current = await mount(root, port, {
@@ -225,7 +225,7 @@ async function openRealFile(
   }
 
   await previous.save()
-  await previous.editor.destroy()
+  await previous.destroy()
   await mount(root, port, canWriteOriginal
     ? { filePath: name }
     : {

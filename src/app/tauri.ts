@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { CompositeRenderer } from '../adapters/renderers/composite-renderer.js'
@@ -37,16 +38,98 @@ import './styles/app.css'
  */
 
 export async function start(root: HTMLElement): Promise<AppComposition> {
-  return mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
+  const controller = await startNative(root)
+  await installOpenRequestBridge(controller)
+  return controller.current()
+}
+
+interface NativeController {
+  current(): AppComposition
+  openPath(path: string): Promise<void>
+}
+
+/** Owns the one active document while every open route shares one transition. */
+async function startNative(root: HTMLElement): Promise<NativeController> {
+  let current: AppComposition
+  let stopWatching: UnlistenFn | undefined
+  let transition = Promise.resolve()
+
+  const showOpenFailure = (error: unknown): void => {
+    const message = error instanceof Error ? error.message : String(error)
+    current.setStatus('error', `Could not open file — ${message}`)
+  }
+
+  const enqueue = (operation: () => Promise<void>): Promise<void> => {
+    transition = transition.then(operation).catch(showOpenFailure)
+    return transition
+  }
+
+  const watch = async (port: TauriFilePort, handle: string): Promise<void> => {
+    stopWatching?.()
+    await port.watch(handle)
+    stopWatching = await listen<string>('note-changed-externally', (event) => {
+      if (event.payload !== handle) return
+      current.setStatus(
+        'error',
+        `Changed on disk by another program — ${event.payload.split('/').pop() ?? 'this note'}`,
+      )
+    })
+  }
+
+  const install = async (
+    port: TauriFilePort,
+    opened: { readonly handle: string; readonly name: string },
+  ): Promise<void> => {
+    await current.editor.destroy()
+    current = await mount(root, port, {
+      filePath: opened.handle,
+      fileName: opened.name,
+      onOpenFile: openFromPicker,
+    })
+    await watch(port, opened.handle)
+  }
+
+  const openFromPicker = (): void => {
+    void enqueue(async () => {
+      const port = new TauriFilePort(invoke)
+      let opened
+      try {
+        // Prompt before saving or tearing down: cancelling leaves the current
+        // document and its editing context exactly where they were.
+        opened = await port.open()
+      } catch (error) {
+        if (error instanceof OpenCancelled) return
+        throw error
+      }
+
+      await current.save()
+      await install(port, opened)
+    })
+  }
+
+  current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
     filePath: 'Demo workspace · open a file to work with your own Markdown',
     fileName: WELCOME_NAME,
+    onOpenFile: openFromPicker,
   })
+
+  return {
+    current: () => current,
+    openPath: (path) => enqueue(async () => {
+      // Finder has already chosen the destination, so flush first. This also
+      // makes reopening the same file read the bytes we just committed.
+      await current.save()
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(path)
+      await install(port, opened)
+    }),
+  }
 }
 
 async function mount(
   root: HTMLElement,
   file: FilePort,
-  options: { filePath: string; fileName: string },
+  options: { filePath: string; fileName: string; onOpenFile: () => void },
 ): Promise<AppComposition> {
   let app: AppComposition
 
@@ -72,7 +155,7 @@ async function mount(
     // palette is the fast, Apple Notes-style reach shown in the approved
     // interactive wireframe; it is not a second menu row.
     stylesBarDefault: true,
-    onOpenFile: () => void openRealFile(root, app),
+    onOpenFile: options.onOpenFile,
   })
 
   root.replaceChildren(app.element)
@@ -153,34 +236,33 @@ function installWindowDragging(element: HTMLElement): void {
   }
 }
 
-/** Picks a real note through the native dialog and rebuilds around it. */
-async function openRealFile(root: HTMLElement, previous: AppComposition): Promise<void> {
-  const port = new TauriFilePort(invoke)
+/**
+ * Bridges macOS delivery without a launch race.
+ *
+ * Rust retains paths until this function takes them. The event only schedules
+ * another drain, so a file delivered before the webview listener exists is
+ * handled exactly like one delivered to an already-running app.
+ */
+async function installOpenRequestBridge(controller: NativeController): Promise<void> {
+  let drains = Promise.resolve()
 
-  let opened
-  try {
-    // Prompt before tearing anything down: a cancelled dialog must leave the
-    // current document exactly as it was, unsaved edits included.
-    opened = await port.open()
-  } catch (error) {
-    if (error instanceof OpenCancelled) return
-    throw error
+  const drain = async (): Promise<void> => {
+    while (true) {
+      const path = await invoke<string | null>('take_open_note_request')
+      if (path === null) return
+      await controller.openPath(path)
+    }
   }
 
-  await previous.save()
-  await previous.editor.destroy()
-  const app = await mount(root, port, { filePath: opened.handle, fileName: opened.name })
+  const schedule = (): void => {
+    drains = drains.then(drain).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      controller.current().setStatus('error', `Could not receive file from macOS — ${message}`)
+    })
+  }
 
-  // Ask the native side to report other writers, and say so visibly when it
-  // happens. Reloading the document underneath a reader is a decision the
-  // shared session will own; announcing it honestly is this shell's job today.
-  await port.watch(opened.handle)
-  void listen<string>('note-changed-externally', (event) => {
-    app.setStatus(
-      'error',
-      `Changed on disk by another program — ${event.payload.split('/').pop() ?? 'this note'}`,
-    )
-  })
+  await listen<void>('open-note-requested', schedule)
+  schedule()
 }
 
 /** Same ordinary file input the browser shell uses; the webview supports it. */

@@ -56,8 +56,13 @@ export class TauriFilePort implements FilePort {
 
     if (note === null) throw new OpenCancelled()
 
-    this.#current = note.handle
-    return { handle: note.handle, name: note.name, bytes: decodeBase64(note.bytes) }
+    return this.#adopt(note)
+  }
+
+  /** Opens a path macOS already chose through Finder or `open`. */
+  async openAt(path: string): Promise<OpenedDocument> {
+    const note = await this.invoke<NativeNote>('read_note_at', { path })
+    return this.#adopt(note)
   }
 
   /** Forget the current note so the next open() prompts again. */
@@ -74,6 +79,11 @@ export class TauriFilePort implements FilePort {
   /** Asks the native side to report when somebody else writes this note. */
   async watch(handle: string): Promise<void> {
     await this.invoke<void>('watch_note', { handle })
+  }
+
+  #adopt(note: NativeNote): OpenedDocument {
+    this.#current = note.handle
+    return { handle: note.handle, name: note.name, bytes: decodeBase64(note.bytes) }
   }
 }
 

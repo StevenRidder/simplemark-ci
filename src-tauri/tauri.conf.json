@@ -31,6 +31,15 @@
     "active": true,
     "targets": ["app", "dmg"],
     "icon": ["icons/icon.icns"],
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown Document",
+        "role": "Editor",
+        "rank": "Default",
+        "contentTypes": ["net.daringfireball.markdown"]
+      }
+    ],
     "category": "Productivity",
     "shortDescription": "The beautiful living document for AI work",
     "copyright": "Apache-2.0"

@@ -16,7 +16,7 @@
 //!   deliberately no per-keystroke IPC.
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
@@ -29,7 +29,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, Url};
 use tauri_plugin_dialog::DialogExt;
 
 /// A document handed to the shared application layer.
@@ -49,6 +49,12 @@ pub struct OpenedNote {
 /// saves apart from someone else's edit.
 #[derive(Default)]
 pub struct WriteLedger(Mutex<HashMap<PathBuf, u64>>);
+
+/// Finder may hand the app a file before the webview has installed listeners.
+/// Keep those paths until the TypeScript composition root explicitly takes
+/// them; the event is only a wake-up signal, never the durable delivery path.
+#[derive(Default)]
+pub struct OpenRequestQueue(Mutex<VecDeque<PathBuf>>);
 
 fn content_hash(bytes: &[u8]) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -96,6 +102,56 @@ fn read_note(path: &Path) -> Result<OpenedNote, String> {
         name,
         bytes: BASE64.encode(&bytes),
     })
+}
+
+/// Returns the next file macOS asked SimpleMark to open.
+#[tauri::command]
+fn take_open_note_request(queue: State<'_, OpenRequestQueue>) -> Result<Option<String>, String> {
+    let path = queue
+        .0
+        .lock()
+        .map_err(|_| "The open-file queue was poisoned by an earlier panic".to_string())?
+        .pop_front();
+    Ok(path.map(|path| path.display().to_string()))
+}
+
+fn opened_markdown_paths(urls: &[Url]) -> Vec<PathBuf> {
+    urls.iter()
+        .filter_map(|url| url.to_file_path().ok())
+        .filter(|path| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("md")
+                        || extension.eq_ignore_ascii_case("markdown")
+                })
+        })
+        .collect()
+}
+
+fn queue_opened_notes(app: &AppHandle, urls: &[Url]) {
+    let paths = opened_markdown_paths(urls);
+    if paths.is_empty() {
+        return;
+    }
+
+    let queued = app
+        .state::<OpenRequestQueue>()
+        .0
+        .lock()
+        .map(|mut queue| queue.extend(paths))
+        .is_ok();
+    if !queued {
+        return;
+    }
+
+    // The queue prevents launch-time loss. This event lets an already-running
+    // webview react immediately without polling.
+    let _ = app.emit("open-note-requested", ());
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 /// Writes bytes atomically: temp file in the same directory, fsync, rename.
@@ -215,17 +271,26 @@ fn watch_note(app: AppHandle, handle: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(WriteLedger::default())
+        .manage(OpenRequestQueue::default())
         .invoke_handler(tauri::generate_handler![
             open_note,
             read_note_at,
+            take_open_note_request,
             save_note,
             watch_note
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("SimpleMark failed to start");
+
+    app.run(|app, event| {
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Opened { urls } = event {
+            queue_opened_notes(app, &urls);
+        }
+    });
 }
 
 #[cfg(test)]
@@ -244,5 +309,21 @@ mod tests {
     fn identical_content_hashes_identically() {
         assert_eq!(content_hash(b"# note\n"), content_hash(b"# note\n"));
         assert_ne!(content_hash(b"# note\n"), content_hash(b"# note"));
+    }
+
+    #[test]
+    fn finder_open_accepts_only_local_markdown_paths() {
+        let markdown = Url::from_file_path("/tmp/note.markdown").unwrap();
+        let uppercase = Url::from_file_path("/tmp/README.MD").unwrap();
+        let text = Url::from_file_path("/tmp/note.txt").unwrap();
+        let remote = Url::parse("https://example.com/note.md").unwrap();
+
+        assert_eq!(
+            opened_markdown_paths(&[markdown, uppercase, text, remote]),
+            vec![
+                PathBuf::from("/tmp/note.markdown"),
+                PathBuf::from("/tmp/README.MD")
+            ]
+        );
     }
 }

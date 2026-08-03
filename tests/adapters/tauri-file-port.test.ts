@@ -66,6 +66,19 @@ describe('TauriFilePort', () => {
     expect(calls[1]?.args).toEqual({ path: '/notes/a.md' })
   })
 
+  it('opens a Finder-provided path without showing the picker', async () => {
+    const note = { handle: '/notes/from-finder.md', name: 'from-finder.md', bytes: encode(AWKWARD) }
+    const { invoke, calls } = fakeInvoke({ read_note_at: note })
+    const port = new TauriFilePort(invoke)
+
+    const opened = await port.openAt('/notes/from-finder.md')
+
+    expect(opened).toEqual({ handle: note.handle, name: note.name, bytes: AWKWARD })
+    expect(calls).toEqual([
+      { command: 'read_note_at', args: { path: '/notes/from-finder.md' } },
+    ])
+  })
+
   it('prompts again after the current note is released', async () => {
     const note = { handle: '/notes/a.md', name: 'a.md', bytes: encode(AWKWARD) }
     const { invoke, calls } = fakeInvoke({ open_note: note, read_note_at: note })

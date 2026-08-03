@@ -11,6 +11,25 @@ a configuration that is not merged could only be a placeholder that succeeds wit
 building anything. That is exactly what this contract forbids. The board tasks that add
 the executable wiring are listed in §12.
 
+### Relationship to `RELEASE-TRUST.md`
+
+[`docs/RELEASE-TRUST.md`](RELEASE-TRUST.md) is APP-6's contract, and unlike this one it is
+already executable: `scripts/verify-release-trust.mjs` and
+[`.github/actions/release-trust-gate/action.yml`](../.github/actions/release-trust-gate/action.yml)
+enforce it, with `tests/app/release-trust-gates.test.ts` covering it. The division, in its
+words, is that APP-6 owns the public-release **trust boundary** while APP-4 owns the
+**workflow structure**.
+
+| Question | Answered by |
+|---|---|
+| Which platforms, triggers, artifact names, retention, permissions, failure rules | this file |
+| Whether a built artifact may reach the public | `RELEASE-TRUST.md` |
+| Which signing and notarization secrets exist and what they are named | `RELEASE-TRUST.md` |
+| What smoke evidence each platform must produce | `RELEASE-TRUST.md` |
+
+Where the two touch, this file defers. §11 points at that document rather than copying its
+secret table, because a second copy of a secret name is a copy that will go stale.
+
 ## 1. Scope
 
 In scope — four desktop installer targets for the one shared application:
@@ -69,7 +88,15 @@ Four legs. Each builds natively for its own architecture; nothing is cross-compi
 | macOS arm64 | `macos-15` | `aarch64-apple-darwin` | `dmg` |
 | macOS x64 | `macos-15-intel` | `x86_64-apple-darwin` | `dmg` |
 | Windows x64 | `windows-2025` | `x86_64-pc-windows-msvc` | `msi`, `nsis` |
-| Linux x64 | `ubuntu-22.04` | `x86_64-unknown-linux-gnu` | `appimage`, `deb` |
+| Linux x64 | `ubuntu-22.04` | `x86_64-unknown-linux-gnu` | `appimage`, `deb` (see below) |
+
+**The Linux `.deb` is built but is not a first-lane release asset.** `RELEASE-TRUST.md`
+says the first public Linux asset is the `.AppImage` and that `.deb` is later work. Both
+formats come out of the same `tauri build`, so the `.deb` is built and retained as a
+pull-request test artifact where it is useful for testing on Debian-family systems, and it
+becomes a release asset when `RELEASE-TRUST.md` admits it — which needs a smoke-evidence
+lane of its own, not a line changed here. §4's six-file release listing is therefore five
+files for the first release lane.
 
 Runner labels are **pinned to explicit versions, never `-latest`**. A `-latest` label
 silently rolls to a new image, which means the compiler, SDK, and system libraries that
@@ -130,7 +157,7 @@ extension. Both Windows bundles are installers, but only one of them has an exte
 says so; `SimpleMark-0.3.1-windows-x64.exe` would be indistinguishable at a glance from the
 application executable that a user might expect to run directly.
 
-So a 0.3.1 release is exactly these six files:
+So a 0.3.1 release is exactly these files:
 
 ```text
 SimpleMark-0.3.1-macos-arm64.dmg
@@ -138,8 +165,13 @@ SimpleMark-0.3.1-macos-x64.dmg
 SimpleMark-0.3.1-windows-x64.msi
 SimpleMark-0.3.1-windows-x64-setup.exe
 SimpleMark-0.3.1-linux-x64.AppImage
-SimpleMark-0.3.1-linux-x64.deb
+SimpleMark-0.3.1-linux-x64.deb        # PR test artifact only in the first lane (§3)
 ```
+
+Every one of these ends in `.dmg`, `.msi`, `.exe`, or `.AppImage`, which is not decoration:
+`scripts/verify-release-trust.mjs` rejects an artifact whose name does not end in the
+extension its platform expects, so an archive or a web build cannot pass as an installer.
+This scheme is built to satisfy that check rather than to be renamed at the gate.
 
 Pull-request test artifacts are named for the commit, not the version, because the version
 of an unreleased tree is not meaningful:
@@ -199,6 +231,11 @@ The workflow declares `permissions: contents: read` at the top level. Exactly on
 the one that creates the draft release — elevates to `contents: write`, and it declares
 that at the job level.
 
+That same job, and only that job, declares `environment: release-signing`, the protected
+GitHub Environment `RELEASE-TRUST.md` requires. Environment secrets are scoped to the jobs
+that name the environment, which is the mechanism — not a convention — that keeps signing
+material out of every pull-request job, including one opened from a fork.
+
 - No `id-token`, no `packages`, no `pull-requests`, no `actions: write`. None of them are
   needed, and a build job that can write to the repository is a build job that can be
   turned into a supply-chain problem by a dependency.
@@ -250,6 +287,11 @@ write is a release note nobody can trust.
   a broken promise the user discovers at Gatekeeper, not at download.
 - The draft release is never published automatically, and the workflow has no code path
   that publishes one.
+- Before a draft becomes published, every platform's artifact passes
+  [`.github/actions/release-trust-gate`](../.github/actions/release-trust-gate/action.yml),
+  invoked from the `release-signing` environment. That gate is `RELEASE-TRUST.md`'s, not
+  this contract's, and it fails closed on absent credentials, an unverified signing result,
+  or a partial smoke test.
 
 These restate the repository rule in `AGENTS.md`: failures are visible and local, and
 missing evidence never becomes a green result.
@@ -257,29 +299,34 @@ missing evidence never becomes a green result.
 ## 11. Required secrets, by name
 
 Every secret is listed by name and purpose. No value appears in this repository, and none
-is echoed, printed, or written to a log or artifact by any step.
+is echoed, printed, decoded into a committed file, or uploaded as an artifact by any step.
 
-macOS signing and notarization — consumed by both macOS legs, owned by APP-6:
+**The signing secrets are defined in
+[`RELEASE-TRUST.md` §"GitHub environment and secrets"](RELEASE-TRUST.md), which is their
+single source of truth.** They are named here so this contract is complete, but if the two
+lists ever disagree, `RELEASE-TRUST.md` wins and this table is the bug.
+
+macOS signing and notarization — both macOS legs, tag builds only:
+`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
+`APPLE_PASSWORD` (app-specific, never the account password), `APPLE_TEAM_ID`, and
+`KEYCHAIN_PASSWORD` for the ephemeral CI keychain the certificate is imported into.
+
+Windows signing — the Windows leg, tag builds only. `RELEASE-TRUST.md` deliberately uses
+**project-owned names** so the certificate provider can change without leaking provider
+details into repository documents:
 
 | Secret | Purpose |
 |---|---|
-| `APPLE_CERTIFICATE` | Developer ID Application certificate, base64-encoded `.p12` |
-| `APPLE_CERTIFICATE_PASSWORD` | Password for that `.p12` |
-| `APPLE_SIGNING_IDENTITY` | Identity to sign with, e.g. `Developer ID Application: … (TEAMID)` |
-| `APPLE_ID` | Apple account used for notarization |
-| `APPLE_PASSWORD` | App-specific password for that account — never the account password |
-| `APPLE_TEAM_ID` | Team identifier notarization submits under |
+| `SIMPLEMARK_WINDOWS_CERTIFICATE` | Authenticode certificate material or provider credential |
+| `SIMPLEMARK_WINDOWS_CERTIFICATE_PASSWORD` | Certificate password, where the provider uses one |
+| `SIMPLEMARK_WINDOWS_TIMESTAMP_URL` | RFC 3161 timestamp service URL |
 
-`APPLE_API_ISSUER` + `APPLE_API_KEY` + `APPLE_API_KEY_PATH` are the App Store Connect API
-alternative to `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID` for notarization. APP-6 picks
-one pair of mechanisms; both are named here so neither gets invented later.
+An earlier draft of this section named `WINDOWS_CERTIFICATE` and a set of `AZURE_*`
+variables. Those names are wrong for this repository and are recorded here only so nobody
+reintroduces them from Tauri's generic examples.
 
-Windows signing — consumed by the Windows leg, owned by APP-6, which chooses one mechanism:
-
-| Mechanism | Secrets |
-|---|---|
-| Authenticode with a certificate file | `WINDOWS_CERTIFICATE` (base64 `.pfx`), `WINDOWS_CERTIFICATE_PASSWORD` |
-| Azure Trusted Signing | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` |
+All of the above live in the protected GitHub Environment named `release-signing` (§8).
+None are available to pull-request jobs, which is what keeps a fork PR from reaching them.
 
 Built in, never created:
 
@@ -296,17 +343,20 @@ Explicitly **not** required, and not to be added without retiring the §1 deferr
 | `TAURI_SIGNING_PRIVATE_KEY` | Updater artifact signing. Auto-update is deferred. |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Same. |
 
-Linux artifacts are unsigned. AppImage and `.deb` have no equivalent of Gatekeeper or
-SmartScreen, and `SHA256SUMS` (§6) is the integrity story there. This is stated so that
-"Linux is not signed" is a recorded decision rather than something noticed later.
+Linux artifacts are unsigned, which `RELEASE-TRUST.md` also states: the AppImage lane needs
+no signing secret, only its smoke proof. AppImage and `.deb` have no equivalent of
+Gatekeeper or SmartScreen, and `SHA256SUMS` (§6) is the integrity story there. It is
+recorded in both places so that "Linux is not signed" stays a decision rather than
+something noticed at release time.
 
 ## 12. Which board task implements which section
 
 | Task | Implements |
 |---|---|
 | APP-5 — private native test artifacts on every pull request | §2 PR trigger, §3, §4 test-build names, §7 PR retention, §8, §10 |
-| APP-6 — signing, notarization, and platform smoke-test gates | §11 signing secrets and their absent-behavior, the smoke test each leg must pass, the §3 cross-compile caveat |
-| APP-7 — publish tagged installer builds as a gated draft release | §2 tag trigger, §5, §6, §9, §7 release retention, §8 elevated job |
+| APP-6 — signing, notarization, and platform smoke-test gates | Already largely landed as `RELEASE-TRUST.md` and `scripts/verify-release-trust.mjs`. From this contract: §11's absent-secret behavior and the §3 cross-compile caveat, which costs the affected leg its native smoke test. |
+| APP-7 — publish tagged installer builds as a gated draft release | §2 tag trigger, §5, §6, §9, §7 release retention, §8 elevated job and `release-signing` environment, and invoking the release-trust gate per §10 |
 
 A workflow that satisfies its rows here satisfies its task. A workflow that needs to break
-a rule here changes this document first, in its own reviewed pull request.
+a rule here changes this document first, in its own reviewed pull request — and if the rule
+it needs to break belongs to `RELEASE-TRUST.md`, it changes that one instead.

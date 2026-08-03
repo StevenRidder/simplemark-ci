@@ -40,8 +40,10 @@ test('a pasted unified diff renders as a coloured review view', async ({ page })
 test('a pasted ANSI capture renders coloured, not as escape soup', async ({ page }) => {
   await paste(page, '[32m✓ 56 passed[0m\n[31m✗ 1 failed[0m')
 
-  await expect(page.locator('.ansi-card .ansi-32')).toContainText('✓ 56 passed')
-  await expect(page.locator('.ansi-card .ansi-31')).toContainText('✗ 1 failed')
+  // The 16 base colours resolve to theme variables, not fixed classes, so a
+  // terminal green stays legible on both reader grounds (RENDERERS.md rule 3).
+  await expect(page.locator('.ansi-card span[style*="--ansi-2"]')).toContainText('✓ 56 passed')
+  await expect(page.locator('.ansi-card span[style*="--ansi-1"]')).toContainText('✗ 1 failed')
 })
 
 test('pasted JSON becomes a collapsible tree', async ({ page }) => {

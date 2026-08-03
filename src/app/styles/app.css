@@ -1904,19 +1904,35 @@ section.editor {
   text-align: left;
 }
 
-/* ANSI: the 8 + bright foregrounds, muted like a calm terminal. */
-.ansi-1 { font-weight: 700; }
-.ansi-2 { opacity: 0.65; }
-.ansi-3 { font-style: italic; }
-.ansi-4 { text-decoration: underline; }
-.ansi-30, .ansi-90 { color: var(--ink-3); }
-.ansi-31, .ansi-91 { color: #c4554d; }
-.ansi-32, .ansi-92 { color: #4d8a57; }
-.ansi-33, .ansi-93 { color: var(--accent); }
-.ansi-34, .ansi-94 { color: #4a76b8; }
-.ansi-35, .ansi-95 { color: #a3599e; }
-.ansi-36, .ansi-96 { color: #3d8f8a; }
-.ansi-37, .ansi-97 { color: var(--ink); }
+/*
+ * The 16 named ANSI colours as theme variables. Indices 16-255 and truecolor
+ * are absolute and come through as literal values from the parser; only these
+ * names get to follow the reader's ground, which is what keeps a terminal
+ * green legible on both paper and dark.
+ */
+:root {
+  --ansi-0: #4a4741;  --ansi-8: #6f6b64;
+  --ansi-1: #b4433c;  --ansi-9: #c4554d;
+  --ansi-2: #3f7a4c;  --ansi-10: #4d8a57;
+  --ansi-3: #9a6714;  --ansi-11: #b57d1f;
+  --ansi-4: #3a66a8;  --ansi-12: #4a76b8;
+  --ansi-5: #914a8c;  --ansi-13: #a3599e;
+  --ansi-6: #2d7f7a;  --ansi-14: #3d8f8a;
+  --ansi-7: #6f6b64;  --ansi-15: #242321;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ansi-0: #56534d;  --ansi-8: #7d7972;
+    --ansi-1: #e08a83;  --ansi-9: #eb9d96;
+    --ansi-2: #8fc79b;  --ansi-10: #a2d5ad;
+    --ansi-3: #ddb06a;  --ansi-11: #ecc07d;
+    --ansi-4: #8fb3e8;  --ansi-12: #a3c2f0;
+    --ansi-5: #d6a2d1;  --ansi-13: #e2b3dd;
+    --ansi-6: #86ccc7;  --ansi-14: #99d9d4;
+    --ansi-7: #cfcbc4;  --ansi-15: #efede7;
+  }
+}
 
 /* Diff: whole-line tinting, readable in both themes. */
 .diff-line { display: block; padding: 0 6px; }

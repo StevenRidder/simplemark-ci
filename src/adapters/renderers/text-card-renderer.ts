@@ -1,4 +1,5 @@
 import type { DiagramRenderer, RenderedDiagram } from '../../application/index.js'
+import { ansiToHtml } from './ansi.js'
 
 /**
  * Renders the paste-exhaust languages — ANSI captures, unified diffs, JSON,
@@ -17,7 +18,7 @@ export class TextCardRenderer implements DiagramRenderer {
   async render(language: string, source: string): Promise<RenderedDiagram> {
     switch (language) {
       case 'ansi':
-        return { ok: true, markup: renderAnsi(source) }
+        return { ok: true, markup: `<pre class="text-card ansi-card">${ansiToHtml(source)}</pre>` }
       case 'diff':
         return { ok: true, markup: renderDiff(source) }
       case 'json':
@@ -38,39 +39,6 @@ function esc(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-}
-
-/**
- * SGR only: colours 30–37/90–97, backgrounds 40–47/100–107, bold/dim/italic/
- * underline, reset. Anything else (cursor movement, erase) is stripped —
- * a paste renders the text, not the animation.
- */
-function renderAnsi(source: string): string {
-  // eslint-disable-next-line no-control-regex
-  const SGR = /\[([0-9;]*)m/g
-  let out = ''
-  let open = 0
-  let last = 0
-  for (let match = SGR.exec(source); match !== null; match = SGR.exec(source)) {
-    out += esc(source.slice(last, match.index))
-    last = match.index + match[0].length
-    const codes = (match[1] === '' ? '0' : match[1]!).split(';')
-    for (const code of codes) {
-      if (code === '0') {
-        out += '</span>'.repeat(open)
-        open = 0
-      } else if (/^(1|2|3|4|3[0-7]|9[0-7]|4[0-7]|10[0-7])$/.test(code)) {
-        out += `<span class="ansi-${code}">`
-        open += 1
-      }
-    }
-  }
-  out += esc(source.slice(last))
-  out += '</span>'.repeat(open)
-  // Strip non-SGR escapes so they cannot leak into the text.
-  // eslint-disable-next-line no-control-regex
-  out = out.replace(/\[[0-9;]*[A-LN-Za-ln-z]/g, '')
-  return `<pre class="text-card ansi-card">${out}</pre>`
 }
 
 function renderDiff(source: string): string {

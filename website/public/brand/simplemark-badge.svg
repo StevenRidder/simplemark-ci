@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">SimpleMark badge</title>
+  <desc id="desc">A capital M and downward arrow on an amber tile.</desc>
+  <rect width="256" height="256" rx="54" fill="#D08A32"/>
+  <g fill="none" stroke="#FFF7EA" stroke-linecap="round" stroke-linejoin="round" stroke-width="24">
+    <path d="M39 185V71l52 60 52-60v114"/>
+    <path d="M199 70v103"/>
+    <path d="m169 143 30 31 30-31"/>
+  </g>
+</svg>

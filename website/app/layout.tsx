@@ -20,9 +20,9 @@ export async function generateMetadata(): Promise<Metadata> {
     title,
     description,
     icons: {
-      icon: "/brand/simplemark-logo-512.png",
-      shortcut: "/brand/simplemark-logo-512.png",
-      apple: "/brand/simplemark-logo-512.png",
+      icon: "/brand/simplemark-badge.svg",
+      shortcut: "/brand/simplemark-badge.svg",
+      apple: "/brand/simplemark-badge-512.png",
     },
     openGraph: { title, description, type: "website", images: [{ url: socialImage, width: 1733, height: 907, alt: title }] },
     twitter: { card: "summary_large_image", title, description, images: [socialImage] },

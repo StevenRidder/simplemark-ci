@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">SimpleMark</title>
+  <desc id="desc">A document with reading lines and an amber Markdown badge.</desc>
+  <g fill="none" stroke="#242321" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M152 52h178l94 94v278a24 24 0 0 1-24 24H152a24 24 0 0 1-24-24V76a24 24 0 0 1 24-24Z" stroke-width="28"/>
+    <path d="M330 52v78a16 16 0 0 0 16 16h78" stroke-width="28"/>
+    <path d="M214 194h142M214 242h142M214 290h100" stroke-width="22"/>
+  </g>
+  <rect x="42" y="280" width="266" height="184" rx="38" fill="#D08A32"/>
+  <g fill="none" stroke="#FFF7EA" stroke-linecap="round" stroke-linejoin="round" stroke-width="23">
+    <path d="M78 416v-88l50 54 50-54v88"/>
+    <path d="M242 328v78"/>
+    <path d="m215 382 27 27 27-27"/>
+  </g>
+</svg>

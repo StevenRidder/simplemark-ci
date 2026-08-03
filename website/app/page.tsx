@@ -7,7 +7,7 @@ function Brand({ footer = false }: { footer?: boolean }) {
     <a className={`brand${footer ? " brand--footer" : ""}`} href="#top" aria-label="SimpleMark home">
       <Image
         className="brand__mark"
-        src="/brand/simplemark-logo-512.png"
+        src="/brand/simplemark-logo.svg"
         alt=""
         width={42}
         height={42}
@@ -174,7 +174,7 @@ flowchart LR
           <div className="paper-stack" aria-hidden="true">
             <div className="paper-stack__back" />
             <div className="paper-stack__front">
-              <Image src="/brand/simplemark-logo-512.png" alt="" width={78} height={78} />
+              <Image src="/brand/simplemark-logo.svg" alt="" width={78} height={78} />
               <span /> <span /> <span className="short" />
               <div className="paper-diagram"><i /><b>→</b><i /><b>→</b><i /></div>
             </div>
@@ -195,7 +195,7 @@ flowchart LR
       </section>
 
       <section className="download shell" id="download">
-        <Image className="download__mark" src="/brand/simplemark-logo-512.png" alt="" width={108} height={108} />
+        <Image className="download__mark" src="/brand/simplemark-logo.svg" alt="" width={108} height={108} />
         <p className="kicker">Pre-alpha</p>
         <h2>Download SimpleMark.</h2>
         <p>The first signed macOS build is being prepared. Follow the repository now, and this page will become the simple download home when it is ready.</p>

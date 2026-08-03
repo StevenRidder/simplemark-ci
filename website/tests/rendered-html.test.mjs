@@ -25,7 +25,8 @@ test("server-renders the SimpleMark product site", async () => {
   assert.match(html, /macOS build — coming soon/);
   assert.match(html, /What is not ready/);
   assert.match(html, /simplemark-demo\.gif/);
-  assert.match(html, /simplemark-logo-512\.png/);
+  assert.match(html, /simplemark-logo\.svg/);
+  assert.match(html, /simplemark-badge\.svg/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Your site is taking shape/);
 });
 

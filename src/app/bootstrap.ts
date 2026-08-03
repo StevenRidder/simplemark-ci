@@ -6,6 +6,7 @@ import { createFindBar } from './ui/find-bar.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import type { WindowChrome } from './ui/window-chrome.js'
 import type { SaveState } from './ui/window-chrome.js'
+import type { WorkspaceOptions } from './ui/window-chrome.js'
 import { DEFAULT_PREFERENCES, normalisePreferences, preferenceVariables } from './reader-preferences.js'
 import type { ReaderPreferences } from './reader-preferences.js'
 
@@ -49,10 +50,14 @@ export interface ComposeOptions {
   readonly autosaveMs?: number
   /** Honest confirmation for platforms that save a downloaded replacement. */
   readonly saveSuccessMessage?: string
+  /** Default for the optional in-window formatting strip when no preference exists. */
+  readonly stylesBarDefault?: boolean
   /** Platform hook for opening a real file; absent when the platform cannot. */
   readonly onOpenFile?: () => void
   /** Shown on the disabled open control when onOpenFile is absent. */
   readonly openFileUnavailableReason?: string
+  /** Shared navigation supplied by the platform composition root. */
+  readonly workspace?: WorkspaceOptions
 }
 
 const STYLES_BAR_KEY = 'simplemark.styles-bar-visible'
@@ -66,7 +71,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   // whole page rather than any selection.
   const storage = options.preferenceStorage ?? readPreferenceStorage()
   let preferences = loadPreferences(storage)
-  let stylesBarVisible = loadStylesBarVisible(storage)
+  let stylesBarVisible = loadStylesBarVisible(storage, options.stylesBarDefault ?? true)
   applyPreferences(preferences)
 
   let editor: MilkdownEditor | undefined
@@ -88,6 +93,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     filePath: options.filePath,
     onOpenFile: options.onOpenFile,
     openFileUnavailableReason: options.openFileUnavailableReason,
+    workspace: options.workspace,
     onSave: () => void save(),
     onInsertAsset: ports.assets === undefined
       ? undefined
@@ -185,12 +191,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 }
 
 /** A shell preference, never part of the Markdown document. */
-function loadStylesBarVisible(storage: Pick<Storage, 'getItem'>): boolean {
+function loadStylesBarVisible(storage: Pick<Storage, 'getItem'>, fallback: boolean): boolean {
   try {
     const saved = storage.getItem(STYLES_BAR_KEY)
-    return saved === null ? true : saved === 'true'
+    return saved === null ? fallback : saved === 'true'
   } catch {
-    return true
+    return fallback
   }
 }
 

@@ -274,9 +274,17 @@ The document is the default and persistent state. Markdown punctuation is not sh
 the user moved the cursor. A click selects or enters the exact sentence or block being corrected;
 source controls disappear again when that correction ends.
 
-**The initial layout is one document canvas.** No tag sidebar, note list, file tree, activity panel,
-chat rail, or workspace navigation ships in the first product proof. Native open/recent-file
-affordances may exist in window chrome without turning the app into a library.
+**The document remains the primary surface, inside a calm three-pane workspace when a notes folder
+is open.** The left pane is a small folder/source list; the middle pane is a spacious, Bear-like
+note index (title, one-line preview, modified time, and a quiet pin); the right pane is the document. The index is
+derived from the Markdown folder, never a second source of truth. Both panes can collapse into a
+single-document focus view. There is no permanent activity, chat, agent, or inspector rail.
+
+The shared web surface owns these panes, note selection, search, and focus mode. The native shell
+owns macOS window chrome, menus, filesystem access, and watching. In particular, the web view must
+never draw imitation traffic lights or an imitation macOS menu bar.
+The web starts with its compact formatting strip visible; native starts without it because the macOS
+menus already expose those commands. View can restore the strip when wanted.
 
 **Formatting bubble** on selection, plus keyboard shortcuts and live input rules (`**bold**` renders as you type):
 
@@ -358,22 +366,27 @@ The governing rule: **failures are visible and local.** No silent fallbacks, no 
 ## 10. Wireframe
 
 Interactive versions: [`wireframe.html`](wireframe.html) retains the richer lifecycle exploration;
-[`wireframe-bear.html`](wireframe-bear.html) is the current single-canvas direction: it borrows Bear's
-quiet window chrome and warm reading treatment without adopting a permanent library, note list, or
-inspector. Its top formatting strip is present by request, but the page remains the primary surface.
+[`wireframe-bear.html`](wireframe-bear.html) establishes the warm reading treatment. The current
+application direction uses that document surface inside the compact three-pane layout above, without
+adopting a permanent inspector or activity rail. Its top formatting strip is present by request, but
+the page remains the primary surface.
+The approved pane behavior, observed Bear menu inventory, native/shared command boundary, and
+delivery order are specified in [`NATIVE-WORKSPACE.md`](NATIVE-WORKSPACE.md).
 The original wireframe's **AI working**,
 **Redirecting**, and **Stopped** states illustrate a later capability and are not the first product
 surface under [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md).
 
 ### 10.1 Main window
 
-The POC is one document window. Opening a file goes directly to the page. Reader preferences and
-file actions live in restrained window chrome. A single narrow formatting strip remains at the top
+The first runnable browser build uses a clearly labelled in-memory demo workspace; it proves the
+shared shell without claiming browser fixture notes are a chosen folder. Native and folder-capable
+browser adapters replace that fixture with a scanned local folder. Reader preferences and file
+actions live in restrained window chrome. A single narrow formatting strip remains at the top
 by explicit product choice: it contains only real, everyday document commands (heading level,
 emphasis, lists, checklist, table, link, and technical-block insertion). It is not a second pane,
 mode switcher, or an excuse to expose every implementation capability.
 
-There is no agent pane, activity sidebar, file tree, workspace chooser, model picker, or chat panel.
+There is no agent pane, activity sidebar, model picker, or chat panel.
 The first integration is the watched file: an external agent changes it and the rendered document
 updates calmly. A quiet update marker may identify changed content temporarily, but it may not turn
 ordinary refresh into a review queue.

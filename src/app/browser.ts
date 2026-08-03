@@ -11,6 +11,7 @@ import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import type { FilePort } from '../application/index.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
+import type { WorkspaceOptions } from './ui/window-chrome.js'
 
 import './styles/tokens.css'
 import './styles/app.css'
@@ -60,10 +61,87 @@ Nothing else is required for the proof: one file, one window, Mermaid, and one
 visible agent whose work can be interrupted and reversed.
 `
 
+interface DemoNote {
+  readonly id: string
+  readonly name: string
+  readonly preview: string
+  readonly markdown: string
+  readonly updatedLabel: string
+  pinned: boolean
+}
+
+const DEMO_NOTES: DemoNote[] = [
+  { id: 'architecture', name: FIXTURE_NAME, preview: 'A local document boundary for you and Codex.', markdown: FIXTURE_MARKDOWN, updatedLabel: 'Now', pinned: true },
+  { id: 'field-notes', name: 'field-notes.md', preview: 'Small observations worth keeping close.', markdown: '# Field notes\n\nA quiet notebook should disappear while you think.\n', updatedLabel: 'Today', pinned: false },
+  { id: 'ideas', name: 'ideas.md', preview: 'Paste technical material; keep the source portable.', markdown: '# Ideas\n\n- Markdown is the durable result\n- Render the useful parts\n', updatedLabel: 'Yesterday', pinned: false },
+]
+
 export async function start(root: HTMLElement): Promise<AppComposition> {
-  return mount(root, new FixtureFilePort(FIXTURE_NAME, FIXTURE_MARKDOWN), {
-    filePath: 'in-memory fixture · not a real file',
-  })
+  const ports = new Map(DEMO_NOTES.map((note) => [note.id, new FixtureFilePort(note.name, note.markdown)]))
+  let activeId = DEMO_NOTES[0]!.id
+  let current: AppComposition | undefined
+
+  const openDemoNote = async (id: string, force = false): Promise<void> => {
+    const note = DEMO_NOTES.find((candidate) => candidate.id === id)
+    const port = ports.get(id)
+    if (note === undefined || port === undefined || (id === activeId && current !== undefined && !force)) return
+    if (current !== undefined) {
+      await current.save()
+      await current.editor.destroy()
+    }
+    activeId = id
+    current = await mount(root, port, {
+      filePath: 'Demo workspace · open a file to work with your own Markdown',
+      workspace: workspaceOptions(activeId, openDemoNote, createDemoNote, togglePinned),
+    })
+  }
+
+  const createDemoNote = (): void => {
+    const id = `note-${DEMO_NOTES.length + 1}`
+    const name = `new-note-${DEMO_NOTES.length + 1}.md`
+    DEMO_NOTES.push({
+      id,
+      name,
+      preview: 'A new local note — start writing.',
+      markdown: '# New note\n\n',
+      updatedLabel: 'Now',
+      pinned: false,
+    })
+    ports.set(id, new FixtureFilePort(name, '# New note\n\n'))
+    void openDemoNote(id)
+  }
+
+  const togglePinned = (id: string): void => {
+    const note = DEMO_NOTES.find((candidate) => candidate.id === id)
+    if (note === undefined) return
+    note.pinned = !note.pinned
+    void openDemoNote(activeId, true)
+  }
+
+  await openDemoNote(activeId)
+  return current!
+}
+
+function workspaceOptions(
+  activeNoteId: string,
+  onSelectNote: (id: string) => void,
+  onCreateNote: () => void,
+  onTogglePinned: (id: string) => void,
+): WorkspaceOptions {
+  return {
+    name: 'SimpleMark',
+    activeNoteId,
+    onSelectNote,
+    onCreateNote,
+    onTogglePinned,
+    notes: DEMO_NOTES.map((note) => ({
+      id: note.id,
+      title: note.name.replace(/\.md$/, ''),
+      preview: note.preview,
+      updatedLabel: note.updatedLabel,
+      pinned: note.pinned,
+    })),
+  }
 }
 
 /**
@@ -78,7 +156,12 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
 async function mount(
   root: HTMLElement,
   file: FilePort,
-  options: { filePath: string; autosaveMs?: number; saveSuccessMessage?: string },
+  options: {
+    filePath: string
+    autosaveMs?: number
+    saveSuccessMessage?: string
+    workspace?: WorkspaceOptions
+  },
 ): Promise<AppComposition> {
   const canWriteOriginal = BrowserFilePort.isSupported()
   let app: AppComposition
@@ -97,6 +180,7 @@ async function mount(
       ]),
     },
     filePath: options.filePath,
+    ...(options.workspace === undefined ? {} : { workspace: options.workspace }),
     ...(options.autosaveMs === undefined ? {} : { autosaveMs: options.autosaveMs }),
     ...(options.saveSuccessMessage === undefined ? {} : { saveSuccessMessage: options.saveSuccessMessage }),
     // Every modern browser can read an ordinary file. Chrome and Edge retain

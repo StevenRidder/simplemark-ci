@@ -79,6 +79,27 @@ export interface WindowChromeOptions {
   readonly stylesBarVisible: boolean
   /** Persists the shell-only styles-bar preference in the composition root. */
   readonly onStylesBarVisibleChange: (visible: boolean) => void
+  /** Optional shared workspace navigation. Native and browser shells supply the same intent. */
+  readonly workspace?: WorkspaceOptions | undefined
+}
+
+/** A compact, derived note index entry. Markdown remains the only durable source. */
+export interface WorkspaceNote {
+  readonly id: string
+  readonly title: string
+  readonly preview: string
+  readonly updatedLabel: string
+  readonly pinned: boolean
+}
+
+/** Shell-only navigation intent; it never reads or writes a document itself. */
+export interface WorkspaceOptions {
+  readonly name: string
+  readonly notes: readonly WorkspaceNote[]
+  readonly activeNoteId: string
+  readonly onSelectNote: (id: string) => void
+  readonly onCreateNote: () => void
+  readonly onTogglePinned: (id: string) => void
 }
 
 export interface WindowChrome {
@@ -136,11 +157,6 @@ const TRAILING: ReadonlyArray<{ label: string; icon: string; owner: string }> = 
     label: 'Share',
     owner: 'a later release',
     icon: '<path d="M12 16V3M8 7l4-4 4 4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/>',
-  },
-  {
-    label: 'Search',
-    owner: 'the Bear-parity shell',
-    icon: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
   },
 ]
 
@@ -317,12 +333,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   const left = document.createElement('div')
   left.className = 'left'
-  const lights = document.createElement('div')
-  lights.className = 'lights'
-  lights.setAttribute('aria-hidden', 'true')
-  lights.innerHTML = '<i></i><i></i><i></i>'
   left.append(
-    lights,
     commandButton(
       'tool',
       'Undo',
@@ -337,17 +348,11 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       'redo',
       options.onCommand,
     ),
-    svgButton('tool path-hide', 'Document list', '<path d="M4 6h16M4 12h16M4 18h10"/>', {
-      disabled: true,
-      owner: 'the Bear-parity shell',
-    }),
-    svgButton(
-      'tool',
-      'New note',
-      '<path d="M12 20H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9"/><path d="m14 14 6-6-4-4-6 6-1 5 5-1Z"/>',
-      { disabled: true, owner: 'the Bear-parity shell' },
-    ),
   )
+
+  const documentListButton = svgButton('tool path-hide', 'Document list', '<path d="M4 6h16M4 12h16M4 18h10"/>',
+    options.workspace === undefined ? { disabled: true, owner: 'the Bear-parity shell' } : {})
+  left.append(documentListButton)
 
   // Open a real file (APP-1). Sits with the document controls because it is
   // one: the leading cluster is navigation, the trailing cluster is editing.
@@ -723,7 +728,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   workWithAi.title = 'Work with AI — not in this build; the live-agent deliverable delivers it'
   right.append(workWithAi)
   for (const entry of TRAILING) {
-    right.append(svgButton('tool', entry.label, entry.icon, { disabled: true, owner: entry.owner }))
+    const button = svgButton('tool', entry.label, entry.icon, { disabled: true, owner: entry.owner })
+    right.append(button)
   }
 
   const stylesBar = createStylesBar(options)
@@ -762,7 +768,304 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   })
   editorSection.append(page, continueWriting)
 
-  windowEl.append(titlebar, stylesBar, editorSection)
+  const documentSurface = document.createElement('div')
+  documentSurface.className = 'document-surface'
+  documentSurface.append(stylesBar, editorSection)
+
+  if (options.workspace === undefined) {
+    windowEl.append(titlebar, documentSurface)
+  } else {
+    const workspace = options.workspace
+    const workspaceBody = document.createElement('div')
+    workspaceBody.className = 'workspace-body'
+
+    const folders = document.createElement('aside')
+    folders.className = 'workspace-folders'
+    folders.setAttribute('aria-label', 'Library')
+    const workspaceName = document.createElement('div')
+    workspaceName.className = 'workspace-name'
+    workspaceName.textContent = workspace.name
+
+    let noteFilter: 'all' | 'pinned' = 'all'
+    let sortMode: 'modified' | 'title' = 'modified'
+    let previewDensity: 'small' | 'medium' | 'large' = 'medium'
+
+    const libraryRows = document.createElement('div')
+    libraryRows.className = 'library-rows'
+    const makeLibraryRow = (
+      label: string,
+      icon: string,
+      count: string,
+      filter?: 'all' | 'pinned',
+    ): HTMLButtonElement => {
+      const row = document.createElement('button')
+      row.type = 'button'
+      row.className = 'folder-row'
+      row.innerHTML = `<span aria-hidden="true">${icon}</span><span>${label}</span><span class="folder-count">${count}</span>`
+      if (filter === undefined) {
+        row.disabled = true
+        row.title = `${label} — available when a real folder catalog is connected`
+      } else {
+        row.dataset['filter'] = filter
+      }
+      return row
+    }
+    const allNotes = makeLibraryRow('All Notes', '▤', String(workspace.notes.length), 'all')
+    const untagged = makeLibraryRow('Untagged', '◇', '—')
+    const todo = makeLibraryRow('Todo', '☑', '—')
+    const today = makeLibraryRow('Today', '◷', '—')
+    const pinned = makeLibraryRow(
+      'Pinned',
+      '⌖',
+      String(workspace.notes.filter((note) => note.pinned).length),
+      'pinned',
+    )
+    const trash = makeLibraryRow('Trash', '⌫', '')
+    const folderLabel = document.createElement('div')
+    folderLabel.className = 'library-section-label'
+    folderLabel.textContent = 'Folders'
+    const folderRoot = document.createElement('button')
+    folderRoot.type = 'button'
+    folderRoot.className = 'folder-row folder-root'
+    folderRoot.innerHTML = `<span aria-hidden="true">⌄</span><span>${workspace.name}</span><span class="folder-count">${workspace.notes.length}</span>`
+    folderRoot.disabled = true
+    libraryRows.append(allNotes, untagged, todo, today, pinned, trash, folderLabel, folderRoot)
+    folders.append(workspaceName, libraryRows)
+
+    const noteList = document.createElement('aside')
+    noteList.className = 'workspace-notes'
+    noteList.setAttribute('aria-label', 'Notes')
+    const notesHeader = document.createElement('div')
+    notesHeader.className = 'notes-header'
+
+    const notesTitle = document.createElement('button')
+    notesTitle.type = 'button'
+    notesTitle.className = 'notes-title'
+    notesTitle.setAttribute('aria-label', 'Note list options')
+    notesTitle.setAttribute('aria-expanded', 'false')
+
+    const searchButton = svgButton(
+      'notes-action',
+      'Search',
+      '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+    )
+    const newNoteButton = svgButton(
+      'notes-action',
+      'New note',
+      '<path d="M12 20H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9"/><path d="m14 14 6-6-4-4-6 6-1 5 5-1Z"/>',
+    )
+    newNoteButton.addEventListener('click', () => workspace.onCreateNote())
+
+    const searchWrap = document.createElement('div')
+    searchWrap.className = 'notes-search-wrap'
+    const search = document.createElement('input')
+    search.className = 'workspace-search'
+    search.type = 'search'
+    search.placeholder = 'Search'
+    search.setAttribute('aria-label', 'Search notes')
+    const closeSearch = document.createElement('button')
+    closeSearch.type = 'button'
+    closeSearch.className = 'notes-action close-search'
+    closeSearch.setAttribute('aria-label', 'Close search')
+    closeSearch.textContent = '×'
+    searchWrap.append(search, closeSearch)
+    notesHeader.append(notesTitle, searchButton, newNoteButton, searchWrap)
+
+    const notesMenu = document.createElement('div')
+    notesMenu.className = 'notes-menu'
+    notesMenu.hidden = true
+    notesMenu.setAttribute('aria-label', 'Note list options')
+
+    const menuRow = (label: string, action?: () => void): HTMLButtonElement => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'notes-menu-row'
+      button.textContent = label
+      if (action !== undefined) button.addEventListener('click', action)
+      return button
+    }
+    const countRow = document.createElement('div')
+    countRow.className = 'notes-menu-count'
+    countRow.textContent = `${workspace.notes.length} notes`
+    const sortModified = menuRow('Sort by modification date')
+    const sortTitle = menuRow('Sort by title')
+    const previewSmall = menuRow('Small preview')
+    const previewMedium = menuRow('Medium preview')
+    const previewLarge = menuRow('Large preview')
+    const exportNotes = menuRow('Export…')
+    exportNotes.disabled = true
+    exportNotes.title = 'Export — available when a real folder catalog is connected'
+    const showAll = menuRow('All Notes')
+    const showPinned = menuRow('Pinned')
+    notesMenu.append(
+      countRow,
+      sortModified,
+      sortTitle,
+      document.createElement('hr'),
+      previewSmall,
+      previewMedium,
+      previewLarge,
+      document.createElement('hr'),
+      exportNotes,
+      document.createElement('hr'),
+      showAll,
+      showPinned,
+    )
+
+    const noteItems = document.createElement('div')
+    noteItems.className = 'note-items'
+
+    const paintLibrary = (): void => {
+      for (const row of [allNotes, pinned]) {
+        row.classList.toggle('selected', row.dataset['filter'] === noteFilter)
+      }
+    }
+
+    const paintMenuState = (): void => {
+      notesTitle.innerHTML = `${noteFilter === 'pinned' ? 'Pinned' : 'All Notes'} <span aria-hidden="true">⌄</span>`
+      sortModified.textContent = `${sortMode === 'modified' ? '✓  ' : ''}Sort by modification date`
+      sortTitle.textContent = `${sortMode === 'title' ? '✓  ' : ''}Sort by title`
+      previewSmall.textContent = `${previewDensity === 'small' ? '✓  ' : ''}Small preview`
+      previewMedium.textContent = `${previewDensity === 'medium' ? '✓  ' : ''}Medium preview`
+      previewLarge.textContent = `${previewDensity === 'large' ? '✓  ' : ''}Large preview`
+      showAll.textContent = `${noteFilter === 'all' ? '✓  ' : ''}All Notes`
+      showPinned.textContent = `${noteFilter === 'pinned' ? '✓  ' : ''}Pinned`
+      noteList.dataset['preview'] = previewDensity
+      paintLibrary()
+    }
+
+    const paintNotes = (): void => {
+      const query = search.value.trim().toLocaleLowerCase()
+      noteItems.replaceChildren()
+      const visibleNotes = [...workspace.notes]
+        .filter((note) => noteFilter === 'all' || note.pinned)
+        .filter((note) => query === '' || `${note.title} ${note.preview}`.toLocaleLowerCase().includes(query))
+        .sort((left, right) => {
+          if (sortMode === 'title') return left.title.localeCompare(right.title)
+          return Number(right.pinned) - Number(left.pinned)
+        })
+      for (const note of visibleNotes) {
+        const item = document.createElement('div')
+        item.className = 'note-item'
+        item.classList.toggle('selected', note.id === workspace.activeNoteId)
+        const select = document.createElement('button')
+        select.type = 'button'
+        select.className = 'note-select'
+        select.setAttribute('aria-label', note.title)
+        select.setAttribute('aria-current', note.id === workspace.activeNoteId ? 'page' : 'false')
+        const title = document.createElement('strong')
+        title.textContent = note.title
+        const preview = document.createElement('span')
+        preview.textContent = note.preview
+        const updated = document.createElement('time')
+        updated.textContent = note.updatedLabel
+        select.append(title, preview, updated)
+        select.addEventListener('click', () => workspace.onSelectNote(note.id))
+        const pin = document.createElement('button')
+        pin.type = 'button'
+        pin.className = 'note-pin'
+        pin.setAttribute('aria-label', `${note.pinned ? 'Unpin' : 'Pin'} ${note.title}`)
+        pin.title = note.pinned ? 'Unpin note' : 'Pin note'
+        pin.innerHTML =
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 4 6 6-3 1-4 4-1 5-2-2-6 2 2-6-2-2 5-1 4-4Z"/></svg>'
+        pin.classList.toggle('pinned', note.pinned)
+        pin.addEventListener('click', () => workspace.onTogglePinned(note.id))
+        item.append(select, pin)
+        noteItems.append(item)
+      }
+    }
+
+    const closeNotesMenu = (): void => {
+      notesMenu.hidden = true
+      notesTitle.setAttribute('aria-expanded', 'false')
+    }
+    notesTitle.addEventListener('click', () => {
+      const open = notesMenu.hidden
+      notesMenu.hidden = !open
+      notesTitle.setAttribute('aria-expanded', String(open))
+    })
+    windowEl.addEventListener('mousedown', (event) => {
+      const target = event.target
+      if (!(target instanceof Node) || notesMenu.hidden) return
+      if (!notesMenu.contains(target) && !notesTitle.contains(target)) closeNotesMenu()
+    })
+    windowEl.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return
+      if (!notesMenu.hidden) {
+        closeNotesMenu()
+        notesTitle.focus()
+      } else if (notesHeader.classList.contains('searching')) {
+        closeSearch.click()
+      }
+    })
+    searchButton.addEventListener('click', () => {
+      closeNotesMenu()
+      notesHeader.classList.add('searching')
+      search.focus()
+    })
+    closeSearch.addEventListener('click', () => {
+      search.value = ''
+      notesHeader.classList.remove('searching')
+      paintNotes()
+      searchButton.focus()
+    })
+    allNotes.addEventListener('click', () => {
+      noteFilter = 'all'
+      paintMenuState()
+      paintNotes()
+    })
+    pinned.addEventListener('click', () => {
+      noteFilter = 'pinned'
+      paintMenuState()
+      paintNotes()
+    })
+    sortModified.addEventListener('click', () => {
+      sortMode = 'modified'
+      paintMenuState()
+      paintNotes()
+      closeNotesMenu()
+    })
+    sortTitle.addEventListener('click', () => {
+      sortMode = 'title'
+      paintMenuState()
+      paintNotes()
+      closeNotesMenu()
+    })
+    for (const [button, density] of [
+      [previewSmall, 'small'],
+      [previewMedium, 'medium'],
+      [previewLarge, 'large'],
+    ] as const) {
+      button.addEventListener('click', () => {
+        previewDensity = density
+        paintMenuState()
+        closeNotesMenu()
+      })
+    }
+    showAll.addEventListener('click', () => {
+      noteFilter = 'all'
+      paintMenuState()
+      paintNotes()
+      closeNotesMenu()
+    })
+    showPinned.addEventListener('click', () => {
+      noteFilter = 'pinned'
+      paintMenuState()
+      paintNotes()
+      closeNotesMenu()
+    })
+    search.addEventListener('input', paintNotes)
+    paintMenuState()
+    paintNotes()
+    noteList.append(notesHeader, notesMenu, noteItems)
+
+    documentListButton.addEventListener('click', () => {
+      workspaceBody.classList.toggle('navigation-hidden')
+      documentListButton.classList.toggle('active', workspaceBody.classList.contains('navigation-hidden'))
+    })
+    workspaceBody.append(folders, noteList, documentSurface)
+    windowEl.append(titlebar, workspaceBody)
+  }
   stage.append(windowEl)
 
   return {

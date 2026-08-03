@@ -438,10 +438,10 @@ test('the quiet gutter drag reorders document blocks through the editor transact
   }).toBe(true)
 })
 
-test('controls needing infrastructure stay disabled', async ({ page }) => {
-  // SHELL-1 owns these; they must not pretend to work.
-  for (const name of ['Search', 'Document list', 'New note', 'Work with AI']) {
-    await expect(page.getByRole('button', { name })).toBeDisabled()
-  }
+test('workspace controls are enabled while agent participation stays gated', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Search' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'New note' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Document list' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Work with AI' })).toBeDisabled()
   await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
 })

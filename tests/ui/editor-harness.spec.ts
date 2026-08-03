@@ -34,7 +34,7 @@ test.beforeEach(async ({ page }) => {
 
 test('renders the approved wireframe chrome', async ({ page }) => {
   await expect(page.locator('.window')).toBeVisible()
-  await expect(page.locator('.titlebar .lights i')).toHaveCount(3)
+  await expect(page.locator('.titlebar .lights')).toHaveCount(0)
   await expect(page.locator('.filename')).toContainText('architecture.md')
   await expect(page.locator('.status')).toHaveAttribute('data-state', 'saved')
   await expect(page.getByRole('button', { name: 'Save file' })).toBeEnabled()
@@ -74,15 +74,56 @@ test('is the real ProseMirror candidate, not a contenteditable demo', async ({ p
   await expect(page.locator(`${editor} h2`)).toContainText('The live document boundary')
 })
 
-test('controls that exist are real; controls needing other infrastructure stay disabled', async ({ page }) => {
+test('workspace controls are real while collaboration controls stay disabled', async ({ page }) => {
   // TOOLBAR-1 made Checklist, Table and Convert to diagram real; EDITOR-4 made
-  // portable image/file references real. Search, New note and Document list
-  // belong to SHELL-1; Work with AI to the live-agent deliverable.
+  // portable image/file references real. SHELL-1 delivers search, new note,
+  // and the document list; Work with AI remains later work.
   await expect(page.getByRole('button', { name: 'Work with AI' })).toBeDisabled()
   await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
-  await expect(page.getByRole('button', { name: 'Search' })).toBeDisabled()
-  await expect(page.getByRole('button', { name: 'Document list' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Search' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Document list' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'New note' })).toBeEnabled()
   await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Table' })).toBeEnabled()
+})
+
+test('switches notes, filters the local index, creates a note, and can focus the page', async ({ page }) => {
+  await expect(page.getByLabel('Library')).toContainText('All Notes3')
+  await page.getByRole('button', { name: 'field-notes', exact: true }).click()
+  await expect(page.locator('.filename')).toContainText('field-notes.md')
+  await expect(page.locator(`${editor} h1`)).toContainText('Field notes')
+
+  await page.getByRole('button', { name: 'Search' }).click()
+  await page.getByRole('searchbox', { name: 'Search notes' }).fill('ideas')
+  await expect(page.getByRole('button', { name: 'ideas', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'architecture', exact: true })).toBeHidden()
+
+  await page.getByRole('button', { name: 'Pin ideas' }).click()
+  await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Document list' }).click()
+  await expect(page.locator('.workspace-body')).toHaveClass(/navigation-hidden/)
+  await page.getByRole('button', { name: 'Document list' }).click()
+  await page.getByRole('button', { name: 'New note' }).click()
+  await expect(page.locator('.filename')).toContainText('new-note-4.md')
+  await expect(page.locator(`${editor} h1`)).toContainText('New note')
+})
+
+test('note-list options provide Bear-like sorting, density, and pinned views', async ({ page }) => {
+  await page.getByRole('button', { name: 'Note list options' }).click()
+  const options = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
+  await expect(options).toBeVisible()
+  await expect(options.getByText('3 notes')).toBeVisible()
+
+  await options.getByRole('button', { name: 'Small preview' }).click()
+  const notes = page.getByRole('complementary', { name: 'Notes' })
+  await expect(notes).toHaveAttribute('data-preview', 'small')
+  await expect(notes.locator('.note-select span').first()).toHaveCSS('display', 'none')
+
+  await page.getByRole('button', { name: 'Note list options' }).click()
+  await page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') }).getByRole('button', { name: 'Pinned' }).click()
+  await expect(page.getByRole('button', { name: 'architecture', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'field-notes', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'ideas', exact: true })).toHaveCount(0)
 })
 
 test('typing flows through the application API and advances the document revision', async ({

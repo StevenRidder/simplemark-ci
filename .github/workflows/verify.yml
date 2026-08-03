@@ -1,7 +1,9 @@
 # The SimpleMark gate.
 #
 # Runs `scripts/simplemark_ci.sh` — the same script contributors run locally, so
-# "green on my machine" and "green in CI" mean the same thing.
+# "green on my machine" and "green in CI" mean the same thing. Pull requests run
+# the fast admission scope; GitHub's native merge queue runs the full scope on the
+# synthetic merge-group commit that will actually land.
 #
 # `workflow_dispatch` is required: scripts/ci-sandbox.sh dispatches this workflow
 # by name on the public CI sandbox and gates on the resulting run for the exact
@@ -9,16 +11,17 @@
 name: verify
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: verify-${{ github.ref }}
+  # A merge-group ref is unique to its queue position. Do not let a newer PR-head
+  # admission run cancel the full proof for an already-admitted queue entry.
+  group: verify-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -55,24 +58,25 @@ jobs:
         with:
           node-version: '22'
 
-      # The gate's test:ui step drives a real browser. Installing Chromium here
-      # rather than inside the gate keeps the local run fast — a contributor who
-      # already has browsers does not re-download them on every gate run — while
-      # CI stays hermetic. Skipped entirely before the package exists, so the
-      # gate can still fail with its own honest message.
+      # The full gate drives a real browser. A PR head receives a quick admission
+      # check only; the queue owns the expensive browser proof for the exact
+      # merge-group SHA. This avoids running the 129-test browser suite twice.
       - name: Install Chromium for the UI gate
-        if: steps.lock.outputs.present == 'true'
+        if: github.event_name != 'pull_request' && steps.lock.outputs.present == 'true'
         run: npm ci && npx playwright install --with-deps chromium
 
-      - name: Run the SimpleMark gate
+      - name: Run the SimpleMark ${{ github.event_name == 'pull_request' && 'admission gate' || 'merge-group gate' }}
         env:
           SIMPLEMARK_CI_STRICT: '1'
-          SIMPLEMARK_CI_SCOPE: full
+          SIMPLEMARK_CI_SCOPE: ${{ github.event_name == 'pull_request' && 'fast' || 'full' }}
+          # The full path installed dependencies before Chromium. The fast PR
+          # admission path installs normally inside the shared canonical script.
+          SIMPLEMARK_CI_SKIP_INSTALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
           CI_RESULT_REPORT: .artifacts/ci-result.json
         run: bash scripts/simplemark_ci.sh
 
       - name: Upload Playwright receipt
-        if: always()
+        if: ${{ always() && github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v6
         with:
           name: ui-playwright-${{ github.sha }}
@@ -80,7 +84,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload CI result
-        if: always()
+        if: ${{ always() && github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v6
         with:
           name: ci-result-${{ github.sha }}

@@ -15,9 +15,15 @@ STRICT="${SIMPLEMARK_CI_STRICT:-0}"
 SCOPE="${SIMPLEMARK_CI_SCOPE:-full}"
 FAIL_FAST="${SIMPLEMARK_CI_FAIL_FAST:-0}"
 RESULT_REPORT="${CI_RESULT_REPORT:-.artifacts/ci-result.json}"
+SKIP_INSTALL="${SIMPLEMARK_CI_SKIP_INSTALL:-0}"
 
 if [ "$SCOPE" != "fast" ] && [ "$SCOPE" != "full" ]; then
   echo "Unsupported SIMPLEMARK_CI_SCOPE=$SCOPE (expected fast or full)." >&2
+  exit 2
+fi
+
+if [ "$SKIP_INSTALL" != "0" ] && [ "$SKIP_INSTALL" != "1" ]; then
+  echo "Unsupported SIMPLEMARK_CI_SKIP_INSTALL=$SKIP_INSTALL (expected 0 or 1)." >&2
   exit 2
 fi
 
@@ -126,13 +132,21 @@ fi
 record "package" "passed" ""
 
 section "install"
-if [ -f package-lock.json ]; then
+if [ "$SKIP_INSTALL" = "1" ]; then
+  if [ ! -d node_modules ]; then
+    echo "SIMPLEMARK_CI_SKIP_INSTALL=1 requires a preinstalled node_modules directory." >&2
+    exit 2
+  fi
+  echo "reusing preinstalled node_modules"
+  record "install" "reused" "preinstalled by caller"
+elif [ -f package-lock.json ]; then
   npm ci
+  record "install" "passed" ""
 else
   echo "no package-lock.json — falling back to npm install"
   npm install
+  record "install" "passed" ""
 fi
-record "install" "passed" ""
 
 section "git hygiene"
 if git diff --check; then

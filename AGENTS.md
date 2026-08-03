@@ -28,10 +28,11 @@ Every MCP call must pass `project="simplemark"`; the local server config is in
 
 - Fetch the live working agreement (`get_working_agreement`) at session start. It
   overrides anything written here about workflow and provenance.
-- The canonical repo `StevenRidder/simplemark` is the only `done` / `merge_provenance`
+- The canonical repo `6th-Element-Labs/simplemark` is the only `done` / `merge_provenance`
   / `code_truth` authority. `simplemark-ci` is `verification_only` and can never prove Done.
 - Agents own their work end to end: open the PR, and once the required status is
-  green, merge it. There is no human review step in this loop.
+  green, add it to the GitHub merge queue. GitHub runs the full gate on the
+  merge-group commit and owns landing. There is no human review step in this loop.
 - `complete_claim(evidence=...)` with branch, head SHA, and PR URL moves the task to
   In Review; Done is then stamped from merge provenance on the default branch. That
   is a bookkeeping distinction, not a gate — merging is what produces the provenance.

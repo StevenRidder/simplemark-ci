@@ -122,6 +122,11 @@ export interface WorkspaceOptions {
   readonly onSelectCollection?: (id: string) => void
   /** Persists the toggle and returns the authoritative next state. */
   readonly onTogglePinned?: (id: string) => boolean
+  readonly onCopyText?: (text: string) => Promise<void>
+  readonly onCopyMarkdown?: (id: string) => Promise<void>
+  readonly onDuplicateNote?: (id: string) => Promise<void>
+  readonly onExportNote?: (id: string) => Promise<void>
+  readonly onTrashNote?: (id: string) => Promise<void>
 }
 
 export type WorkspaceMode = 'all' | 'notes' | 'editor'
@@ -1359,28 +1364,23 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     let contextNote: WorkspaceNote | undefined
     const contextRow = (
       label: string,
-      action?: () => void,
+      action: () => void | Promise<void>,
     ): HTMLButtonElement => {
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'note-context-row'
       button.textContent = label
       button.setAttribute('role', 'menuitem')
-      if (action === undefined) button.disabled = true
-      else button.addEventListener('click', () => {
-        action()
+      button.addEventListener('click', () => {
+        void action()
         noteContextMenu.hidden = true
       })
+      button.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        button.click()
+      })
       return button
-    }
-    const copyText = (text: string | undefined): void => {
-      if (text === undefined) return
-      const write = navigator.clipboard?.writeText(text)
-      if (write === undefined) {
-        window.prompt('Copy', text)
-        return
-      }
-      void write.catch(() => { window.prompt('Copy', text) })
     }
     const contextPin = contextRow('Pin To Top', () => {
       if (contextNote !== undefined) toggleWorkspacePin(contextNote.id)
@@ -1388,29 +1388,40 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const contextOpen = contextRow('Open', () => {
       if (contextNote !== undefined) workspace.onSelectNote?.(contextNote.id)
     })
-    const contextCopyLink = contextRow('Copy Link', () => copyText(contextNote?.portableLink))
+    const contextCopyMarkdown = contextRow('Copy Markdown', async () => {
+      if (contextNote !== undefined) await workspace.onCopyMarkdown?.(contextNote.id)
+    })
+    const contextCopyLink = contextRow('Copy Link', async () => {
+      if (contextNote?.portableLink !== undefined) {
+        await workspace.onCopyText?.(contextNote.portableLink)
+      }
+    })
     const contextCopyIdentifier = contextRow(
       'Copy Identifier',
-      () => copyText(contextNote?.identifier ?? contextNote?.title),
+      async () => {
+        const identifier = contextNote?.identifier ?? contextNote?.title
+        if (identifier !== undefined) await workspace.onCopyText?.(identifier)
+      },
     )
-    const contextNewWindow = contextRow('Open In New Window')
-    contextNewWindow.title = 'Multiple document windows are not implemented yet'
-    const contextDelete = contextRow('Delete')
-    contextDelete.title = 'Delete will be enabled only with recoverable Trash support'
-    const contextDuplicate = contextRow('Duplicate')
-    contextDuplicate.title = 'Duplicate is not implemented yet'
+    const contextExport = contextRow('Export As…', async () => {
+      if (contextNote !== undefined) await workspace.onExportNote?.(contextNote.id)
+    })
+    const contextDelete = contextRow('Move to Trash', async () => {
+      if (contextNote !== undefined) await workspace.onTrashNote?.(contextNote.id)
+    })
+    const contextDuplicate = contextRow('Duplicate', async () => {
+      if (contextNote !== undefined) await workspace.onDuplicateNote?.(contextNote.id)
+    })
     const contextDivider = (): HTMLHRElement => document.createElement('hr')
     noteContextMenu.append(
       contextPin,
       contextDivider(),
       contextOpen,
-      contextCopyLink,
-      contextCopyIdentifier,
-      contextDivider(),
-      contextNewWindow,
-      contextDelete,
-      contextDivider(),
-      contextDuplicate,
+      ...(workspace.onCopyMarkdown === undefined ? [] : [contextCopyMarkdown]),
+      ...(workspace.onCopyText === undefined ? [] : [contextCopyLink, contextCopyIdentifier]),
+      ...(workspace.onExportNote === undefined ? [] : [contextDivider(), contextExport]),
+      ...(workspace.onDuplicateNote === undefined ? [] : [contextDuplicate]),
+      ...(workspace.onTrashNote === undefined ? [] : [contextDivider(), contextDelete]),
     )
 
     const paintLibrary = (): void => {
@@ -1497,7 +1508,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
           contextPin.textContent = note.pinned ? 'Unpin' : 'Pin To Top'
           contextPin.disabled = workspace.onTogglePinned === undefined
           contextOpen.disabled = workspace.onSelectNote === undefined
-          contextCopyLink.disabled = note.portableLink === undefined
+          contextCopyLink.disabled = note.portableLink === undefined || workspace.onCopyText === undefined
           noteContextMenu.hidden = false
           noteContextMenu.style.left = `${event.clientX}px`
           noteContextMenu.style.top = `${event.clientY}px`

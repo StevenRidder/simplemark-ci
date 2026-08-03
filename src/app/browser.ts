@@ -93,7 +93,17 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     activeId = id
     current = await mount(root, port, {
       filePath: 'Demo workspace · open a file to work with your own Markdown',
-      workspace: workspaceOptions(activeId, openDemoNote, createDemoNote, togglePinned),
+      workspace: workspaceOptions(
+        activeId,
+        openDemoNote,
+        createDemoNote,
+        togglePinned,
+        (text) => navigator.clipboard.writeText(text),
+        async (id) => {
+          const markdown = DEMO_NOTES.find((candidate) => candidate.id === id)?.markdown
+          if (markdown !== undefined) await navigator.clipboard.writeText(markdown)
+        },
+      ),
     })
   }
 
@@ -128,6 +138,8 @@ function workspaceOptions(
   onSelectNote: (id: string) => void,
   onCreateNote: () => void,
   onTogglePinned: (id: string) => boolean,
+  onCopyText: (text: string) => Promise<void>,
+  onCopyMarkdown: (id: string) => Promise<void>,
 ): WorkspaceOptions {
   return {
     name: 'SimpleMark',
@@ -135,8 +147,12 @@ function workspaceOptions(
     onSelectNote,
     onCreateNote,
     onTogglePinned,
+    onCopyText,
+    onCopyMarkdown,
     notes: DEMO_NOTES.map((note) => ({
       id: note.id,
+      identifier: note.name,
+      portableLink: `./${note.name}`,
       title: note.name.replace(/\.md$/, ''),
       preview: note.preview,
       updatedLabel: note.updatedLabel,

@@ -378,7 +378,12 @@ button[disabled] {
   transform: translateX(7px);
 }
 
+.styles-menu-headers > .styles-menu-trigger {
+  gap: 0;
+}
+
 .styles-menu-headers > .styles-menu-trigger > .styles-disclosure {
+  margin-left: -2px;
   transform: translate(7px, 0.25px);
 }
 
@@ -410,8 +415,8 @@ button[disabled] {
   transform: translate(9px, 0.25px);
 }
 
-.styles-strong strong {
-  font: 700 16px/1 var(--sans);
+.styles-strong svg {
+  stroke-width: 2.4;
 }
 
 .styles-emphasis em {
@@ -1617,6 +1622,7 @@ section.editor::-webkit-scrollbar {
 
 .milkdown .ProseMirror a {
   color: var(--accent);
+  cursor: pointer;
 }
 
 /*

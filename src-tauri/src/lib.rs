@@ -351,6 +351,97 @@ fn create_note(workspace_handle: String) -> Result<OpenedNote, String> {
     Err("Could not choose a unique Untitled note name".to_string())
 }
 
+#[tauri::command]
+fn duplicate_note(handle: String) -> Result<OpenedNote, String> {
+    let source = PathBuf::from(&handle);
+    let directory = source
+        .parent()
+        .ok_or_else(|| format!("{handle} has no parent folder"))?;
+    let stem = source
+        .file_stem()
+        .map(|value| value.to_string_lossy().into_owned())
+        .ok_or_else(|| format!("{handle} has no file name"))?;
+    let extension = source
+        .extension()
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "md".to_string());
+
+    for number in 1..=10_000 {
+        let suffix = if number == 1 {
+            " copy".to_string()
+        } else {
+            format!(" copy {number}")
+        };
+        let destination = directory.join(format!("{stem}{suffix}.{extension}"));
+        if destination.exists() {
+            continue;
+        }
+        fs::copy(&source, &destination).map_err(|error| {
+            format!(
+                "Could not duplicate {} to {}: {error}",
+                source.display(),
+                destination.display()
+            )
+        })?;
+        return read_note(&destination);
+    }
+
+    Err("Could not choose an unused duplicate name".to_string())
+}
+
+#[tauri::command]
+async fn export_note(app: AppHandle, handle: String) -> Result<bool, String> {
+    let source = PathBuf::from(&handle);
+    let name = source
+        .file_name()
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "note.md".to_string());
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter("Markdown", &["md", "markdown"])
+        .set_file_name(name)
+        .blocking_save_file();
+    let Some(picked) = picked else {
+        return Ok(false);
+    };
+    let destination = picked
+        .into_path()
+        .map_err(|error| format!("That export destination has no writable path: {error}"))?;
+    fs::copy(&source, &destination).map_err(|error| {
+        format!(
+            "Could not export {} to {}: {error}",
+            source.display(),
+            destination.display()
+        )
+    })?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn trash_note(handle: String) -> Result<(), String> {
+    let path = PathBuf::from(&handle);
+    move_note_to_trash(path).map_err(|error| format!("Could not move {handle} to Trash: {error}"))
+}
+
+fn move_note_to_trash(path: PathBuf) -> Result<(), trash::Error> {
+    // trash-rs defaults to scripting Finder on macOS. That adds an Automation
+    // permission prompt and can leave the app waiting for an AppleEvent timeout.
+    // NSFileManager is the native, permission-free Trash operation and keeps
+    // this ordinary note action immediate.
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+
+        let mut context = trash::TrashContext::new();
+        context.set_delete_method(DeleteMethod::NsFileManager);
+        context.delete(path)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    trash::delete(path)
+}
+
 /// Returns the next file macOS asked SimpleMark to open.
 #[tauri::command]
 fn take_open_note_request(queue: State<'_, OpenRequestQueue>) -> Result<Option<String>, String> {
@@ -594,6 +685,7 @@ pub fn run() {
             queue_opened_paths(app, opened_markdown_args(&args, &cwd));
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(WriteLedger::default())
         .manage(OpenRequestQueue::default())
         .invoke_handler(tauri::generate_handler![
@@ -605,6 +697,9 @@ pub fn run() {
             list_workspace,
             list_workspace_folder,
             create_note,
+            duplicate_note,
+            export_note,
+            trash_note,
             take_open_note_request,
             save_note,
             watch_note,
@@ -766,5 +861,37 @@ mod tests {
             fs::read(directory.path().join("Untitled 2.md")).unwrap(),
             b"# New note\n\n"
         );
+    }
+
+    #[test]
+    fn duplicate_note_copies_bytes_without_overwriting_prior_copies() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("idea.md");
+        fs::write(&source, b"# Exact\r\n\r\nbytes").unwrap();
+        fs::write(directory.path().join("idea copy.md"), b"keep me").unwrap();
+
+        let duplicate = duplicate_note(source.display().to_string()).unwrap();
+
+        assert_eq!(duplicate.name, "idea copy 2.md");
+        assert_eq!(
+            fs::read(directory.path().join("idea copy 2.md")).unwrap(),
+            b"# Exact\r\n\r\nbytes"
+        );
+        assert_eq!(
+            fs::read(directory.path().join("idea copy.md")).unwrap(),
+            b"keep me"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_trash_removes_the_note_without_finder_automation() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("discard.md");
+        fs::write(&source, b"disposable").unwrap();
+
+        move_note_to_trash(source.clone()).unwrap();
+
+        assert!(!source.exists());
     }
 }

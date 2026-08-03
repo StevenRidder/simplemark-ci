@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 
 import { CompositeRenderer } from '../adapters/renderers/composite-renderer.js'
 import { MermaidRenderer } from '../adapters/renderers/mermaid-renderer.js'
@@ -127,6 +128,11 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
         addFolder: addFolder,
         selectCollection,
         togglePinned,
+        copyText,
+        copyMarkdown,
+        duplicateNote,
+        exportNote,
+        trashNote,
         folders: collections.folders(),
         activeCollectionId,
         openNotesCount: collections.openedCount(),
@@ -191,6 +197,77 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
   }
 
   const togglePinned = (handle: string): boolean => pins.toggle(handle)
+
+  const copyText = async (text: string): Promise<void> => {
+    await writeText(text)
+    current.setStatus('saved', 'Copied')
+  }
+
+  const copyMarkdown = async (handle: string): Promise<void> => {
+    const port = new TauriFilePort(invoke)
+    const opened = await port.openAt(handle)
+    await copyText(new TextDecoder().decode(opened.bytes))
+  }
+
+  const duplicateNote = (handle: string): Promise<void> => enqueue(async () => {
+    await current.save()
+    const duplicate = await invoke<{ readonly handle: string }>('duplicate_note', { handle })
+    if (activeCollectionId !== 'open') {
+      collections.addFolder(await catalogPort.listFolder(activeCollectionId))
+    }
+    const port = new TauriFilePort(invoke)
+    const opened = await port.openAt(duplicate.handle)
+    await install(port, opened, activeCollectionId)
+  })
+
+  const exportNote = (handle: string): Promise<void> => enqueue(async () => {
+    if (handle === activeHandle) await current.save()
+    const exported = await invoke<boolean>('export_note', { handle })
+    if (exported) current.setStatus('saved', 'Exported')
+  })
+
+  const trashNote = (handle: string): Promise<void> => enqueue(async () => {
+    if (handle === activeHandle) await current.save()
+    current.setStatus('saved', 'Moving to Trash…')
+    await invoke('trash_note', { handle })
+    collections.forgetOpened(handle)
+    for (const folder of collections.folders()) {
+      if (folder.notes.some((note) => note.handle === handle)) {
+        collections.addFolder(await catalogPort.listFolder(folder.handle))
+      }
+    }
+
+    if (handle !== activeHandle && activeHandle !== undefined) {
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(activeHandle)
+      await install(port, opened, activeCollectionId)
+      return
+    }
+
+    const catalog = collections.collection(activeCollectionId, workspaceHandle ?? '')
+    const next = catalog.notes.find((note) => note.handle !== handle)
+    if (next !== undefined) {
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(next.handle)
+      await install(port, opened, activeCollectionId)
+      return
+    }
+
+    stopWatching?.()
+    activeHandle = undefined
+    workspaceHandle = undefined
+    activeCollectionId = 'open'
+    await current.destroy()
+    current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
+      filePath: 'Demo workspace · open a file to work with your own Markdown',
+      onOpenFile: openFromPicker,
+      workspace: nativeWorkspace(WELCOME_NAME, {
+        addFolder,
+        selectCollection,
+        folders: collections.folders(),
+      }),
+    })
+  })
 
   const openFromPicker = (): void => {
     void enqueue(async () => {
@@ -385,6 +462,11 @@ function catalogWorkspace(
     readonly addFolder: () => void
     readonly selectCollection: (id: string) => void
     readonly togglePinned: (id: string) => boolean
+    readonly copyText: (text: string) => Promise<void>
+    readonly copyMarkdown: (id: string) => Promise<void>
+    readonly duplicateNote: (id: string) => Promise<void>
+    readonly exportNote: (id: string) => Promise<void>
+    readonly trashNote: (id: string) => Promise<void>
     readonly folders: readonly WorkspaceCatalog[]
     readonly activeCollectionId: string
     readonly openNotesCount: number
@@ -406,6 +488,11 @@ function catalogWorkspace(
     onAddFolder: actions.addFolder,
     onSelectCollection: actions.selectCollection,
     onTogglePinned: actions.togglePinned,
+    onCopyText: actions.copyText,
+    onCopyMarkdown: actions.copyMarkdown,
+    onDuplicateNote: actions.duplicateNote,
+    onExportNote: actions.exportNote,
+    onTrashNote: actions.trashNote,
     notes: catalog.notes.map((note) => ({
       id: note.handle,
       identifier: note.name,

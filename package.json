@@ -36,6 +36,7 @@
     "@hpcc-js/wasm-graphviz": "^1.28.0",
     "@milkdown/kit": "^7.21.3",
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "dompurify": "^3.4.12",
     "katex": "^0.18.1",
     "lowlight": "^3.3.0",

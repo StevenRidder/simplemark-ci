@@ -55,6 +55,22 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
     ],
   })
 
+  const opticalDetails = await bar.evaluate((element) => {
+    const headingTrigger = element.querySelector<HTMLElement>('.styles-menu-headers > .styles-menu-trigger')!
+    const disclosure = headingTrigger.querySelector<HTMLElement>('.styles-disclosure')!
+    const boldIcon = element.querySelector<HTMLElement>('.styles-strong svg')!
+    return {
+      headingGap: getComputedStyle(headingTrigger).columnGap,
+      headingDisclosureMargin: getComputedStyle(disclosure).marginLeft,
+      boldStroke: getComputedStyle(boldIcon).strokeWidth,
+    }
+  })
+  expect(opticalDetails).toEqual({
+    headingGap: '0px',
+    headingDisclosureMargin: '-2px',
+    boldStroke: '2.4px',
+  })
+
   await selectNewWord(page, 'calm controls')
   await bar.getByRole('button', { name: 'Bold', exact: true }).click()
   await expect.poll(() => markdown(page)).toContain('**calm controls**')

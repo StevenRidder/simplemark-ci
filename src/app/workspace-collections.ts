@@ -41,6 +41,10 @@ export class WorkspaceCollections {
     this.#opened.set(note.handle, note)
   }
 
+  forgetOpened(handle: string): void {
+    this.#opened.delete(handle)
+  }
+
   addFolder(catalog: WorkspaceCatalog): void {
     this.#folders.delete(catalog.handle)
     this.#folders.set(catalog.handle, catalog)

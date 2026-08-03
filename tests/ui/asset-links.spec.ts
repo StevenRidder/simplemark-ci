@@ -77,7 +77,9 @@ test('clicking a rendered web link opens it instead of only moving the caret', a
     document.querySelector('.milkdown .ProseMirror')!.append(link)
   })
 
-  await page.getByRole('link', { name: 'Portable reference' }).click()
+  const link = page.getByRole('link', { name: 'Portable reference' })
+  await expect(link).toHaveCSS('cursor', 'pointer')
+  await link.click()
   await expect.poll(() => page.evaluate(() =>
     (window as Window & { simplemarkOpenedLinks?: string[] }).simplemarkOpenedLinks,
   )).toEqual(['https://example.com/portable-reference'])

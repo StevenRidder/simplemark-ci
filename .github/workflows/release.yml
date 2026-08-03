@@ -1,0 +1,337 @@
+# The tagged release lane.
+#
+# `docs/RELEASE-CONTRACT.md` §2's second trigger and nothing else: an explicit
+# `v*` tag builds the four contracted targets and attaches them to a **draft**
+# GitHub Release. There is no code path in this file that publishes one (§10) —
+# promotion is `release-promote.yml`, which cannot run without the trust gate.
+#
+# The pull-request lane is `native-testbuild.yml` and never touches a Release.
+# `verify.yml` stays the fast admission and merge-queue gate. Three workflows,
+# three jobs, because a twenty-minute four-platform compile has no business in
+# the path that decides whether a change may land.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# §8: read at the top level. Exactly one job elevates, and it declares that
+# itself. No id-token, no packages, no pull-requests, no actions: write.
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancel a release build in flight: a half-uploaded draft is worse than
+  # a duplicate run, and tags do not arrive fast enough for this to queue.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # §5: the version check runs BEFORE the matrix. Four platforms should not
+  # spend twenty minutes compiling to discover a typo in a version string.
+  version:
+    name: version
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Assert the tag matches every versioned file
+        id: check
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          node scripts/assert-release-version.mjs --tag "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.leg }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      # §10: one platform's failure still lets the other three report.
+      # This improves diagnosis; it never publishes a partial release, because
+      # the release job needs every leg (see `needs` below).
+      fail-fast: false
+      matrix:
+        include:
+          - leg: macos-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+            os: macos
+            arch: arm64
+          - leg: macos-x64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+            os: macos
+            arch: x64
+          - leg: windows-x64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundles: msi,nsis
+            os: windows
+            arch: x64
+          - leg: linux-x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+            os: linux
+            arch: x64
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # §3: nothing is cross-compiled. Every runner is native to its own
+      # architecture, so this only ever confirms the host target is installed.
+      - name: Add the Rust target for this leg
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ matrix.leg }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ matrix.leg }}-cargo-
+
+      # §3: `libayatana-appindicator3-dev`, never the pre-Ayatana package — asking
+      # apt for both is a conflict, not belt and braces. `libfuse2` is for the
+      # AppImage bundling step, which runs after the slow part.
+      - name: Install the Linux system dependencies
+        if: matrix.os == 'linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf libfuse2
+
+      - name: Install the workspace dependencies
+        run: npm ci
+
+      - name: Build the native package
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          npx tauri build --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" \
+            2>&1 | tee ".artifacts/release-build-${{ matrix.leg }}.log"
+
+      # §3 and §10: assert the bundle at the path Tauri wrote it to *before*
+      # renaming, so a Tauri release that changes its output layout fails here
+      # instead of uploading nothing. Then §10's real check — the bytes are read
+      # and the container signature asserted, because a zipped `dist/` renamed to
+      # `.dmg` is the worst failure available and the extension cannot catch it.
+      #
+      # §3: the Linux `.deb` is built but is not a first-lane release asset, so
+      # it is deliberately not collected here. It becomes one when
+      # `RELEASE-TRUST.md` admits it, which needs a smoke lane of its own.
+      - name: Collect, name, and verify the installers
+        run: |
+          set -euo pipefail
+
+          version="${{ needs.version.outputs.version }}"
+          bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
+          # Kept relative to the workspace root on purpose. On the Windows
+          # runner these are Git Bash paths, and handing `/d/a/...` to a native
+          # Windows `node` depends on MSYS argument mangling to come out right.
+          out=".artifacts/release"
+          mkdir -p "$out"
+
+          collect() {
+            format="$1"
+            pattern="$2"
+            final="$3"
+            directory="$bundle/$format"
+
+            if [ ! -d "$directory" ]; then
+              echo "release: expected bundle directory $directory does not exist" >&2
+              exit 1
+            fi
+
+            source="$(find "$directory" -maxdepth 1 -type f -name "$pattern" | sort | head -n 1)"
+            if [ -z "$source" ]; then
+              echo "release: no $pattern under $directory" >&2
+              exit 1
+            fi
+
+            cp "$source" "$out/$final"
+            node scripts/verify-native-artifact.mjs \
+              --target "${{ matrix.os }}" --artifact "$out/$final"
+          }
+
+          case "${{ matrix.os }}" in
+            macos)
+              collect dmg '*.dmg' "SimpleMark-$version-macos-${{ matrix.arch }}.dmg"
+              ;;
+            windows)
+              collect msi '*.msi' "SimpleMark-$version-windows-x64.msi"
+              collect nsis '*.exe' "SimpleMark-$version-windows-x64-setup.exe"
+              ;;
+            linux)
+              collect appimage '*.AppImage' "SimpleMark-$version-linux-x64.AppImage"
+              ;;
+            *)
+              echo "release: unknown os ${{ matrix.os }}" >&2
+              exit 1
+              ;;
+          esac
+
+          ls -l "$out"
+
+      # §7: thirty days. This is a handoff between the build legs and the release
+      # job, plus a short window to diagnose a bad release. The release itself is
+      # the durable home, so nothing here needs the 90-day default.
+      - name: Upload this leg's installers
+        uses: actions/upload-artifact@v6
+        with:
+          name: simplemark-release-${{ matrix.os }}-${{ matrix.arch }}
+          path: .artifacts/release
+          if-no-files-found: error
+          retention-days: 30
+
+      # §10 permits `if: always()` on a diagnostic upload; it is the build output
+      # of a leg that may have just failed, and never becomes a shipped artifact.
+      - name: Upload the build log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: simplemark-release-log-${{ matrix.leg }}
+          path: .artifacts/release-build-${{ matrix.leg }}.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  draft:
+    name: draft release
+    # §10: every leg green. `fail-fast: false` exists to improve diagnosis, never
+    # to publish a partial release — a release missing a platform is worse than
+    # no release, because it looks complete.
+    needs: [version, build]
+    runs-on: ubuntu-22.04
+    # §8: the one job that elevates, and it declares it here rather than at the
+    # top level. The protected environment is what scopes signing material to
+    # this job instead of every job in the workflow, including a fork's.
+    permissions:
+      contents: write
+    environment: release-signing
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Download every leg's installers
+        uses: actions/download-artifact@v6
+        with:
+          pattern: simplemark-release-*-*
+          path: .artifacts/incoming
+          merge-multiple: true
+
+      # §10: a release missing a platform looks complete, so the expected set is
+      # asserted by name before anything is uploaded.
+      - name: Assert the release is complete
+        id: assets
+        run: |
+          set -euo pipefail
+          version="${{ needs.version.outputs.version }}"
+          cd .artifacts/incoming
+
+          expected=(
+            "SimpleMark-$version-macos-arm64.dmg"
+            "SimpleMark-$version-macos-x64.dmg"
+            "SimpleMark-$version-windows-x64.msi"
+            "SimpleMark-$version-windows-x64-setup.exe"
+            "SimpleMark-$version-linux-x64.AppImage"
+          )
+
+          missing=()
+          for asset in "${expected[@]}"; do
+            if [ ! -s "$asset" ]; then missing+=("$asset"); fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "release: the draft is incomplete, missing or empty:" >&2
+            printf '  %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
+
+          ls -l
+
+      # §6: one SHA256SUMS generated centrally after every leg finishes, so it is
+      # a manifest of a complete release rather than four unrelated files.
+      - name: Generate SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd .artifacts/incoming
+          rm -f SHA256SUMS
+          sha256sum SimpleMark-* > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          cat SHA256SUMS
+
+      # §9: assembled from inputs, never generated prose.
+      - name: Assemble the release notes
+        run: |
+          set -euo pipefail
+          # No `|| true` (§10). The first release legitimately has no previous
+          # tag, so that case is handled by the `if` — which is allowed to fail
+          # under `set -e` — rather than by swallowing a failure that might have
+          # been something else.
+          if previous="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null)"; then
+            range="$previous..${GITHUB_REF_NAME}"
+          else
+            range="${GITHUB_REF_NAME}"
+          fi
+          git log --format=%s "$range" > .artifacts/commits.txt
+          node scripts/release-notes.mjs \
+            --tag "${GITHUB_REF_NAME}" \
+            --sha "$(git rev-parse "${GITHUB_REF_NAME}^{commit}")" \
+            --sums .artifacts/incoming/SHA256SUMS \
+            --commits .artifacts/commits.txt \
+            > .artifacts/release-notes.md
+          cat .artifacts/release-notes.md
+
+      # §2 and §10: created with `--draft`, and there is no `gh release edit
+      # --draft=false` anywhere in this file. Publishing is `release-promote.yml`,
+      # which runs the trust gate first.
+      #
+      # `gh` rather than a third-party release action: no action to pin by SHA,
+      # and the token stays scoped to this one step (§8).
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            --draft \
+            --title "SimpleMark ${{ needs.version.outputs.version }}" \
+            --notes-file .artifacts/release-notes.md \
+            .artifacts/incoming/SimpleMark-* \
+            .artifacts/incoming/SHA256SUMS
+          echo "release: created ${GITHUB_REF_NAME} as a draft; promotion is release-promote.yml"

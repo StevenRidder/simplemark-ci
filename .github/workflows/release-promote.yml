@@ -1,0 +1,105 @@
+# The only path from draft to published.
+#
+# `docs/RELEASE-TRUST.md`: "APP-7 must invoke this gate for every platform before
+# it changes a draft release to published", called from the protected
+# `release-signing` environment. This workflow is that invocation, and it is
+# deliberately the *only* automated publish path in the repository —
+# `release.yml` creates the draft and has no code path that publishes one.
+#
+# It is manual by design. A tag arriving is not consent to publish; a person
+# dispatching this workflow is. The gate then decides whether that consent is
+# backed by evidence, and it fails closed on absent credentials, an unverified
+# signing result, or a partial smoke test.
+name: release promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to publish, e.g. v0.3.1
+        required: true
+        type: string
+
+# §8: read at the top level; the single job elevates for itself.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-promote-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: promote ${{ inputs.tag }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    # The mechanism, not a convention: environment secrets are scoped to the
+    # jobs that name the environment, so the signing material this gate checks
+    # for is unreachable from any pull-request job, including a fork's.
+    environment: release-signing
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Assert the release exists and is still a draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          state="$(gh release view "${{ inputs.tag }}" --json isDraft --jq .isDraft)"
+          if [ "$state" != "true" ]; then
+            echo "release-promote: ${{ inputs.tag }} is not a draft; refusing to act" >&2
+            exit 1
+          fi
+
+      # The evidence is what the gate reads. It is produced by APP-6's smoke
+      # lanes and attached to the draft; this workflow never synthesises it,
+      # because evidence a workflow wrote about itself proves nothing.
+      - name: Download the platform smoke evidence from the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/evidence
+          gh release download "${{ inputs.tag }}" \
+            --dir .artifacts/evidence \
+            --pattern 'platform-smoke-*.json'
+          ls -l .artifacts/evidence
+
+      # One invocation per platform. Each fails closed on its own, so a partial
+      # pass cannot promote: the first missing or incomplete platform ends the
+      # job before the publish step is ever reached.
+      - name: Verify macOS release trust
+        uses: ./.github/actions/release-trust-gate
+        with:
+          target: macos
+          evidence: .artifacts/evidence/platform-smoke-macos.json
+
+      - name: Verify Windows release trust
+        uses: ./.github/actions/release-trust-gate
+        with:
+          target: windows
+          evidence: .artifacts/evidence/platform-smoke-windows.json
+
+      - name: Verify Linux release trust
+        uses: ./.github/actions/release-trust-gate
+        with:
+          target: linux
+          evidence: .artifacts/evidence/platform-smoke-linux.json
+
+      # Reached only when all three gates above passed. Every step before this
+      # one is a hard failure, so there is no arrangement of skipped or
+      # continued-on-error steps that lands here without the evidence.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release edit "${{ inputs.tag }}" --draft=false
+          echo "release-promote: ${{ inputs.tag }} published after passing every platform trust gate"

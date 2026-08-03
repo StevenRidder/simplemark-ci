@@ -100,8 +100,10 @@ Usage: scripts/ci-sandbox.sh <command> [options] [branch]
 
 Commands:
   setup                 Verify $CI_REPO exists and add git remote '$CI_REMOTE'
-  push [--no-wait]      Push <branch>, dispatch, wait; on green the sandbox copy
-       [--keep]         is deleted automatically (--keep retains it)
+  push [--no-wait]      Push <branch>, dispatch, wait; the sandbox copy is deleted
+       [--keep]         once the canonical proof is stamped, and kept otherwise
+                        because its run is the evidence 'prove' reads (--keep
+                        always retains it)
   wait                  Wait for in-progress Actions on <branch> (default: current)
   status                Print recent Actions conclusions for <branch> (default: current)
   prove                 Stamp the canonical status after the exact SHA passed the sandbox
@@ -235,15 +237,30 @@ ls_remote_sha() {
   { GIT_TERMINAL_PROMPT=0 git -C "$ROOT" ls-remote "$remote" "$ref" 2>/dev/null || true; } | awk '{print $1}'
 }
 
+# Returns 0 only when the proof is actually stamped on the canonical SHA, so the
+# caller can gate sandbox cleanup on it. Returning success here without stamping
+# is what let `open-pr` delete the ref its own next step needed.
 maybe_stamp_existing_canonical_branch() {
   local branch="$1" sha origin_branch
   sha="$(git -C "$ROOT" rev-parse "$branch")"
   origin_branch="$(ls_remote_sha "$ORIGIN_REMOTE" "refs/heads/$branch")"
   if [ "$origin_branch" = "$sha" ]; then
     cmd_prove "$branch"
-  else
-    echo "ci-sandbox: $STATUS_CONTEXT not stamped yet; push the exact SHA to $CANONICAL_REPO and run: scripts/ci-sandbox.sh prove $branch"
+    return 0
   fi
+  echo "ci-sandbox: $STATUS_CONTEXT not stamped yet; push the exact SHA to $CANONICAL_REPO and run: scripts/ci-sandbox.sh prove $branch"
+  return 1
+}
+
+# The sandbox copy is disposable only once the proof exists on the canonical SHA.
+# Deleting it earlier destroys the evidence `prove` reads — and `prove` is the
+# only thing that can turn a green sandbox run into a canonical status.
+cleanup_sandbox_branch() {
+  local branch="$1"
+  [ "$branch" != "main" ] || return 0
+  echo "ci-sandbox: proof stamped — deleting ephemeral $CI_REPO:$branch"
+  git -C "$ROOT" push "$CI_REMOTE" --delete "$branch" \
+    || echo "ci-sandbox: WARNING: cleanup push failed; run 'scripts/ci-sandbox.sh prune' later"
 }
 
 summarize_runs() {
@@ -320,12 +337,15 @@ wait_for_runs() {
 }
 
 cmd_push() {
-  local wait=1 dispatch=1 keep=0 branch=""
+  local wait=1 dispatch=1 keep=0 stamp=1 branch=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --no-wait) wait=0; shift ;;
       --no-dispatch) dispatch=0; shift ;;
       --keep) keep=1; shift ;;
+      # Internal, for cmd_open_pr: verify on the sandbox but leave stamping and
+      # cleanup to the caller, which has to push the canonical branch first.
+      --no-stamp) stamp=0; shift ;;
       -h|--help) usage; exit 0 ;;
       *) branch="$(resolve_branch "$1")"; shift ;;
     esac
@@ -359,16 +379,19 @@ cmd_push() {
     else
       wait_for_runs "$branch" "" "" 1
     fi
-    maybe_stamp_existing_canonical_branch "$branch"
+    [ "$stamp" = 1 ] || return 0
     # Terminal cleanup, the Switchboard way (external_ci_mirror.py's
-    # _cleanup_terminal_mirror_branch): once the run is terminal and the proof
-    # is stamped on the canonical SHA, the sandbox copy has served its purpose.
-    # A failed wait dies above, so a red branch stays put for inspection —
-    # `prune` sweeps those. main is the dispatch baseline and never deleted.
-    if [ "$keep" = 0 ] && [ "$branch" != "main" ]; then
-      echo "ci-sandbox: run terminal, proof stamped — deleting ephemeral $CI_REPO:$branch"
-      git -C "$ROOT" push "$CI_REMOTE" --delete "$branch" \
-        || echo "ci-sandbox: WARNING: cleanup push failed; run 'scripts/ci-sandbox.sh prune' later"
+    # _cleanup_terminal_mirror_branch): the mirror is disposable once the run is
+    # terminal AND the proof is recorded. Switchboard can delete unconditionally
+    # because it mirrors a SHA that is already on the canonical repo — the proof
+    # target exists before the mirror does. Here the canonical push can still be
+    # ahead of us, so cleanup waits for a stamp that actually happened. A failed
+    # wait dies above, so a red branch stays put for inspection — `prune` sweeps
+    # those. main is the dispatch baseline and never deleted.
+    if maybe_stamp_existing_canonical_branch "$branch"; then
+      [ "$keep" = 1 ] || cleanup_sandbox_branch "$branch"
+    else
+      echo "ci-sandbox: keeping $CI_REPO:$branch — its run is the only evidence 'prove' can read"
     fi
   else
     echo "ci-sandbox: pushed; check $(actions_url "$branch")"
@@ -683,11 +706,17 @@ cmd_open_pr() {
 
   git -C "$ROOT" show-ref --verify --quiet "refs/heads/${branch}" || die "branch '$branch' not found locally"
 
-  cmd_push "$branch"
+  # Order matters, and it is the whole bug this function used to have. `prove`
+  # asserts the exact SHA is on BOTH remotes, so the canonical push has to happen
+  # before stamping, and the sandbox ref has to survive until after it. Letting
+  # cmd_push stamp and clean up here deleted the sandbox ref one line before
+  # `prove` went looking for it, and announced a stamp that had not happened.
+  cmd_push --no-stamp "$branch"
 
   echo "ci-sandbox: pushing $branch to canonical repo ($CANONICAL_REPO)"
   git -C "$ROOT" push -u "$ORIGIN_REMOTE" "$branch"
   cmd_prove "$branch"
+  cleanup_sandbox_branch "$branch"
 
   if gh pr view --repo "$CANONICAL_REPO" --head "$branch" >/dev/null 2>&1; then
     die "PR already exists for $branch on $CANONICAL_REPO"

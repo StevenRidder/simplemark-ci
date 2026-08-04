@@ -197,6 +197,24 @@ test('Copy Table as CSV from the menu gives spreadsheet bytes', async ({ page })
   expect(await clipboardText(page)).toBe('Region,Revenue\nWest,"1,200"\nEast,900')
 })
 
+test('the native snapshot follows the pointed block before WebKit changes selection', async ({ page }) => {
+  await openNote(page)
+  await page.locator(`${EDITOR} p`).first().click()
+
+  const table = await page.locator(`${EDITOR} table td`).first().evaluate((target) =>
+    window.simplemark!.editor.contextSelection(target).markdown,
+  )
+  expect(table).toContain('| Region | Revenue |')
+  expect(table).toContain('| West')
+  expect(table).toContain('| 1,200')
+
+  const prose = await page.locator(`${EDITOR} p`).first().evaluate((target) =>
+    window.simplemark!.editor.contextSelection(target).markdown,
+  )
+  expect(prose).toContain('Prose with **bold**')
+  expect(prose).not.toContain('| Region |')
+})
+
 test('the menu dismisses on Escape and on an outside click', async ({ page }) => {
   await openNote(page)
 

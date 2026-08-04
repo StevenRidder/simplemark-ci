@@ -74,6 +74,8 @@ export interface AppComposition {
    * copy of the editing rules (application/commands.ts).
    */
   run(command: DocumentCommandId): void
+  /** Runs a native context-menu export against the pre-AppKit selection. */
+  runNativeContextCommand(command: DocumentCommandId): void
   /** Whether the optional styles bar is showing, for the View menu checkmark. */
   stylesBarVisible(): boolean
   /**
@@ -122,6 +124,10 @@ export interface ComposeOptions {
   readonly workspace?: WorkspaceOptions
   /** Which platform owns the application chrome around the shared workspace. */
   readonly chromeMode?: 'web' | 'macos'
+  /** Supplies caret context before macOS opens WebKit's native right-click menu. */
+  readonly onNativeContextMenu?: (
+    shape: { readonly inTable: boolean; readonly inCode: boolean },
+  ) => void
 }
 
 const STYLES_BAR_KEY = 'simplemark.styles-bar-visible'
@@ -143,6 +149,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   applyPreferences(preferences)
 
   let editor: MilkdownEditor | undefined
+  let nativeContextSelection: ReturnType<MilkdownEditor['contextSelection']> | undefined
   let chrome: WindowChrome
   /**
    * Routes a registry id to whoever executes it (application/commands.ts).
@@ -474,6 +481,17 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         inCode: codeFenceContent(markdown) !== null,
       }
     },
+    ...(options.onNativeContextMenu === undefined
+      ? {}
+      : {
+          onNativeContextMenu: (
+            shape: { readonly inTable: boolean; readonly inCode: boolean },
+            target: Node | null,
+          ) => {
+            nativeContextSelection = editor?.contextSelection(target)
+            options.onNativeContextMenu?.(shape)
+          },
+        }),
     onContinueWriting: () => editor?.continueAfterLastBlock(),
     // The temporary contents popover (EDITOR-3) reads the outline fresh on
     // every open and navigates through the editor — the chrome itself never
@@ -551,10 +569,13 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
    * the document cannot control, and a success message for something that did
    * not happen is exactly the silent-wrong-state this product refuses.
    */
-  async function copySelection(id: DocumentCommandId): Promise<void> {
+  async function copySelection(
+    id: DocumentCommandId,
+    snapshot?: { readonly markdown: string; readonly html: string },
+  ): Promise<void> {
     const port = ports.clipboard
     if (port === undefined || editor === undefined) return
-    const markdown = editor.selectionMarkdown()
+    const markdown = snapshot?.markdown ?? editor.selectionMarkdown()
 
     let payload: { 'text/plain': string; 'text/html'?: string } | null = null
     let describe = 'Copied'
@@ -569,12 +590,15 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         describe = 'Copied as plain text'
         break
       case 'copyAsRichText':
-        payload = { 'text/plain': markdownToPlainText(markdown), 'text/html': editor.selectionHtml() }
+        payload = {
+          'text/plain': markdownToPlainText(markdown),
+          'text/html': snapshot?.html ?? editor.selectionHtml(),
+        }
         describe = 'Copied as rich text'
         break
       case 'copyAsHtml':
         // The markup itself is the payload here, so it travels as text.
-        payload = { 'text/plain': editor.selectionHtml() }
+        payload = { 'text/plain': snapshot?.html ?? editor.selectionHtml() }
         describe = 'Copied as HTML'
         break
       case 'copyCode': {
@@ -641,6 +665,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   return {
     element: chrome.element,
     run: runCommand,
+    runNativeContextCommand: (command) => {
+      void copySelection(command, nativeContextSelection)
+    },
     stylesBarVisible: () => chrome.stylesBarVisible(),
     setUpdateStatus: (status) => chrome.setUpdateStatus(status),
     commandState,

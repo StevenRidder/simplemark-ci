@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * EDITOR-13's hard constraint, enforced structurally: **plain Copy is not ours
- * to change.**
+ * EDITOR-14's hard constraint, enforced structurally: **the native context
+ * menu and plain Copy are not ours to replace.**
  *
  * The ordinary copy path belongs to ProseMirror and Milkdown's clipboard
  * plugin. The context menu adds choices beside it and must never wrap, proxy
@@ -54,5 +54,29 @@ describe('the ordinary copy path is untouched', () => {
   it('the context menu delegates Copy to the platform, not to an export', () => {
     const chrome = readFileSync('src/app/ui/window-chrome.ts', 'utf8')
     expect(chrome).toContain("document.execCommand('copy')")
+  })
+
+  it('returns to WebKit before the browser fallback cancels contextmenu', () => {
+    const chrome = readFileSync('src/app/ui/window-chrome.ts', 'utf8')
+    expect(chrome).toMatch(
+      /if \(isMacOS && options\.onNativeContextMenu !== undefined\) \{[\s\S]*?return\s*\}\s*event\.preventDefault\(\)/,
+    )
+  })
+
+  it('augments the unattached native menu after Copy without clearing it', () => {
+    const native = readFileSync('src-tauri/src/macos_context_menu.rs', 'utf8')
+    expect(native).toContain('NSMenuDidBeginTrackingNotification')
+    expect(native).toContain('WKMenuItemIdentifierCopy')
+    expect(native).toContain('sel!(copy:)')
+    expect(native).toContain('menu.insertItem_atIndex(&parent, copy_index as isize + 1)')
+    expect(native).not.toContain('removeAllItems')
+  })
+
+  it('keeps contextual Code and Table exports inside Copy As', () => {
+    const native = readFileSync('src-tauri/src/macos_context_menu.rs', 'utf8')
+    expect(native).toContain('if shape.in_code')
+    expect(native).toContain('"Code", "copyCode"')
+    expect(native).toContain('if shape.in_table')
+    expect(native).toContain('"CSV", "copyTableAsCsv"')
   })
 })

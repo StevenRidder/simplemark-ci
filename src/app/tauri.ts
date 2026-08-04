@@ -57,9 +57,18 @@ import './styles/print.css'
 
 export async function start(root: HTMLElement): Promise<AppComposition> {
   const controller = await startNative(root)
+  await installNativeContextMenuBridge(controller)
   await installOpenRequestBridge(controller)
   await installMarkdownDropBridge(controller)
   return controller.current()
+}
+
+async function installNativeContextMenuBridge(controller: NativeController): Promise<void> {
+  await listen<string>('native-context-menu-command', (event) => {
+    controller.current().runNativeContextCommand(
+      event.payload as Parameters<AppComposition['runNativeContextCommand']>[0],
+    )
+  })
 }
 
 interface NativeController {
@@ -564,6 +573,9 @@ async function mount(
     // has to be raised from the native side. What lands on paper is still the
     // shared print stylesheet — this only opens the door.
     onPrint: () => void invoke('print_note'),
+    onNativeContextMenu: (shape) => {
+      void invoke('set_native_context_menu_shape', { shape })
+    },
     // Phase 1 hands over the documented install rather than performing it
     // (docs/UPDATE-NOTIFICATION.md §6). One-click needs a signing key, a
     // published feed, and notarization; none of them exist, and an app that

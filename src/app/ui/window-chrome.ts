@@ -95,6 +95,11 @@ export interface WindowChromeOptions {
    * where they apply — absent beats present-and-refusing.
    */
   readonly getSelectionShape?: () => { readonly inTable: boolean; readonly inCode: boolean }
+  /** Updates the native menu bridge without replacing WebKit's context menu. */
+  readonly onNativeContextMenu?: (
+    shape: { readonly inTable: boolean; readonly inCode: boolean },
+    target: Node | null,
+  ) => void
   /** Whether the quiet, single-row editing strip is shown. This is shell state. */
   readonly stylesBarVisible: boolean
   /** Persists the shell-only styles-bar preference in the composition root. */
@@ -2301,8 +2306,45 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     }
   }
 
+  let lastNativeContext = ''
+  let lastNativeContextBlock: Element | null = null
+  const updateNativeContext = (target?: EventTarget | null): void => {
+    const element = target instanceof Element
+      ? target
+      : target instanceof Node
+        ? target.parentElement
+        : null
+    const selection = options.getSelectionShape?.() ?? { inTable: false, inCode: false }
+    const shape = {
+      inTable: element?.closest('table') != null || selection.inTable,
+      inCode: element?.closest('pre') != null || selection.inCode,
+    }
+    const key = `${shape.inTable}:${shape.inCode}`
+    const block = element?.closest('.ProseMirror > *') ?? element
+    if (key === lastNativeContext && block === lastNativeContextBlock) return
+    lastNativeContext = key
+    lastNativeContextBlock = block
+    options.onNativeContextMenu?.(shape, element)
+  }
+
+  // Hover arrives well before WebKit constructs its menu. Keep only shape
+  // transitions, so ordinary pointer movement does not become an IPC stream.
+  page.addEventListener('pointermove', (event) => {
+    if (isMacOS) updateNativeContext(event.target)
+  }, true)
+
+  // Pointerdown is the final refresh for a stationary mouse. The earlier hover
+  // update is what avoids racing AppKit's synchronous context-menu opening.
+  page.addEventListener('pointerdown', (event) => {
+    if (isMacOS && event.button === 2) updateNativeContext(event.target)
+  }, true)
+
   page.addEventListener('contextmenu', (event) => {
     if (options.onClipboardExport === undefined) return
+    if (isMacOS && options.onNativeContextMenu !== undefined) {
+      updateNativeContext(event.target)
+      return
+    }
     event.preventDefault()
     buildSelectionMenu()
     selectionMenu.hidden = false

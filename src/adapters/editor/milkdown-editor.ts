@@ -1466,6 +1466,45 @@ export class MilkdownEditor {
   }
 
   /**
+   * Captures what a context-menu export means before WebKit starts tracking.
+   *
+   * macOS selects the word beneath a right-click while its native menu is
+   * open. That visual selection must not turn "Copy Table" into "copy this
+   * word", so an existing selection is kept when the click lands inside it;
+   * otherwise the top-level block beneath the pointer is captured.
+   */
+  contextSelection(target: Node | null): { readonly markdown: string; readonly html: string } {
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const serializer = ctx.get(serializerCtx)
+      const { state } = view
+      let content = state.selection.empty
+        ? blockAround(state.selection.$from)
+        : state.doc.slice(state.selection.from, state.selection.to).content
+
+      if (target !== null && view.dom.contains(target)) {
+        try {
+          const pos = view.posAtDOM(target, 0)
+          const insideExistingSelection =
+            !state.selection.empty && pos >= state.selection.from && pos <= state.selection.to
+          if (!insideExistingSelection) content = blockAround(state.doc.resolve(pos))
+        } catch {
+          // A transient NodeView may disappear between pointermove and this
+          // capture. The current editor selection is still the honest fallback.
+        }
+      }
+
+      const fragment = DOMSerializer.fromSchema(state.schema).serializeFragment(content)
+      const host = document.createElement('div')
+      host.append(fragment)
+      return {
+        markdown: serializer(state.schema.topNodeType.create(null, content)).trim(),
+        html: host.innerHTML,
+      }
+    })
+  }
+
+  /**
    * Replaces the selection with literal text, deliberately unparsed.
    *
    * This is the whole point of Paste as Plain Text: the ordinary paste path

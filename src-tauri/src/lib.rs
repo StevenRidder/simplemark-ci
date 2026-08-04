@@ -34,6 +34,9 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State, Url};
 use tauri_plugin_dialog::DialogExt;
 
 #[cfg(target_os = "macos")]
+mod macos_context_menu;
+
+#[cfg(target_os = "macos")]
 use objc2::{sel, MainThreadMarker};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSApplication;
@@ -904,6 +907,16 @@ fn perform_macos_text_service(_service: String) -> Result<(), String> {
     Err("macOS text services are available only on macOS".to_string())
 }
 
+#[tauri::command]
+#[cfg(target_os = "macos")]
+fn set_native_context_menu_shape(shape: macos_context_menu::NativeContextMenuShape) {
+    macos_context_menu::set_selection_shape(shape);
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+fn set_native_context_menu_shape(_shape: serde_json::Value) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -935,6 +948,7 @@ pub fn run() {
             save_note,
             print_note,
             perform_macos_text_service,
+            set_native_context_menu_shape,
             build_provenance,
             watch_note,
             stop_watching_note,
@@ -942,6 +956,10 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("SimpleMark failed to start");
+
+    #[cfg(target_os = "macos")]
+    macos_context_menu::install(app.handle())
+        .expect("SimpleMark failed to install the native context menu bridge");
 
     app.run(|app, event| {
         #[cfg(target_os = "macos")]

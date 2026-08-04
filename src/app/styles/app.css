@@ -1744,42 +1744,132 @@ section.editor::-webkit-scrollbar {
   position: relative;
 }
 
-.contents-popover {
-  display: none;
+/* The document-information panel: statistics, contents, backlinks. It floats
+   over the page's trailing edge rather than taking a column, so opening it
+   never reflows the sentence being read. */
+.info-panel {
   position: absolute;
   z-index: 24;
-  top: 36px;
-  left: 0;
-  min-width: 220px;
-  max-width: 300px;
-  max-height: 60vh;
-  overflow-y: auto;
-  padding: 7px;
+  top: 14px;
+  right: 14px;
+  bottom: 14px;
+  width: 264px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
   background: color-mix(in srgb, var(--paper) 96%, transparent);
   border: 1px solid var(--line);
-  border-radius: 11px;
-  box-shadow: 0 14px 42px rgba(32, 29, 24, 0.18);
+  border-radius: 13px;
+  box-shadow: 0 14px 42px rgb(32 29 24 / 18%);
   backdrop-filter: blur(18px);
 }
 
-.contents-popover.open {
-  display: block;
+.info-panel[hidden] {
+  display: none;
 }
 
-.contents-popover .contents-empty {
-  padding: 8px 10px;
-  font-size: 11.5px;
+.info-panel-title {
+  font: 600 12px/1.2 var(--sans);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.info-panel-tabs {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 2px;
+  background: var(--soft);
+  border-radius: 8px;
+}
+
+.info-panel-tab {
+  height: 25px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  display: grid;
+  place-items: center;
+}
+
+.info-panel-tab svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.info-panel-tab:hover {
+  color: var(--ink);
+}
+
+.info-panel-tab.selected {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgb(32 29 24 / 12%);
+}
+
+.info-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.info-empty {
+  padding: 8px 2px;
+  font: 400 11.5px/1.45 var(--sans);
   color: var(--ink-3);
 }
 
-.contents-popover button {
+.info-statistics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.info-statistic {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: var(--soft);
+}
+
+.info-statistic.wide {
+  grid-column: span 2;
+}
+
+.info-statistic strong {
+  font: 600 17px/1.1 var(--sans);
+  color: var(--ink);
+}
+
+.info-statistic span {
+  font: 400 10.5px/1.2 var(--sans);
+  color: var(--ink-3);
+}
+
+/* Named, dashed, and dimmed: a measurement this shell cannot take yet reads as
+   unavailable rather than as zero. */
+.info-statistic.unavailable {
+  opacity: 0.55;
+}
+
+.info-outline button {
   display: block;
   width: 100%;
   border: 0;
   background: transparent;
   border-radius: 6px;
   text-align: left;
-  padding: 6px 10px;
+  padding: 6px 8px;
   font: 500 12px/1.35 var(--sans);
   color: var(--ink-2);
   white-space: nowrap;
@@ -1787,21 +1877,82 @@ section.editor::-webkit-scrollbar {
   text-overflow: ellipsis;
 }
 
-.contents-popover button:hover {
+.info-outline button:hover {
   background: var(--soft);
   color: var(--ink);
 }
 
-.contents-popover button[data-level='2'] {
-  padding-left: 22px;
+.info-outline button[data-level='2'] {
+  padding-left: 20px;
 }
 
-.contents-popover button[data-level='3'],
-.contents-popover button[data-level='4'],
-.contents-popover button[data-level='5'],
-.contents-popover button[data-level='6'] {
-  padding-left: 34px;
+.info-outline button[data-level='3'],
+.info-outline button[data-level='4'],
+.info-outline button[data-level='5'],
+.info-outline button[data-level='6'] {
+  padding-left: 32px;
   font-weight: 400;
+}
+
+/* The styles bar and the word count travel together, as one strip of optional
+   furniture centred under the page. */
+.styles-dock {
+  order: 2;
+  align-self: center;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.styles-dock .styles-bar {
+  order: 0;
+  align-self: auto;
+  margin: 0;
+}
+
+.word-count {
+  min-height: 37px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  box-shadow: 0 10px 30px rgb(40 35 29 / 16%);
+  backdrop-filter: blur(18px);
+  font: 500 12px/1 var(--sans);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.word-count[hidden] {
+  display: none;
+}
+
+.history-navigation {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.history-navigation[hidden] {
+  display: none;
+}
+
+/* Bear's trailing pair: the styles-bar switch reads as what it toggles. */
+.tool.styles-bar-toggle {
+  font: 600 11px/1 var(--sans);
+  letter-spacing: 0.5px;
+}
+
+.tool.styles-bar-toggle i {
+  font-style: italic;
+}
+
+.tool.styles-bar-toggle.active {
+  color: var(--accent);
 }
 
 /* Portable Markdown images and file references. The source remains an

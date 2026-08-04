@@ -329,8 +329,9 @@ test.describe('reader typography is document-level (D6)', () => {
       getComputedStyle(document.documentElement).getPropertyValue('--paper').trim(),
     )
 
-  test('defaults to the approved warm-paper theme', async ({ page }) => {
-    await expect(page.locator('html')).toHaveAttribute('data-reader-theme', 'tan')
+  test('defaults to plain white paper', async ({ page }) => {
+    await expect(page.locator('html')).toHaveAttribute('data-reader-theme', 'white')
+    expect(await paper(page)).toBe('#ffffff')
   })
 
   test('the three backgrounds change the whole page', async ({ page }) => {
@@ -343,6 +344,22 @@ test.describe('reader typography is document-level (D6)', () => {
     await page.getByRole('button', { name: 'white background' }).click()
     await expect(page.locator('html')).toHaveAttribute('data-reader-theme', 'white')
     expect(await paper(page)).toBe('#ffffff')
+  })
+
+  test('tan is visibly sepia, not a white with a rumour of warmth in it', async ({ page }) => {
+    // The previous tan was #fffefa, which switching to looked like nothing had
+    // happened. A theme has to be visibly the thing it is named after, so this
+    // pins a real colour distance rather than merely "not white".
+    await page.getByRole('button', { name: 'Text formatting' }).click()
+    await page.getByRole('button', { name: 'tan background' }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-reader-theme', 'tan')
+
+    const hex = await paper(page)
+    const [red, green, blue] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16))
+    // Warm: red leads, blue trails, and the gap is wide enough to see.
+    expect(red!).toBeGreaterThan(blue!)
+    expect(red! - blue!).toBeGreaterThan(16)
+    expect(green!).toBeGreaterThan(blue!)
   })
 
   test('text size steps up and down for the whole document, not a selection', async ({ page }) => {

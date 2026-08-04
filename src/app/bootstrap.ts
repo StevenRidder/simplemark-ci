@@ -11,8 +11,14 @@ import type { SaveState } from './ui/window-chrome.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import type { WorkspaceMode } from './ui/window-chrome.js'
 import type { StylesBarPosition } from './ui/window-chrome.js'
-import { DEFAULT_PREFERENCES, normalisePreferences, preferenceVariables } from './reader-preferences.js'
+import {
+  DEFAULT_PREFERENCES,
+  nextScale,
+  normalisePreferences,
+  preferenceVariables,
+} from './reader-preferences.js'
 import type { ReaderPreferences } from './reader-preferences.js'
+import { documentStatistics } from './document-statistics.js'
 
 /**
  * The composition root shared by every shell (ADR-0001).
@@ -154,11 +160,23 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       case 'find':
         findBar.open()
         return
+      case 'toggleStatistics':
+        chrome.toggleInfoTab('statistics')
+        return
       case 'contents':
-        chrome.openContents()
+        chrome.toggleInfoTab('contents')
+        return
+      case 'toggleBacklinks':
+        chrome.toggleInfoTab('backlinks')
+        return
+      case 'toggleWordCount':
+        chrome.toggleWordCount()
         return
       case 'toggleStylesBar':
         chrome.toggleStylesBar()
+        return
+      case 'toggleHistoryNavigation':
+        chrome.toggleHistoryNavigation()
         return
       case 'showAllPanes':
         chrome.setWorkspaceMode('all')
@@ -172,7 +190,90 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       case 'togglePinned':
         chrome.togglePinned(options.workspace?.activeNoteId ?? '')
         return
+      case 'previewSmall':
+        chrome.setPreviewDensity('small')
+        return
+      case 'previewMedium':
+        chrome.setPreviewDensity('medium')
+        return
+      case 'previewLarge':
+        chrome.setPreviewDensity('large')
+        return
+      case 'hideAttachments':
+        return
+      case 'sortByModified':
+        chrome.setNotesSort('modified')
+        return
+      case 'sortByCreated':
+        chrome.setNotesSort('created')
+        return
+      case 'sortByTitle':
+        chrome.setNotesSort('title')
+        return
+      case 'toggleNewestOnTop':
+        chrome.toggleNewestOnTop()
+        return
+      case 'sortFoldersByTitle':
+        chrome.setFoldersSort('title')
+        return
+      case 'sortFoldersByCount':
+        chrome.setFoldersSort('count')
+        return
+      case 'toggleFoldersAtoZ':
+        chrome.toggleFoldersAtoZ()
+        return
+      case 'zoomIn':
+        setPreferences({ ...preferences, scale: nextScale(preferences.scale, 'up') })
+        return
+      case 'zoomOut':
+        setPreferences({ ...preferences, scale: nextScale(preferences.scale, 'down') })
+        return
+      case 'actualSize':
+        setPreferences({ ...preferences, scale: 1 })
+        return
+      case 'toggleFirstLineIndent':
+        setPreferences({
+          ...preferences,
+          indent: preferences.indent === 'first-line' ? 'none' : 'first-line',
+        })
+        return
     }
+
+    const readerChange = READER_COMMANDS[id]
+    if (readerChange !== undefined) setPreferences({ ...preferences, ...readerChange })
+  }
+
+  /**
+   * The View menu's typography commands, as the preference each one sets.
+   *
+   * A table rather than twenty switch cases: every entry is the same shape, so
+   * a lookup states the rule once and cannot drift into twenty near-copies.
+   */
+  const READER_COMMANDS: Partial<Record<DocumentCommandId, Partial<ReaderPreferences>>> = {
+    themeWhite: { theme: 'white' },
+    themeTan: { theme: 'tan' },
+    themeNight: { theme: 'night' },
+    fontIowan: { family: 'serif' },
+    fontGeorgia: { family: 'literata' },
+    fontSystem: { family: 'sans' },
+    fontMono: { family: 'mono' },
+    widthNarrow: { width: 'narrow' },
+    widthNormal: { width: 'normal' },
+    widthWide: { width: 'wide' },
+    leadingTight: { leading: 'tight' },
+    leadingNormal: { leading: 'normal' },
+    leadingOpen: { leading: 'open' },
+    spacingCompact: { spacing: 'compact' },
+    spacingNormal: { spacing: 'normal' },
+    spacingAiry: { spacing: 'airy' },
+  }
+
+  /** Applies, persists, and repaints — the one path preference changes take. */
+  function setPreferences(next: ReaderPreferences): void {
+    preferences = next
+    applyPreferences(next)
+    savePreferences(storage, next)
+    chrome.setPreferences(next)
   }
 
   function commandState(id: DocumentCommandId): { enabled: boolean; checked: boolean } {
@@ -202,6 +303,85 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       }
     }
     if (id === 'toggleStylesBar') return { enabled: true, checked: chrome.stylesBarVisible() }
+    if (id === 'toggleWordCount') return { enabled: true, checked: chrome.wordCountVisible() }
+    if (id === 'toggleStatistics') return { enabled: true, checked: chrome.infoTab() === 'statistics' }
+    if (id === 'contents') return { enabled: true, checked: chrome.infoTab() === 'contents' }
+    if (id === 'toggleBacklinks') return { enabled: true, checked: chrome.infoTab() === 'backlinks' }
+    if (id === 'toggleHistoryNavigation') {
+      return { enabled: true, checked: chrome.historyNavigationVisible() }
+    }
+
+    // Reader typography: always available, since the document is always there.
+    // Each entry is a thunk rather than a value — building the whole table
+    // eagerly would read note-list state on the way to answering about `bold`,
+    // and the chrome is not necessarily built when the first question arrives.
+    const readerChecks: Partial<Record<DocumentCommandId, () => boolean>> = {
+      themeWhite: () => preferences.theme === 'white',
+      themeTan: () => preferences.theme === 'tan',
+      themeNight: () => preferences.theme === 'night',
+      fontIowan: () => preferences.family === 'serif',
+      fontGeorgia: () => preferences.family === 'literata',
+      fontSystem: () => preferences.family === 'sans',
+      fontMono: () => preferences.family === 'mono',
+      widthNarrow: () => preferences.width === 'narrow',
+      widthNormal: () => preferences.width === 'normal',
+      widthWide: () => preferences.width === 'wide',
+      leadingTight: () => preferences.leading === 'tight',
+      leadingNormal: () => preferences.leading === 'normal',
+      leadingOpen: () => preferences.leading === 'open',
+      spacingCompact: () => preferences.spacing === 'compact',
+      spacingNormal: () => preferences.spacing === 'normal',
+      spacingAiry: () => preferences.spacing === 'airy',
+      toggleFirstLineIndent: () => preferences.indent === 'first-line',
+    }
+    const readerCheck = readerChecks[id]
+    if (readerCheck !== undefined) return { enabled: true, checked: readerCheck() }
+
+    // Zoom stops where the curated steps stop, so the menu says when a further
+    // step is not on offer instead of appearing to do nothing.
+    if (id === 'zoomIn') {
+      return { enabled: nextScale(preferences.scale, 'up') !== preferences.scale, checked: false }
+    }
+    if (id === 'zoomOut') {
+      return { enabled: nextScale(preferences.scale, 'down') !== preferences.scale, checked: false }
+    }
+    if (id === 'actualSize') return { enabled: preferences.scale !== 1, checked: false }
+
+    // Note-list view state needs a note list. Without a catalog these describe
+    // nothing, so they are visibly unavailable rather than quietly inert.
+    const noteListChecks: Partial<Record<DocumentCommandId, () => boolean>> = {
+      previewSmall: () => chrome.previewDensity() === 'small',
+      previewMedium: () => chrome.previewDensity() === 'medium',
+      previewLarge: () => chrome.previewDensity() === 'large',
+      sortByModified: () => chrome.notesSort() === 'modified',
+      sortByCreated: () => chrome.notesSort() === 'created',
+      sortByTitle: () => chrome.notesSort() === 'title',
+      toggleNewestOnTop: () => chrome.newestOnTop(),
+    }
+    const noteListCheck = noteListChecks[id]
+    if (noteListCheck !== undefined) {
+      // Sorting by a date the catalog never reported would silently do nothing,
+      // so the order that cannot be produced is the one that goes grey.
+      const notes = options.workspace?.notes
+      const stamped = (of: 'createdAt' | 'updatedAt'): boolean =>
+        notes !== undefined && notes.every((note) => note[of] !== undefined)
+      const available =
+        id === 'sortByCreated'
+          ? stamped('createdAt')
+          : id === 'sortByModified' || id === 'toggleNewestOnTop'
+            ? stamped('updatedAt')
+            : notes !== undefined
+      return { enabled: available, checked: noteListCheck() }
+    }
+    if (id === 'hideAttachments') {
+      // SimpleMark links files rather than embedding them, so there is nothing
+      // to hide. Named and unavailable, matching Bear's own disabled row.
+      return { enabled: false, checked: false }
+    }
+    if (id === 'sortFoldersByTitle') return { enabled: false, checked: chrome.foldersSort() === 'title' }
+    if (id === 'sortFoldersByCount') return { enabled: false, checked: chrome.foldersSort() === 'count' }
+    if (id === 'toggleFoldersAtoZ') return { enabled: false, checked: chrome.foldersAtoZ() }
+
     return { enabled: true, checked: false }
   }
 
@@ -244,6 +424,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       applyPreferences(next)
       savePreferences(storage, next)
     },
+    // Measured from the session rather than the editor: the session is the one
+    // that knows what the document currently is.
+    getStatistics: () => documentStatistics(session.snapshot().markdown),
     onContinueWriting: () => editor?.continueAfterLastBlock(),
     // The temporary contents popover (EDITOR-3) reads the outline fresh on
     // every open and navigates through the editor — the chrome itself never
@@ -284,6 +467,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       }
 
       chrome.setStatus('dirty')
+      chrome.refreshStatistics()
       if (autosaveMs > 0) {
         // Debounced save on pause, never per keystroke (DESIGN.md §8).
         clearTimeout(saveTimer)

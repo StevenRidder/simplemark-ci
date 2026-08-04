@@ -62,27 +62,33 @@
  * not a consequence of the system appearance.
  *
  * `data-reader-theme` on the root wins over the `prefers-color-scheme` block
- * above, because an explicit choice must beat an inferred one. `tan` is the
- * default and reproduces the approved wireframe exactly.
+ * above, because an explicit choice must beat an inferred one. `white` is the
+ * default; `tan` is the warm alternative, matched to Safari Reader's sepia.
+ *
+ * The earlier tan was `#fffefa` — a white with a rumour of warmth in it, close
+ * enough to the white theme that switching looked like nothing had happened.
+ * A theme has to be visibly the thing it is named after, so this is Safari
+ * Reader's actual sepia paper, with the surrounding tones moved with it: a warm
+ * page inside a cold frame reads as a rendering fault rather than a choice.
  */
 :root[data-reader-theme='tan'] {
   color-scheme: light;
-  --canvas: #ebeae7;
-  --paper: #fffefa;
-  --chrome: #f7f6f2;
-  --ink: #242321;
-  --ink-2: #696660;
-  --ink-3: #a19d95;
-  --line: #e8e5df;
-  --soft: #f3f1ec;
-  --accent: #d08a32;
-  --accent-soft: #fff1d9;
+  --canvas: #e3dcc9;
+  --paper: #f8f1e0;
+  --chrome: #f2ebd8;
+  --ink: #33302a;
+  --ink-2: #6b6558;
+  --ink-3: #9d9585;
+  --line: #e5dcc6;
+  --soft: #efe7d3;
+  --accent: #c07a25;
+  --accent-soft: #f6e7c8;
   --agent: #7356c9;
-  --agent-soft: #f0ebff;
-  --agent-line: #d9cdfb;
-  --danger: #c75a4a;
-  --success: #51805e;
-  --shadow: 0 24px 75px rgba(42, 39, 33, 0.17), 0 2px 9px rgba(42, 39, 33, 0.08);
+  --agent-soft: #ece6fb;
+  --agent-line: #d5c8f7;
+  --danger: #bd5340;
+  --success: #4a7a56;
+  --shadow: 0 24px 75px rgba(64, 54, 34, 0.18), 0 2px 9px rgba(64, 54, 34, 0.09);
 }
 
 /* Plain white: maximum contrast, no warmth. */

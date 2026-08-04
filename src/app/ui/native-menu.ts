@@ -37,15 +37,28 @@ export interface NativeMenuOptions {
   readonly provenance?: BuildProvenance
 }
 
+/**
+ * Repaints every built item from current shell state.
+ *
+ * One command can change another's answer: choosing a theme clears the other
+ * two, opening the statistics panel closes the contents view, and hiding the
+ * library disables the note-list commands. Refreshing only the item that was
+ * clicked — the obvious thing, and what this did before — leaves a menu that
+ * accumulates checkmarks and stops describing the application. Repainting the
+ * whole menubar after every action costs a few dozen property writes and makes
+ * the checkmark state correct by construction instead of by bookkeeping.
+ */
+type Repaint = () => void
+
 async function buildEntry(
   entry: MenuEntry,
   options: NativeMenuOptions,
+  repaints: Repaint[],
 ): Promise<Submenu | CheckMenuItem | MenuItem> {
   if (typeof entry !== 'string') {
-    return Submenu.new({
-      text: entry.label,
-      items: await Promise.all(entry.items.map((id) => buildEntry(id, options))),
-    })
+    const items = []
+    for (const id of entry.items) items.push(await buildEntry(id, options, repaints))
+    return Submenu.new({ text: entry.label, items })
   }
 
   const definition = COMMANDS[entry]
@@ -56,32 +69,41 @@ async function buildEntry(
     ...(definition.accelerator === undefined ? {} : { accelerator: definition.accelerator }),
     enabled: state.enabled,
   }
+  const activate = (): void => {
+    options.run(definition.id)
+    for (const repaint of repaints) repaint()
+  }
 
   if (definition.checkable === true) {
-    let item: CheckMenuItem
-    item = await CheckMenuItem.new({
+    const item: CheckMenuItem = await CheckMenuItem.new({
       ...shared,
       checked: state.checked,
-      action: () => {
-        options.run(definition.id)
-        const next = options.state(definition.id)
-        void item.setEnabled(next.enabled)
-        void item.setChecked(next.checked)
-      },
+      action: activate,
+    })
+    repaints.push(() => {
+      const next = options.state(definition.id)
+      void item.setEnabled(next.enabled)
+      void item.setChecked(next.checked)
     })
     return item
   }
 
-  return MenuItem.new({ ...shared, action: () => options.run(definition.id) })
+  const item = await MenuItem.new({ ...shared, action: activate })
+  repaints.push(() => void item.setEnabled(options.state(definition.id).enabled))
+  return item
 }
 
-async function buildMenu(spec: MenuSpec, options: NativeMenuOptions): Promise<Submenu> {
+async function buildMenu(
+  spec: MenuSpec,
+  options: NativeMenuOptions,
+  repaints: Repaint[],
+): Promise<Submenu> {
   const items = []
   for (const [index, section] of spec.sections.entries()) {
     // A separator between sections, never leading or trailing: macOS menus put
     // rules between groups, and a stray rule reads as a missing item.
     if (index > 0) items.push(await PredefinedMenuItem.new({ item: 'Separator' }))
-    for (const entry of section) items.push(await buildEntry(entry, options))
+    for (const entry of section) items.push(await buildEntry(entry, options, repaints))
   }
   return Submenu.new({ text: spec.label, items })
 }
@@ -127,7 +149,9 @@ export async function installNativeMenu(options: NativeMenuOptions): Promise<Men
     ],
   })
 
-  const owned = await Promise.all(MENUS.map((spec) => buildMenu(spec, options)))
+  const repaints: Repaint[] = []
+  const owned = []
+  for (const spec of MENUS) owned.push(await buildMenu(spec, options, repaints))
 
   // The clipboard belongs to the system, not to us: Cut/Copy/Paste/Select All
   // must be the real ones or every text field in the app feels broken.

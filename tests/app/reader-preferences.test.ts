@@ -24,10 +24,11 @@ import {
  */
 
 describe('reader preferences', () => {
-  test('defaults to the approved warm-paper look', () => {
-    // §10.4: warm paper and restrained amber, serif body. The default must be
-    // what the wireframe shows, not a browser default.
-    expect(DEFAULT_PREFERENCES.theme).toBe('tan')
+  test('defaults to plain paper with the serif body', () => {
+    // White, not the wireframe's tan: a first run should look like the document
+    // rather than like a filter over it. Everything else is still §10.4 —
+    // serif body, no zoom, the approved column and rhythm.
+    expect(DEFAULT_PREFERENCES.theme).toBe('white')
     expect(DEFAULT_PREFERENCES.family).toBe('serif')
     expect(DEFAULT_PREFERENCES.scale).toBe(1)
     expect(DEFAULT_PREFERENCES.width).toBe('normal')

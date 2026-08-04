@@ -16,6 +16,11 @@
  * reading width, line height, paragraph spacing, and first-line indentation —
  * each a small set of curated steps, never a free slider, so every combination
  * has been looked at.
+ *
+ * Every one of these is also a View-menu command (application/commands.ts).
+ * The "Aa" popover and the macOS menubar set the same fields through the same
+ * router, which is why `TEXT_SCALES` and `nextScale` needed no change to become
+ * Zoom In and Zoom Out — the menu found a preference that was already here.
  */
 
 export const READER_THEMES = ['white', 'tan', 'night'] as const
@@ -97,9 +102,15 @@ export interface ReaderPreferences {
   readonly indent: IndentationId
 }
 
-/** The approved wireframe look (§10.4): warm paper, serif body, no zoom. */
+/**
+ * Plain paper, serif body, no zoom.
+ *
+ * White rather than the wireframe's tan: a first run should look like the
+ * document, not like a filter over it, and tan is one menu item away for anyone
+ * who wants the warmer page.
+ */
 export const DEFAULT_PREFERENCES: ReaderPreferences = {
-  theme: 'tan',
+  theme: 'white',
   family: 'serif',
   scale: 1,
   width: 'normal',

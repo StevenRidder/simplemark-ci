@@ -69,14 +69,30 @@ interface DemoNote {
   readonly preview: string
   readonly markdown: string
   readonly updatedLabel: string
+  /**
+   * Hours ago, resolved to real stamps at start-up.
+   *
+   * The demo catalog is explicitly in-memory, but its timestamps are honest
+   * ones: the View menu's date sorts stay disabled for any catalog that cannot
+   * report them, so a demo without stamps would leave three menu items greyed
+   * out with nothing to try. Modification and creation order deliberately
+   * disagree, or the two sorts would be indistinguishable.
+   */
+  readonly modifiedHoursAgo: number
+  readonly createdHoursAgo: number
   pinned: boolean
 }
 
+const HOUR = 60 * 60 * 1000
+
 const DEMO_NOTES: DemoNote[] = [
-  { id: 'architecture', name: FIXTURE_NAME, preview: 'A local document boundary for you and Codex.', markdown: FIXTURE_MARKDOWN, updatedLabel: 'Now', pinned: true },
-  { id: 'field-notes', name: 'field-notes.md', preview: 'Small observations worth keeping close.', markdown: '# Field notes\n\nA quiet notebook should disappear while you think.\n', updatedLabel: 'Today', pinned: false },
-  { id: 'ideas', name: 'ideas.md', preview: 'Paste technical material; keep the source portable.', markdown: '# Ideas\n\n- Markdown is the durable result\n- Render the useful parts\n', updatedLabel: 'Yesterday', pinned: false },
+  { id: 'architecture', name: FIXTURE_NAME, preview: 'A local document boundary for you and Codex.', markdown: FIXTURE_MARKDOWN, updatedLabel: 'Now', modifiedHoursAgo: 0, createdHoursAgo: 52, pinned: true },
+  { id: 'field-notes', name: 'field-notes.md', preview: 'Small observations worth keeping close.', markdown: '# Field notes\n\nA quiet notebook should disappear while you think.\n', updatedLabel: 'Today', modifiedHoursAgo: 3, createdHoursAgo: 6, pinned: false },
+  { id: 'ideas', name: 'ideas.md', preview: 'Paste technical material; keep the source portable.', markdown: '# Ideas\n\n- Markdown is the durable result\n- Render the useful parts\n', updatedLabel: 'Yesterday', modifiedHoursAgo: 30, createdHoursAgo: 30, pinned: false },
 ]
+
+/** One clock reading for the session, so a sort cannot shuffle mid-render. */
+const DEMO_EPOCH = Date.now()
 
 export async function start(root: HTMLElement): Promise<AppComposition> {
   const ports = new Map(DEMO_NOTES.map((note) => [note.id, new FixtureFilePort(note.name, note.markdown)]))
@@ -117,6 +133,8 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
       preview: 'A new local note — start writing.',
       markdown: '# New note\n\n',
       updatedLabel: 'Now',
+      modifiedHoursAgo: 0,
+      createdHoursAgo: 0,
       pinned: false,
     })
     ports.set(id, new FixtureFilePort(name, '# New note\n\n'))
@@ -157,6 +175,8 @@ function workspaceOptions(
       title: note.name.replace(/\.md$/, ''),
       preview: note.preview,
       updatedLabel: note.updatedLabel,
+      updatedAt: DEMO_EPOCH - note.modifiedHoursAgo * HOUR,
+      createdAt: DEMO_EPOCH - note.createdHoursAgo * HOUR,
       pinned: note.pinned,
     })),
   }

@@ -100,8 +100,40 @@ New Note; New Note in New Window later; Open Folder; Open File; Import/Export; P
 
 ### View
 
-Quick Open later; editor only; notes + editor; library + notes + editor; sorting and preview size;
-table of contents/backlinks when implemented; Toggle Styles Bar; Actual Size.
+Bear's View menu section for section, with one block Bear does not have. Every item is a shared
+registry command, so the same ids drive the web surfaces:
+
+```text
+Zoom In ⌘+ · Zoom Out ⌘− · Actual Size ⌘0
+Theme › · Font › · Reading Width › · Line Height › · Paragraph Spacing › · First-line Indent
+Preview Style › · Notes Sorting › · Folders Sorting ›
+Show Editor Only ⌃1 · Show Notes and Editor ⌃2 · Show Library, Notes and Editor ⌃3
+Toggle Statistics Panel ⇧⌘I · Toggle Table of Contents ⇧⌘A · Toggle Backlinks ⇧⌘B
+Toggle Word Count ⇧⌘W · Toggle Styles Bar ⇧⌘Y · Toggle History Navigation
+```
+
+The reader block is the addition. Bear keeps theme and typography in Preferences; SimpleMark's are
+document-level view state (D6) and belong beside zoom, which is the same multiplier by another name.
+
+Quick Open is later. Where Bear sorts tags, SimpleMark sorts folders — it has no tag store, and
+naming that submenu `Tags` would promise one.
+
+Two rules govern the items whose data has not arrived:
+
+- **Named and disabled, never hidden and never faked.** Attachment hiding, folder sorting, and
+  history navigation appear exactly where Bear puts them and stay unavailable, with the reason on
+  the control. This is Bear's own habit — it greys out `Dismiss Workspace` and `Open Link` the same
+  way — and it means the menu describes the whole product rather than this week's build.
+- **A sort that cannot sort is disabled, not silently inert.** `Notes Sorting` reads real
+  timestamps; a catalog that reports none leaves the date orders unavailable rather than quietly
+  returning the list unchanged.
+
+Statistics, contents, and backlinks are three tabs of one floating panel, not three inspectors.
+Opening any of them closes the other two. This supersedes EDITOR-3's temporary contents popover:
+the popover's reason to exist was that contents was the only view of its kind, and what it was
+protecting — the document never surrendering width — the panel keeps by floating over the page.
+Backlinks needs note bodies the workspace index does not carry, so its empty state names the
+missing capability instead of claiming that nothing links here.
 
 ### Format
 

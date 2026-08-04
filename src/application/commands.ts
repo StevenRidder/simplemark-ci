@@ -71,12 +71,53 @@ export type DocumentCommandId =
   | 'save'
   | 'print'
   | 'find'
-  | 'contents'
-  | 'toggleStylesBar'
+  | 'togglePinned'
+  // View — reading size
+  | 'zoomIn'
+  | 'zoomOut'
+  | 'actualSize'
+  // View — reader typography
+  | 'themeWhite'
+  | 'themeTan'
+  | 'themeNight'
+  | 'fontIowan'
+  | 'fontGeorgia'
+  | 'fontSystem'
+  | 'fontMono'
+  | 'widthNarrow'
+  | 'widthNormal'
+  | 'widthWide'
+  | 'leadingTight'
+  | 'leadingNormal'
+  | 'leadingOpen'
+  | 'spacingCompact'
+  | 'spacingNormal'
+  | 'spacingAiry'
+  | 'toggleFirstLineIndent'
+  // View — note list
+  | 'previewSmall'
+  | 'previewMedium'
+  | 'previewLarge'
+  | 'hideAttachments'
+  | 'sortByModified'
+  | 'sortByCreated'
+  | 'sortByTitle'
+  | 'toggleNewestOnTop'
+  | 'sortFoldersByTitle'
+  | 'sortFoldersByCount'
+  | 'toggleFoldersAtoZ'
+  // View — panes
   | 'showAllPanes'
   | 'showNotesAndEditor'
   | 'showEditorOnly'
-  | 'togglePinned'
+  // View — document information
+  | 'toggleStatistics'
+  | 'contents'
+  | 'toggleBacklinks'
+  // View — chrome
+  | 'toggleWordCount'
+  | 'toggleStylesBar'
+  | 'toggleHistoryNavigation'
 
 /**
  * Where an id is executed.
@@ -98,6 +139,14 @@ export interface CommandDefinition {
   readonly accelerator?: string
   /** Shown with a checkmark in menus; its state comes from the shell. */
   readonly checkable?: boolean
+  /**
+   * Names a set of mutually exclusive choices, like the three reader themes.
+   *
+   * macOS has no radio menu item, so a group is still built from checkables —
+   * what the name buys is the guarantee that picking one clears the others.
+   * Without it a menu accumulates checkmarks and stops describing the app.
+   */
+  readonly group?: string
 }
 
 /** Every command, exactly once. */
@@ -167,17 +216,175 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   save: { id: 'save', label: 'Save', target: 'shell', accelerator: 'CmdOrCtrl+S' },
   print: { id: 'print', label: 'Print…', target: 'shell', accelerator: 'CmdOrCtrl+P' },
   find: { id: 'find', label: 'Find in Document…', target: 'shell', accelerator: 'CmdOrCtrl+F' },
-  contents: { id: 'contents', label: 'Contents', target: 'shell', accelerator: 'CmdOrCtrl+Shift+O' },
-  toggleStylesBar: {
-    id: 'toggleStylesBar',
-    label: 'Styles Bar',
+  togglePinned: { id: 'togglePinned', label: 'Pin to Top', target: 'shell', checkable: true },
+
+  // Reading size. One multiplier over the whole document, never a selection
+  // (D6) — which is why these are shell commands rather than editor ones.
+  // `Equal`, not `Plus`: macOS renders ⌘= as "⌘+" in the menu, and the native
+  // accelerator grammar has no main-keyboard Plus at all — only NumpadPlus. A
+  // key it cannot parse does not degrade to an unbound item, it throws and
+  // takes the entire menubar down with it.
+  zoomIn: { id: 'zoomIn', label: 'Zoom In', target: 'shell', accelerator: 'CmdOrCtrl+Equal' },
+  zoomOut: { id: 'zoomOut', label: 'Zoom Out', target: 'shell', accelerator: 'CmdOrCtrl+Minus' },
+  actualSize: { id: 'actualSize', label: 'Actual Size', target: 'shell', accelerator: 'CmdOrCtrl+0' },
+
+  themeWhite: { id: 'themeWhite', label: 'White', target: 'shell', checkable: true, group: 'readerTheme' },
+  themeTan: { id: 'themeTan', label: 'Tan', target: 'shell', checkable: true, group: 'readerTheme' },
+  themeNight: { id: 'themeNight', label: 'Night', target: 'shell', checkable: true, group: 'readerTheme' },
+
+  fontIowan: { id: 'fontIowan', label: 'Iowan', target: 'shell', checkable: true, group: 'readerFamily' },
+  fontGeorgia: { id: 'fontGeorgia', label: 'Georgia', target: 'shell', checkable: true, group: 'readerFamily' },
+  fontSystem: { id: 'fontSystem', label: 'System', target: 'shell', checkable: true, group: 'readerFamily' },
+  fontMono: { id: 'fontMono', label: 'Mono', target: 'shell', checkable: true, group: 'readerFamily' },
+
+  widthNarrow: { id: 'widthNarrow', label: 'Narrow', target: 'shell', checkable: true, group: 'readerWidth' },
+  widthNormal: { id: 'widthNormal', label: 'Normal', target: 'shell', checkable: true, group: 'readerWidth' },
+  widthWide: { id: 'widthWide', label: 'Wide', target: 'shell', checkable: true, group: 'readerWidth' },
+
+  leadingTight: { id: 'leadingTight', label: 'Tight', target: 'shell', checkable: true, group: 'readerLeading' },
+  leadingNormal: { id: 'leadingNormal', label: 'Normal', target: 'shell', checkable: true, group: 'readerLeading' },
+  leadingOpen: { id: 'leadingOpen', label: 'Open', target: 'shell', checkable: true, group: 'readerLeading' },
+
+  spacingCompact: {
+    id: 'spacingCompact',
+    label: 'Compact',
+    target: 'shell',
+    checkable: true,
+    group: 'readerSpacing',
+  },
+  spacingNormal: {
+    id: 'spacingNormal',
+    label: 'Normal',
+    target: 'shell',
+    checkable: true,
+    group: 'readerSpacing',
+  },
+  spacingAiry: { id: 'spacingAiry', label: 'Airy', target: 'shell', checkable: true, group: 'readerSpacing' },
+  toggleFirstLineIndent: {
+    id: 'toggleFirstLineIndent',
+    label: 'First-line Indent',
     target: 'shell',
     checkable: true,
   },
-  showAllPanes: { id: 'showAllPanes', label: 'Library, Notes, and Editor', target: 'shell', checkable: true },
-  showNotesAndEditor: { id: 'showNotesAndEditor', label: 'Notes and Editor', target: 'shell', checkable: true },
-  showEditorOnly: { id: 'showEditorOnly', label: 'Editor Only', target: 'shell', checkable: true },
-  togglePinned: { id: 'togglePinned', label: 'Pin to Top', target: 'shell', checkable: true },
+
+  previewSmall: { id: 'previewSmall', label: 'Small', target: 'shell', checkable: true, group: 'previewStyle' },
+  previewMedium: {
+    id: 'previewMedium',
+    label: 'Medium',
+    target: 'shell',
+    checkable: true,
+    group: 'previewStyle',
+  },
+  previewLarge: { id: 'previewLarge', label: 'Large', target: 'shell', checkable: true, group: 'previewStyle' },
+  hideAttachments: { id: 'hideAttachments', label: 'Hide Attachments', target: 'shell', checkable: true },
+
+  sortByModified: {
+    id: 'sortByModified',
+    label: 'Modification Date',
+    target: 'shell',
+    checkable: true,
+    group: 'notesSort',
+  },
+  sortByCreated: {
+    id: 'sortByCreated',
+    label: 'Creation Date',
+    target: 'shell',
+    checkable: true,
+    group: 'notesSort',
+  },
+  sortByTitle: { id: 'sortByTitle', label: 'Title', target: 'shell', checkable: true, group: 'notesSort' },
+  toggleNewestOnTop: { id: 'toggleNewestOnTop', label: 'Newest on Top', target: 'shell', checkable: true },
+
+  sortFoldersByTitle: {
+    id: 'sortFoldersByTitle',
+    label: 'Title',
+    target: 'shell',
+    checkable: true,
+    group: 'foldersSort',
+  },
+  sortFoldersByCount: {
+    id: 'sortFoldersByCount',
+    label: 'Number of Notes',
+    target: 'shell',
+    checkable: true,
+    group: 'foldersSort',
+  },
+  toggleFoldersAtoZ: { id: 'toggleFoldersAtoZ', label: 'A to Z', target: 'shell', checkable: true },
+
+  // Bear's ⌃1/⌃2/⌃3, narrowest pane set first, so the shortcut number and the
+  // number of visible panes agree.
+  showEditorOnly: {
+    id: 'showEditorOnly',
+    label: 'Show Editor Only',
+    target: 'shell',
+    accelerator: 'Control+1',
+    checkable: true,
+    group: 'workspaceLayout',
+  },
+  showNotesAndEditor: {
+    id: 'showNotesAndEditor',
+    label: 'Show Notes and Editor',
+    target: 'shell',
+    accelerator: 'Control+2',
+    checkable: true,
+    group: 'workspaceLayout',
+  },
+  showAllPanes: {
+    id: 'showAllPanes',
+    label: 'Show Library, Notes and Editor',
+    target: 'shell',
+    accelerator: 'Control+3',
+    checkable: true,
+    group: 'workspaceLayout',
+  },
+
+  // Three views of one panel, so opening any of them closes the other two
+  // rather than stacking inspectors down the edge of the document.
+  toggleStatistics: {
+    id: 'toggleStatistics',
+    label: 'Toggle Statistics Panel',
+    target: 'shell',
+    accelerator: 'CmdOrCtrl+Shift+I',
+    checkable: true,
+    group: 'infoPanel',
+  },
+  contents: {
+    id: 'contents',
+    label: 'Toggle Table of Contents',
+    target: 'shell',
+    accelerator: 'CmdOrCtrl+Shift+A',
+    checkable: true,
+    group: 'infoPanel',
+  },
+  toggleBacklinks: {
+    id: 'toggleBacklinks',
+    label: 'Toggle Backlinks',
+    target: 'shell',
+    accelerator: 'CmdOrCtrl+Shift+B',
+    checkable: true,
+    group: 'infoPanel',
+  },
+
+  toggleWordCount: {
+    id: 'toggleWordCount',
+    label: 'Toggle Word Count',
+    target: 'shell',
+    accelerator: 'CmdOrCtrl+Shift+W',
+    checkable: true,
+  },
+  toggleStylesBar: {
+    id: 'toggleStylesBar',
+    label: 'Toggle Styles Bar',
+    target: 'shell',
+    accelerator: 'CmdOrCtrl+Shift+Y',
+    checkable: true,
+  },
+  toggleHistoryNavigation: {
+    id: 'toggleHistoryNavigation',
+    label: 'Toggle History Navigation',
+    target: 'shell',
+    checkable: true,
+  },
 }
 
 /** A nested group inside a menu — the `Heading ›` and `List ›` of the wireframe. */
@@ -244,11 +451,39 @@ export const MENUS: readonly MenuSpec[] = [
     ],
   },
   {
+    /**
+     * Bear's View menu, section for section, with the reader block slotted in
+     * where Bear keeps nothing — its theme and typography live in Preferences,
+     * ours are document-level view state and belong beside zoom (D6).
+     */
     label: 'View',
     sections: [
-      [{ label: 'Layout', items: ['showAllPanes', 'showNotesAndEditor', 'showEditorOnly'] }],
-      ['contents'],
-      ['toggleStylesBar'],
+      ['zoomIn', 'zoomOut', 'actualSize'],
+      [
+        { label: 'Theme', items: ['themeWhite', 'themeTan', 'themeNight'] },
+        { label: 'Font', items: ['fontIowan', 'fontGeorgia', 'fontSystem', 'fontMono'] },
+        { label: 'Reading Width', items: ['widthNarrow', 'widthNormal', 'widthWide'] },
+        { label: 'Line Height', items: ['leadingTight', 'leadingNormal', 'leadingOpen'] },
+        { label: 'Paragraph Spacing', items: ['spacingCompact', 'spacingNormal', 'spacingAiry'] },
+        'toggleFirstLineIndent',
+      ],
+      [
+        {
+          label: 'Preview Style',
+          items: ['previewSmall', 'previewMedium', 'previewLarge', 'hideAttachments'],
+        },
+        {
+          label: 'Notes Sorting',
+          items: ['sortByModified', 'sortByCreated', 'sortByTitle', 'toggleNewestOnTop'],
+        },
+        {
+          label: 'Folders Sorting',
+          items: ['sortFoldersByTitle', 'sortFoldersByCount', 'toggleFoldersAtoZ'],
+        },
+      ],
+      ['showEditorOnly', 'showNotesAndEditor', 'showAllPanes'],
+      ['toggleStatistics', 'contents', 'toggleBacklinks'],
+      ['toggleWordCount', 'toggleStylesBar', 'toggleHistoryNavigation'],
     ],
   },
   {

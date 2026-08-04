@@ -34,6 +34,7 @@ import {
   nextScale,
 } from '../reader-preferences.js'
 import type { ReaderPreferences } from '../reader-preferences.js'
+import type { DocumentStatistics } from '../document-statistics.js'
 
 export type SaveState = 'saved' | 'dirty' | 'error'
 
@@ -67,8 +68,13 @@ export interface WindowChromeOptions {
    * popover opens (EDITOR-3). The chrome never touches the editor itself.
    */
   readonly getOutline?: () => ReadonlyArray<{ level: number; text: string; pos: number }>
-  /** Navigates the document to a heading picked in the contents popover. */
+  /** Navigates the document to a heading picked in the contents view. */
   readonly onNavigate?: (pos: number) => void
+  /**
+   * Reading measurements for the statistics view and the word-count pill, read
+   * fresh on every paint so neither surface caches a stale document.
+   */
+  readonly getStatistics?: () => DocumentStatistics
   /** Inserts an ordinary Markdown image or file link through a platform port. */
   readonly onInsertAsset?: (() => void) | undefined
   /** Whether the quiet, single-row editing strip is shown. This is shell state. */
@@ -94,6 +100,16 @@ export interface WorkspaceNote {
   readonly preview: string
   readonly updatedLabel: string
   readonly pinned: boolean
+  /**
+   * Epoch milliseconds, when the catalog knows them.
+   *
+   * Absent for a catalog that only derived a display label, and the date sorts
+   * stay disabled in that case rather than silently degrading to some other
+   * order — a sort that quietly does nothing is worse than one you can see is
+   * unavailable.
+   */
+  readonly updatedAt?: number
+  readonly createdAt?: number
 }
 
 /** One explicitly adopted local folder shown in the library sidebar. */
@@ -131,6 +147,20 @@ export interface WorkspaceOptions {
 
 export type WorkspaceMode = 'all' | 'notes' | 'editor'
 
+/**
+ * The three views of the one document-information panel.
+ *
+ * Bear presents statistics, contents, and backlinks as tabs of a single panel
+ * rather than three inspectors, and the reason is the product's: only one of
+ * them is ever the question being asked, and stacking them down the edge would
+ * cost the document the width it exists to have.
+ */
+export type InfoTab = 'statistics' | 'contents' | 'backlinks'
+
+export type PreviewDensity = 'small' | 'medium' | 'large'
+export type NotesSort = 'modified' | 'created' | 'title'
+export type FoldersSort = 'title' | 'count'
+
 export interface WindowChrome {
   readonly element: HTMLElement
   /** The node the editor mounts into. */
@@ -142,9 +172,44 @@ export interface WindowChrome {
    */
   toggleStylesBar(): void
   stylesBarVisible(): boolean
+  /** Bear's model: the same tab closes the panel, a different tab switches it. */
+  toggleInfoTab(tab: InfoTab): void
+  infoTab(): InfoTab | null
   openContents(): void
+  toggleWordCount(): void
+  wordCountVisible(): boolean
+  /**
+   * Repaints anything that counts the document — the word-count pill and an
+   * open statistics view. Called when the document changes, so neither surface
+   * has to poll and neither can show yesterday's number.
+   */
+  refreshStatistics(): void
+  /**
+   * Accepts a preference change made elsewhere — the View menu — and repaints
+   * the "Aa" popover to match. It deliberately does not call back into
+   * `onPreferences`: the caller has already applied and persisted it, and
+   * echoing would be a loop.
+   */
+  setPreferences(next: ReaderPreferences): void
+  toggleHistoryNavigation(): void
+  historyNavigationVisible(): boolean
   setWorkspaceMode(mode: WorkspaceMode): void
   workspaceMode(): WorkspaceMode
+  /**
+   * Note-list view state. Present even without a workspace so the menubar can
+   * ask one question rather than branching on which shell it is running in;
+   * the composition root decides whether the commands are enabled.
+   */
+  setPreviewDensity(density: PreviewDensity): void
+  previewDensity(): PreviewDensity
+  setNotesSort(sort: NotesSort): void
+  notesSort(): NotesSort
+  toggleNewestOnTop(): void
+  newestOnTop(): boolean
+  setFoldersSort(sort: FoldersSort): void
+  foldersSort(): FoldersSort
+  toggleFoldersAtoZ(): void
+  foldersAtoZ(): boolean
   togglePinned(id: string): void
   isPinned(id: string): boolean
   /** Releases observers owned by this detached presentation tree. */
@@ -220,6 +285,208 @@ function svgButton(
     button.title = label
   }
   return button
+}
+
+interface InfoPanel {
+  readonly element: HTMLElement
+  toggle(tab: InfoTab): void
+  open(tab: InfoTab): void
+  close(): void
+  tab(): InfoTab | null
+  /** Repaints the open view against the current document. */
+  refresh(): void
+}
+
+const INFO_TABS: ReadonlyArray<{ id: InfoTab; label: string; icon: string }> = [
+  {
+    id: 'statistics',
+    label: 'Statistics',
+    icon: '<path d="M5 20V12M10 20V5M15 20v-6M20 20v-9"/>',
+  },
+  {
+    id: 'contents',
+    label: 'Table of Contents',
+    icon: '<path d="M4 6h1M4 12h1M4 18h1M9 6h11M9 12h11M9 18h11"/>',
+  },
+  {
+    id: 'backlinks',
+    label: 'Backlinks',
+    icon: '<path d="M11 17H7a5 5 0 0 1 0-10h4"/><path d="m9 12h7"/><path d="m14 8-4 4 4 4"/>',
+  },
+]
+
+/**
+ * The document-information panel: statistics, contents, and backlinks.
+ *
+ * It floats over the right edge of the page rather than taking a column, so
+ * turning it on never reflows the sentence a person is reading. That is the
+ * same reason EDITOR-3 made contents a popover; the panel keeps the property
+ * and adds the two views the popover had nowhere to put.
+ *
+ * Every view is rebuilt on open and on tab change, never cached — this panel
+ * holds no document state, it only asks for the numbers and the outline.
+ */
+function createInfoPanel(options: WindowChromeOptions): InfoPanel {
+  const element = document.createElement('aside')
+  element.className = 'info-panel'
+  element.hidden = true
+  element.setAttribute('aria-label', 'Document information')
+
+  const heading = document.createElement('div')
+  heading.className = 'info-panel-title'
+
+  const tabs = document.createElement('div')
+  tabs.className = 'info-panel-tabs'
+  tabs.setAttribute('role', 'tablist')
+
+  const body = document.createElement('div')
+  body.className = 'info-panel-body'
+  body.setAttribute('role', 'tabpanel')
+  element.append(heading, tabs, body)
+
+  let current: InfoTab | null = null
+
+  const statistic = (value: string, label: string): HTMLElement => {
+    const cell = document.createElement('div')
+    cell.className = 'info-statistic'
+    const amount = document.createElement('strong')
+    amount.textContent = value
+    const name = document.createElement('span')
+    name.textContent = label
+    cell.append(amount, name)
+    return cell
+  }
+
+  const unavailable = (label: string, reason: string): HTMLElement => {
+    // Named and visibly unavailable, never blank: an empty row would read as a
+    // document with no history rather than a shell with no timestamp port.
+    const row = document.createElement('div')
+    row.className = 'info-statistic wide unavailable'
+    const amount = document.createElement('strong')
+    amount.textContent = '—'
+    const name = document.createElement('span')
+    name.textContent = label
+    row.title = reason
+    row.append(amount, name)
+    return row
+  }
+
+  const paintStatistics = (): void => {
+    const stats = options.getStatistics?.()
+    if (stats === undefined) {
+      body.append(emptyState('Statistics are not available in this shell'))
+      return
+    }
+    const grid = document.createElement('div')
+    grid.className = 'info-statistics'
+    grid.append(
+      statistic(stats.words.toLocaleString(), stats.words === 1 ? 'Word' : 'Words'),
+      statistic(stats.characters.toLocaleString(), 'Characters'),
+      statistic(stats.paragraphs.toLocaleString(), stats.paragraphs === 1 ? 'Paragraph' : 'Paragraphs'),
+      statistic(`${stats.readMinutes}m`, 'Read Time'),
+      unavailable('Modified', 'Modified — available when the file port reports timestamps'),
+      unavailable('Created', 'Created — available when the file port reports timestamps'),
+    )
+    body.append(grid)
+  }
+
+  const paintContents = (): void => {
+    const outline = options.getOutline?.()
+    if (outline === undefined || options.onNavigate === undefined) {
+      body.append(emptyState('Contents are not available in this shell'))
+      return
+    }
+    if (outline.length === 0) {
+      body.append(emptyState('No headings in this document'))
+      return
+    }
+    const list = document.createElement('div')
+    list.className = 'info-outline'
+    for (const entry of outline) {
+      const item = document.createElement('button')
+      item.type = 'button'
+      item.textContent = entry.text === '' ? '(untitled heading)' : entry.text
+      item.dataset['level'] = String(entry.level)
+      item.addEventListener('mousedown', (event) => {
+        // mousedown so the editor keeps focus; navigation sets the caret.
+        event.preventDefault()
+        options.onNavigate?.(entry.pos)
+      })
+      list.append(item)
+    }
+    body.append(list)
+  }
+
+  const paintBacklinks = (): void => {
+    // Backlinks need every note's text. The workspace index carries a title and
+    // a preview, never a body, so this shell genuinely cannot answer the
+    // question — and "No notes link to this one" would be a claim to have
+    // looked. Naming the missing capability is the honest empty state.
+    body.append(emptyState('Backlinks arrive when a folder catalog can be searched'))
+  }
+
+  const paint = (): void => {
+    body.replaceChildren()
+    heading.textContent = INFO_TABS.find((entry) => entry.id === current)?.label ?? ''
+    for (const button of tabs.querySelectorAll<HTMLButtonElement>('button')) {
+      const selected = button.dataset['tab'] === current
+      button.classList.toggle('selected', selected)
+      button.setAttribute('aria-selected', String(selected))
+    }
+    if (current === 'statistics') paintStatistics()
+    else if (current === 'contents') paintContents()
+    else if (current === 'backlinks') paintBacklinks()
+  }
+
+  for (const entry of INFO_TABS) {
+    const button = svgButton('info-panel-tab', entry.label, entry.icon)
+    button.dataset['tab'] = entry.id
+    button.setAttribute('role', 'tab')
+    button.addEventListener('mousedown', (event) => event.preventDefault())
+    button.addEventListener('click', () => open(entry.id))
+    tabs.append(button)
+  }
+
+  const onEscape = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') close()
+  }
+
+  function open(tab: InfoTab): void {
+    current = tab
+    element.hidden = false
+    paint()
+    // Escape dismisses it. Clicking away does not: this is a panel a person
+    // reads *while* editing, so stealing it on the next keystroke in the
+    // document would make it useless for the job it exists to do.
+    document.addEventListener('keydown', onEscape, true)
+  }
+
+  function close(): void {
+    current = null
+    element.hidden = true
+    body.replaceChildren()
+    document.removeEventListener('keydown', onEscape, true)
+  }
+
+  return {
+    element,
+    open,
+    close,
+    tab: () => current,
+    refresh: () => {
+      if (current !== null) paint()
+    },
+    // Bear's exact behaviour: the shortcut for the tab you are already looking
+    // at closes the panel; any other tab switches to it without closing.
+    toggle: (tab) => (current === tab ? close() : open(tab)),
+  }
+}
+
+function emptyState(message: string): HTMLElement {
+  const empty = document.createElement('div')
+  empty.className = 'info-empty'
+  empty.textContent = message
+  return empty
 }
 
 /**
@@ -739,6 +1006,27 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     options.workspace === undefined ? { disabled: true, owner: 'the Bear-parity shell' } : {})
   left.append(documentListButton)
 
+  // Back and forward through visited notes, hidden by default exactly as Bear
+  // hides them. They stay disabled until a catalog can be navigated: a stub
+  // with one note has nowhere to go back to, and an enabled arrow that does
+  // nothing is the fake control this shell refuses to ship.
+  const historyNavigation = document.createElement('div')
+  historyNavigation.className = 'history-navigation'
+  historyNavigation.hidden = true
+  historyNavigation.append(
+    svgButton('tool', 'Back', '<path d="m14 6-6 6 6 6"/>', {
+      disabled: true,
+      owner: 'a real folder catalog',
+    }),
+    svgButton('tool', 'Forward', '<path d="m10 6 6 6-6 6"/>', {
+      disabled: true,
+      owner: 'a real folder catalog',
+    }),
+  )
+  const toggleHistoryNavigation = (): void => {
+    historyNavigation.hidden = !historyNavigation.hidden
+  }
+
   // Open a real file (APP-1). Sits with the document controls because it is
   // one: the leading cluster is navigation, the trailing cluster is editing.
   const openButton = document.createElement('button')
@@ -770,77 +1058,27 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   })
   left.append(saveButton)
 
-  // ---- temporary contents (EDITOR-3) ----
-  // A popover, deliberately not a sidebar: it opens over the page, lists the
-  // headings, navigates, and closes. There is no persistent outline surface.
+  // ---- document information (EDITOR-3, widened for APP-2) ----
+  // The contents view was a popover when it was the only one. Statistics and
+  // backlinks are the same question about the same document, so all three share
+  // one panel rather than each growing a surface of its own.
+  const infoPanel = createInfoPanel(options)
+  const contentsAvailable = options.getOutline !== undefined && options.onNavigate !== undefined
+
   const contentsButton = document.createElement('button')
   contentsButton.type = 'button'
   contentsButton.className = 'tool contents'
   contentsButton.setAttribute('aria-label', 'Contents')
   contentsButton.innerHTML =
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h12M4 12h16M7 18h13"/></svg>'
-
-  const contentsPopover = document.createElement('div')
-  contentsPopover.className = 'contents-popover'
-  contentsPopover.setAttribute('aria-label', 'Table of contents')
-
-  if (options.getOutline !== undefined && options.onNavigate !== undefined) {
-    const getOutline = options.getOutline
-    const onNavigate = options.onNavigate
+  if (contentsAvailable) {
     contentsButton.title = 'Contents'
-
-    const closeContents = (): void => {
-      contentsPopover.classList.remove('open')
-      document.removeEventListener('mousedown', onOutsidePress, true)
-      document.removeEventListener('keydown', onEscape, true)
-    }
-    const onOutsidePress = (event: MouseEvent): void => {
-      const target = event.target
-      if (target instanceof Node && (contentsPopover.contains(target) || contentsButton.contains(target)))
-        return
-      closeContents()
-    }
-    const onEscape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') closeContents()
-    }
-
-    contentsButton.addEventListener('click', () => {
-      if (contentsPopover.classList.contains('open')) {
-        closeContents()
-        return
-      }
-      // Built fresh on every open: the popover is temporary, so it never holds
-      // a stale copy of the document's structure.
-      contentsPopover.replaceChildren()
-      const outline = getOutline()
-      if (outline.length === 0) {
-        const empty = document.createElement('div')
-        empty.className = 'contents-empty'
-        empty.textContent = 'No headings in this document'
-        contentsPopover.append(empty)
-      }
-      for (const entry of outline) {
-        const item = document.createElement('button')
-        item.type = 'button'
-        item.textContent = entry.text === '' ? '(untitled heading)' : entry.text
-        item.dataset['level'] = String(entry.level)
-        item.addEventListener('mousedown', (event) => {
-          // mousedown so the editor keeps focus; navigation sets the caret.
-          event.preventDefault()
-          closeContents()
-          onNavigate(entry.pos)
-        })
-        contentsPopover.append(item)
-      }
-      contentsPopover.classList.add('open')
-      document.addEventListener('mousedown', onOutsidePress, true)
-      document.addEventListener('keydown', onEscape, true)
-    })
+    contentsButton.addEventListener('click', () => infoPanel.toggle('contents'))
   } else {
     contentsButton.disabled = true
     contentsButton.title = 'Contents — not available in this shell'
   }
-  left.append(contentsButton, contentsPopover)
+  left.append(contentsButton)
 
   const filename = document.createElement('div')
   filename.className = 'filename'
@@ -1117,39 +1355,71 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const button = svgButton('tool', entry.label, entry.icon, { disabled: true, owner: entry.owner })
     right.append(button)
   }
-  if (isMacOS) {
-    right.append(
-      svgButton(
-        'tool',
-        'Document information',
-        '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
-        { disabled: true, owner: 'a later release' },
-      ),
-    )
-  }
+  // Bear's pair at the window's trailing edge: styles bar, then the document
+  // information panel. The native shell shows them because its titlebar has no
+  // other editing furniture; the web shell keeps the same two in `left`.
+  // No styles-bar switch in the titlebar. Bear needs one because its bar is
+  // pinned out of the way at the bottom of the editor; ours is a movable
+  // palette that is already where the person put it, and View › Toggle Styles
+  // Bar (⇧⌘Y) covers hiding it. A second control would be titlebar furniture
+  // competing with the document, which is what the titlebar rule forbids.
+  const infoButton = svgButton(
+    'tool document-information',
+    'Document information',
+    '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
+  )
+  infoButton.addEventListener('click', () => infoPanel.toggle('statistics'))
+  if (isMacOS) right.append(infoButton)
 
   const stylesBar = createStylesBar(options)
+
+  // The word count rides *inside* the palette rather than beside it.
+  //
+  // Bear can put its count in a separate pill because Bear's styles bar is
+  // pinned to the bottom of the editor. Ours is draggable, and a second element
+  // that had to chase it would either lag behind or need the drag code to know
+  // about it. Living in the bar, it simply moves.
+  const wordCount = document.createElement('div')
+  wordCount.className = 'word-count'
+  wordCount.hidden = true
+  wordCount.setAttribute('aria-label', 'Word count')
+  stylesBar.append(wordCount)
+  const paintWordCount = (): void => {
+    if (wordCount.hidden) return
+    const words = options.getStatistics?.().words ?? 0
+    wordCount.textContent = `${words.toLocaleString()} ${words === 1 ? 'Word' : 'Words'}`
+  }
+  const toggleWordCount = (): void => {
+    wordCount.hidden = !wordCount.hidden
+    paintWordCount()
+  }
+
   const stylesBarToggle = document.createElement('button')
   stylesBarToggle.type = 'button'
   stylesBarToggle.className = 'styles-bar-menu-toggle'
   const paintStylesBarToggle = (): void => {
     stylesBarToggle.textContent = stylesBar.hidden ? 'Show styles bar' : 'Hide styles bar'
   }
-  paintStylesBarToggle()
   const toggleStylesBar = (): void => {
     const visible = stylesBar.hidden
     stylesBar.hidden = !visible
     options.onStylesBarVisibleChange(visible)
     paintStylesBarToggle()
   }
+  paintStylesBarToggle()
   stylesBarToggle.addEventListener('mousedown', (event) => event.preventDefault())
   stylesBarToggle.addEventListener('click', toggleStylesBar)
   // The same tiny View/Format affordance restores a deliberately hidden bar;
   // hiding it can never strand the user without a way back.
   popover.append(stylesBarToggle)
 
-  if (isMacOS) titlebar.append(filename, right)
-  else titlebar.append(left, filename, editTools, right)
+  // Bear keeps the history arrows at the window's leading edge in both cases:
+  // beside the native traffic lights, or at the head of the web toolbar.
+  if (isMacOS) titlebar.append(historyNavigation, filename, right)
+  else {
+    left.insertBefore(historyNavigation, documentListButton.nextSibling)
+    titlebar.append(left, filename, editTools, right)
+  }
 
   // ---- editor host ----
   const editorSection = document.createElement('section')
@@ -1168,7 +1438,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   const documentSurface = document.createElement('div')
   documentSurface.className = 'document-surface'
-  documentSurface.append(stylesBar, editorSection)
+  documentSurface.append(stylesBar, editorSection, infoPanel.element)
   const disposeDocumentScrollIndicator = installDocumentScrollIndicator(editorSection, documentSurface, page)
   windowEl.addEventListener('pointerdown', (event) => {
     if (event.target instanceof Node && !stylesBar.contains(event.target)) {
@@ -1186,6 +1456,16 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   let getWorkspaceMode = (): WorkspaceMode => 'editor'
   let toggleWorkspacePin = (_id: string): void => {}
   let workspacePinState = (_id: string): boolean => false
+
+  // Note-list view state lives out here so the chrome answers the same
+  // questions with or without a workspace. Without one these hold the defaults
+  // and nothing reads them — the composition root disables the commands.
+  let previewDensity: PreviewDensity = 'medium'
+  let notesSort: NotesSort = 'modified'
+  let newestOnTop = true
+  let foldersSort: FoldersSort = 'title'
+  let foldersAtoZ = false
+  let repaintNoteList = (): void => {}
 
   if (options.workspace === undefined) {
     windowEl.append(titlebar, documentSurface)
@@ -1216,8 +1496,6 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     workspaceHeader.append(workspaceName, libraryOptions)
 
     let noteFilter: 'all' | 'pinned' = 'all'
-    let sortMode: 'modified' | 'title' = 'modified'
-    let previewDensity: 'small' | 'medium' | 'large' = 'medium'
 
     const libraryRows = document.createElement('div')
     libraryRows.className = 'library-rows'
@@ -1372,8 +1650,16 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const countRow = document.createElement('div')
     countRow.className = 'notes-menu-count'
     countRow.textContent = `${workspaceNotes.length} notes`
+    const datesKnown = workspaceNotes.every((note) => note.updatedAt !== undefined)
+    const createdKnown = workspaceNotes.every((note) => note.createdAt !== undefined)
     const sortModified = menuRow('Sort by modification date')
+    const sortCreated = menuRow('Sort by creation date')
+    if (!createdKnown) {
+      sortCreated.disabled = true
+      sortCreated.title = 'Creation date — available when the catalog reports timestamps'
+    }
     const sortTitle = menuRow('Sort by title')
+    const newestOnTopRow = menuRow('Newest on top')
     const previewSmall = menuRow('Small preview')
     const previewMedium = menuRow('Medium preview')
     const previewLarge = menuRow('Large preview')
@@ -1385,7 +1671,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     notesMenu.append(
       countRow,
       sortModified,
+      sortCreated,
       sortTitle,
+      newestOnTopRow,
       document.createElement('hr'),
       previewSmall,
       previewMedium,
@@ -1487,14 +1775,17 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     }
 
     const paintMenuState = (): void => {
+      const tick = (on: boolean): string => (on ? '✓  ' : '')
       notesTitle.innerHTML = `${noteFilter === 'pinned' ? 'Pinned' : (workspace.collectionLabel ?? 'Open Notes')} <span aria-hidden="true">⌄</span>`
-      sortModified.textContent = `${sortMode === 'modified' ? '✓  ' : ''}Sort by modification date`
-      sortTitle.textContent = `${sortMode === 'title' ? '✓  ' : ''}Sort by title`
-      previewSmall.textContent = `${previewDensity === 'small' ? '✓  ' : ''}Small preview`
-      previewMedium.textContent = `${previewDensity === 'medium' ? '✓  ' : ''}Medium preview`
-      previewLarge.textContent = `${previewDensity === 'large' ? '✓  ' : ''}Large preview`
-      showAll.textContent = `${noteFilter === 'all' ? '✓  ' : ''}Open Notes`
-      showPinned.textContent = `${noteFilter === 'pinned' ? '✓  ' : ''}Pinned`
+      sortModified.textContent = `${tick(notesSort === 'modified')}Sort by modification date`
+      sortCreated.textContent = `${tick(notesSort === 'created')}Sort by creation date`
+      sortTitle.textContent = `${tick(notesSort === 'title')}Sort by title`
+      newestOnTopRow.textContent = `${tick(newestOnTop)}Newest on top`
+      previewSmall.textContent = `${tick(previewDensity === 'small')}Small preview`
+      previewMedium.textContent = `${tick(previewDensity === 'medium')}Medium preview`
+      previewLarge.textContent = `${tick(previewDensity === 'large')}Large preview`
+      showAll.textContent = `${tick(noteFilter === 'all')}Open Notes`
+      showPinned.textContent = `${tick(noteFilter === 'pinned')}Pinned`
       noteList.dataset['preview'] = previewDensity
       paintLibrary()
     }
@@ -1502,18 +1793,31 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const paintNotes = (): void => {
       const query = search.value.trim().toLocaleLowerCase()
       noteItems.replaceChildren()
+      // Pin state leads every date order, most recently pinned first; the
+      // chosen sort decides the rest. `Newest on Top` flips only the date
+      // orders — reversing a title sort is what `A to Z` means, and that is
+      // offered under Folders Sorting rather than here.
+      //
+      // Modification order comes from the catalog's own sequence rather than
+      // from a timestamp, because that is the order the catalog actually knows;
+      // creation date needs a real stamp, and the menu disables that sort when
+      // the catalog cannot supply one.
       const visibleNotes = [...workspaceNotes]
         .filter((note) => noteFilter === 'all' || note.pinned)
         .filter((note) => query === '' || `${note.title} ${note.preview}`.toLocaleLowerCase().includes(query))
         .sort((left, right) => {
-          if (sortMode === 'title') return left.title.localeCompare(right.title)
+          if (notesSort === 'title') return left.title.localeCompare(right.title)
           const pinDifference = Number(right.pinned) - Number(left.pinned)
           if (pinDifference !== 0) return pinDifference
           if (left.pinned && right.pinned) {
             const recency = (pinOrder.get(right.id) ?? 0) - (pinOrder.get(left.id) ?? 0)
             if (recency !== 0) return recency
           }
-          return (modifiedOrder.get(left.id) ?? 0) - (modifiedOrder.get(right.id) ?? 0)
+          const order =
+            notesSort === 'created'
+              ? (right.createdAt ?? 0) - (left.createdAt ?? 0)
+              : (modifiedOrder.get(left.id) ?? 0) - (modifiedOrder.get(right.id) ?? 0)
+          return newestOnTop ? order : -order
         })
       for (const note of visibleNotes) {
         const item = document.createElement('div')
@@ -1620,14 +1924,20 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       paintMenuState()
       paintNotes()
     })
-    sortModified.addEventListener('click', () => {
-      sortMode = 'modified'
-      paintMenuState()
-      paintNotes()
-      closeNotesMenu()
-    })
-    sortTitle.addEventListener('click', () => {
-      sortMode = 'title'
+    for (const [button, sort] of [
+      [sortModified, 'modified'],
+      [sortCreated, 'created'],
+      [sortTitle, 'title'],
+    ] as const) {
+      button.addEventListener('click', () => {
+        notesSort = sort
+        paintMenuState()
+        paintNotes()
+        closeNotesMenu()
+      })
+    }
+    newestOnTopRow.addEventListener('click', () => {
+      newestOnTop = !newestOnTop
       paintMenuState()
       paintNotes()
       closeNotesMenu()
@@ -1667,8 +1977,13 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     }
     workspacePinState = (id: string): boolean =>
       workspaceNotes.find((note) => note.id === id)?.pinned ?? false
-    paintMenuState()
-    paintNotes()
+    // The menubar mutates the same state the note-list dropdown does, so both
+    // surfaces repaint through one function rather than each keeping its own.
+    repaintNoteList = (): void => {
+      paintMenuState()
+      paintNotes()
+    }
+    repaintNoteList()
     noteItems.addEventListener('scroll', () => {
       noteContextMenu.hidden = true
     })
@@ -1700,9 +2015,46 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     editorHost: page,
     toggleStylesBar,
     stylesBarVisible: () => !stylesBar.hidden,
-    openContents: () => contentsButton.click(),
+    toggleInfoTab: (tab) => infoPanel.toggle(tab),
+    infoTab: () => infoPanel.tab(),
+    openContents: () => infoPanel.open('contents'),
+    toggleWordCount,
+    wordCountVisible: () => !wordCount.hidden,
+    refreshStatistics() {
+      paintWordCount()
+      infoPanel.refresh()
+    },
+    setPreferences(next) {
+      preferences = next
+      paintPreferenceUi()
+    },
+    toggleHistoryNavigation,
+    historyNavigationVisible: () => !historyNavigation.hidden,
     setWorkspaceMode: (mode) => setWorkspaceMode(mode),
     workspaceMode: () => getWorkspaceMode(),
+    setPreviewDensity(density) {
+      previewDensity = density
+      repaintNoteList()
+    },
+    previewDensity: () => previewDensity,
+    setNotesSort(sort) {
+      notesSort = sort
+      repaintNoteList()
+    },
+    notesSort: () => notesSort,
+    toggleNewestOnTop() {
+      newestOnTop = !newestOnTop
+      repaintNoteList()
+    },
+    newestOnTop: () => newestOnTop,
+    setFoldersSort(sort) {
+      foldersSort = sort
+    },
+    foldersSort: () => foldersSort,
+    toggleFoldersAtoZ() {
+      foldersAtoZ = !foldersAtoZ
+    },
+    foldersAtoZ: () => foldersAtoZ,
     togglePinned: (id) => toggleWorkspacePin(id),
     isPinned: (id) => workspacePinState(id),
     dispose: disposeDocumentScrollIndicator,

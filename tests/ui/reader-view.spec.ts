@@ -203,33 +203,121 @@ test.describe('folding', () => {
   })
 })
 
-test.describe('temporary contents', () => {
-  test('lists the headings, navigates, and closes — never a sidebar', async ({ page }) => {
+/**
+ * The contents view became one tab of the document-information panel.
+ *
+ * EDITOR-3 shipped it as a popover that closed on navigate, because it was the
+ * only view of its kind and a popover was the smallest thing that could work.
+ * Statistics and backlinks ask the same question about the same document, and
+ * three popovers fighting for the same corner is not a design — so the three
+ * share a panel, matching Bear. What EDITOR-3 was protecting survives: the
+ * panel floats over the page instead of taking a column, so the document keeps
+ * its width and nothing reflows when the panel opens.
+ */
+test.describe('document information panel', () => {
+  test('lists the headings and navigates, floating over the page', async ({ page }) => {
     await page.getByRole('button', { name: 'Contents' }).click()
-    const popover = page.locator('.contents-popover')
-    await expect(popover).toBeVisible()
-    await expect(popover.getByRole('button', { name: 'The first useful proof' })).toBeVisible()
+    const panel = page.locator('.info-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'The first useful proof' })).toBeVisible()
 
-    await popover.getByRole('button', { name: 'The live document boundary' }).click()
+    const widthBefore = await page.locator(`${editor}`).evaluate((node) => node.clientWidth)
+    await panel.getByRole('button', { name: 'The live document boundary' }).click()
 
-    // Temporary: navigation closes the popover. Nothing persistent remains.
-    await expect(popover).toBeHidden()
-    // The caret landed in the heading.
+    // The caret landed in the heading, and the panel is still open — a person
+    // navigating an outline is usually navigating it more than once.
     const selection = await page.evaluate(() => window.getSelection()?.anchorNode?.textContent)
     expect(selection).toContain('live document boundary')
+    await expect(panel).toBeVisible()
+
+    // Floating, not docked: the page never gave up width for it.
+    const widthAfter = await page.locator(`${editor}`).evaluate((node) => node.clientWidth)
+    expect(widthAfter).toBe(widthBefore)
   })
 
-  test('Escape and clicking away both dismiss it', async ({ page }) => {
+  test('Escape dismisses it; editing the document does not', async ({ page }) => {
     await page.getByRole('button', { name: 'Contents' }).click()
-    const popover = page.locator('.contents-popover')
-    await expect(popover).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(popover).toBeHidden()
+    const panel = page.locator('.info-panel')
+    await expect(panel).toBeVisible()
 
-    await page.getByRole('button', { name: 'Contents' }).click()
-    await expect(popover).toBeVisible()
+    // Clicking into the document must not steal it — the panel is read while
+    // editing, which is the whole reason it is a panel and not a popover.
     await page.locator(editor).click({ position: { x: 200, y: 300 } })
-    await expect(popover).toBeHidden()
+    await expect(panel).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(panel).toBeHidden()
+  })
+
+  test('the tabs switch views without ever closing the panel', async ({ page }) => {
+    const panel = page.locator('.info-panel')
+    await page.getByRole('button', { name: 'Contents' }).click()
+    await expect(panel.locator('.info-panel-title')).toHaveText('Table of Contents')
+
+    await panel.getByRole('tab', { name: 'Statistics' }).click()
+    await expect(panel.locator('.info-panel-title')).toHaveText('Statistics')
+
+    // A segmented control is a choice, not a switch: pressing the selected
+    // segment again re-selects it. Closing is the command's job, below.
+    await panel.getByRole('tab', { name: 'Statistics' }).click()
+    await expect(panel).toBeVisible()
+  })
+
+  test('the View command for the open view closes it; another view switches', async ({ page }) => {
+    // Bear's exact menubar behaviour, exercised through the shared router the
+    // macOS menubar dispatches into — the browser has no menubar to click.
+    const panel = page.locator('.info-panel')
+    const run = (id: string): Promise<void> => page.evaluate((command) => window.simplemark!.run(command as never), id)
+
+    await run('toggleStatistics')
+    await expect(panel.locator('.info-panel-title')).toHaveText('Statistics')
+
+    await run('contents')
+    await expect(panel.locator('.info-panel-title')).toHaveText('Table of Contents')
+    await expect(panel).toBeVisible()
+
+    await run('contents')
+    await expect(panel).toBeHidden()
+  })
+
+  test('the word count travels with the styles bar and follows the document', async ({ page }) => {
+    const run = (id: string): Promise<void> => page.evaluate((command) => window.simplemark!.run(command as never), id)
+    const pill = page.locator('.word-count')
+    await expect(pill).toBeHidden()
+
+    await run('toggleWordCount')
+    await expect(pill).toBeVisible()
+    // Inside the palette, so dragging the bar takes the count with it rather
+    // than leaving it to chase a moving target.
+    await expect(page.locator('.styles-bar .word-count')).toBeVisible()
+
+    const count = async (): Promise<number> => Number((await pill.innerText()).replace(/[^\d]/g, ''))
+    const before = await count()
+    expect(before).toBeGreaterThan(0)
+
+    // The editor's own API, as the folding tests use. A bare click can land on
+    // a rendered block that accepts no text, and then the assertion below would
+    // be reporting a typing failure as a broken counter.
+    await page.evaluate(() => window.simplemark!.editor.focusEnd())
+    await page.keyboard.type(' one two three')
+
+    // Prove the document took the words before asking what the pill says, so a
+    // failure names which half went wrong.
+    await expect.poll(() => markdown(page)).toContain('one two three')
+    await expect.poll(count).toBe(before + 3)
+  })
+
+  test('statistics count the prose, not the Markdown furniture', async ({ page }) => {
+    await page.getByRole('button', { name: 'Contents' }).click()
+    const panel = page.locator('.info-panel')
+    await panel.getByRole('tab', { name: 'Statistics' }).click()
+
+    const words = Number(await panel.locator('.info-statistic').first().locator('strong').innerText())
+    expect(words).toBeGreaterThan(0)
+
+    // Timestamps need a file port that reports them. Named and dimmed, never a
+    // fabricated date and never a blank row.
+    await expect(panel.locator('.info-statistic.unavailable')).toHaveCount(2)
   })
 
   test('navigating to a heading hidden by a fold reveals it', async ({ page }) => {
@@ -242,10 +330,7 @@ test.describe('temporary contents', () => {
 
     // The outline reads the document, not the DOM, so the entry is still there.
     await page.getByRole('button', { name: 'Contents' }).click()
-    await page
-      .locator('.contents-popover')
-      .getByRole('button', { name: 'The live document boundary' })
-      .click()
+    await page.locator('.info-panel').getByRole('button', { name: 'The live document boundary' }).click()
 
     await expect(h2).toBeVisible()
   })

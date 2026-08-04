@@ -802,6 +802,43 @@ mod tests {
         assert_ne!(content_hash(b"# note\n"), content_hash(b"# note"));
     }
 
+    /// Every menu shortcut, parsed by the parser the menubar really uses.
+    ///
+    /// An accelerator this crate cannot parse is not a menu item that quietly
+    /// loses its shortcut — it fails while the menubar is being built, and the
+    /// application comes up with no menus at all. The Linux gate cannot catch
+    /// that by construction, so it is caught here, where the parser lives.
+    ///
+    /// The registry stays the single source of truth: this reads the shortcuts
+    /// out of it rather than keeping a second list that could agree with the
+    /// grammar while disagreeing with the application.
+    #[test]
+    fn every_registry_accelerator_parses() {
+        use std::str::FromStr;
+
+        let registry = include_str!("../../src/application/commands.ts");
+        let accelerators: Vec<&str> = registry
+            .split("accelerator: '")
+            .skip(1)
+            .filter_map(|rest| rest.split('\'').next())
+            .collect();
+
+        // A refactor that renames the field must fail loudly rather than
+        // silently checking nothing at all.
+        assert!(
+            accelerators.len() > 20,
+            "found only {} accelerators — has commands.ts changed shape?",
+            accelerators.len()
+        );
+
+        for accelerator in accelerators {
+            assert!(
+                muda::accelerator::Accelerator::from_str(accelerator).is_ok(),
+                "the menubar cannot parse the accelerator {accelerator:?}, so building it would fail"
+            );
+        }
+    }
+
     #[test]
     fn relative_document_links_follow_the_folder_on_this_device() {
         let directory = tempfile::tempdir().unwrap();

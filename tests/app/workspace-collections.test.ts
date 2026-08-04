@@ -86,6 +86,34 @@ describe('WorkspaceCollections', () => {
     ])
     expect(collections.hiddenHandles()).toEqual(['/project-a/a.md'])
   })
+
+  it('does not treat a hidden on-disk note as a new member on every refresh', () => {
+    const collections = new WorkspaceCollections()
+    collections.addFolder(folder('/project-a', 'a.md', 'b.md'))
+    collections.hideFromFolders('/project-a/a.md')
+
+    const first = collections.refreshFolder(folder('/project-a', 'a.md', 'b.md'))
+    const second = collections.refreshFolder(folder('/project-a', 'a.md', 'b.md'))
+
+    expect(first.membershipChanged).toBe(false)
+    expect(second.membershipChanged).toBe(false)
+    expect(second.previous?.notes.map((entry) => entry.handle)).toEqual(['/project-a/b.md'])
+    expect(second.current.notes.map((entry) => entry.handle)).toEqual(['/project-a/b.md'])
+  })
+
+  it('still reports a real visible add or removal exactly once', () => {
+    const collections = new WorkspaceCollections()
+    collections.addFolder(folder('/project-a', 'a.md', 'b.md'))
+    collections.hideFromFolders('/project-a/a.md')
+
+    const added = collections.refreshFolder(folder('/project-a', 'a.md', 'b.md', 'c.md'))
+    const stable = collections.refreshFolder(folder('/project-a', 'a.md', 'b.md', 'c.md'))
+    const removed = collections.refreshFolder(folder('/project-a', 'a.md', 'c.md'))
+
+    expect(added.membershipChanged).toBe(true)
+    expect(stable.membershipChanged).toBe(false)
+    expect(removed.membershipChanged).toBe(true)
+  })
 })
 
 describe('WorkspaceFolderStore', () => {

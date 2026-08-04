@@ -95,6 +95,32 @@ export class WorkspaceCollections {
     this.#folders.set(catalog.handle, catalog)
   }
 
+  /**
+   * Reconciles a disk refresh against the same visible membership the shell
+   * currently shows.
+   *
+   * A hidden note intentionally remains in the raw folder catalog because it
+   * remains on disk. Comparing a visible catalog to that raw refresh makes the
+   * hidden note look newly added forever: repaint -> save -> watcher -> repaint.
+   * Applying exclusions to both sides stops that feedback loop while retaining
+   * the refreshed raw catalog as filesystem truth.
+   */
+  refreshFolder(catalog: WorkspaceCatalog): {
+    readonly previous: WorkspaceCatalog | undefined
+    readonly current: WorkspaceCatalog
+    readonly membershipChanged: boolean
+  } {
+    const previous = this.folder(catalog.handle)
+    this.#folders.set(catalog.handle, catalog)
+    const current = this.#visible(catalog)
+    return {
+      previous,
+      current,
+      membershipChanged:
+        previous === undefined || membership(previous) !== membership(current),
+    }
+  }
+
   hideFromFolders(handle: string): void {
     this.#hidden.add(handle)
   }
@@ -135,4 +161,8 @@ export class WorkspaceCollections {
     if (id === 'recent') return this.recentNotes(fallbackHandle)
     return this.folder(id) ?? this.recentNotes(fallbackHandle)
   }
+}
+
+function membership(catalog: WorkspaceCatalog): string {
+  return catalog.notes.map((note) => note.handle).sort().join('\n')
 }

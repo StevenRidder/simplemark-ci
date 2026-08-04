@@ -467,16 +467,15 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
 
   await listen<string>('workspace-folder-changed', (event) => {
     void enqueue(async () => {
-      const previous = collections.folder(event.payload)
-      if (previous === undefined) return
+      if (collections.folder(event.payload) === undefined) return
       const refreshed = await catalogPort.listFolder(event.payload)
-      if (catalogMembership(previous) === catalogMembership(refreshed)) return
-      collections.addFolder(refreshed)
+      const refresh = collections.refreshFolder(refreshed)
+      if (!refresh.membershipChanged) return
       persistFolders()
 
       const activeWasRemoved = activeHandle !== undefined
-        && previous.notes.some((note) => note.handle === activeHandle)
-        && !refreshed.notes.some((note) => note.handle === activeHandle)
+        && refresh.previous?.notes.some((note) => note.handle === activeHandle) === true
+        && !refresh.current.notes.some((note) => note.handle === activeHandle)
       if (activeWasRemoved) {
         current.setStatus('error', 'The open note was removed from disk — your editor was left untouched')
         return
@@ -676,10 +675,6 @@ function nativeWorkspace(
       },
     ],
   }
-}
-
-function catalogMembership(catalog: WorkspaceCatalog): string {
-  return catalog.notes.map((note) => note.handle).sort().join('\n')
 }
 
 function catalogWorkspace(

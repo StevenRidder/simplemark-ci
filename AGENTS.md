@@ -33,6 +33,12 @@ Every MCP call must pass `project="simplemark"`; the local server config is in
 - Agents own their work end to end: open the PR, and once the required status is
   green, add it to the GitHub merge queue. GitHub runs the full gate on the
   merge-group commit and owns landing. There is no human review step in this loop.
+- **Repository admins may bypass the queue and the `gate` check** and push directly
+  to `main`. This exists so documentation and administrative changes are not held
+  behind a four-platform build. It is not a shortcut for source changes: anything
+  touching `src/`, `src-tauri/`, or `tests/` goes through the PR and the queue like
+  always, because the bypass skips the gate rather than passing it. Non-admins are
+  unaffected and the queue remains the only path for them.
 - `complete_claim(evidence=...)` with branch, head SHA, and PR URL moves the task to
   In Review; Done is then stamped from merge provenance on the default branch. That
   is a bookkeeping distinction, not a gate — merging is what produces the provenance.

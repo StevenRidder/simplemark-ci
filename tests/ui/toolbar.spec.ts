@@ -111,7 +111,7 @@ test('table-local controls change rows, columns, and alignment as portable Markd
   await expect(table.locator('tr')).toHaveCount(rowsBefore + 1)
 
   const cellsBefore = await table.locator('tr').first().locator('th, td').count()
-  await (await openTableOptions(page)).getByRole('button', { name: 'Column right' }).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Column right', exact: true }).click()
   await expect(table.locator('tr').first().locator('th, td')).toHaveCount(cellsBefore + 1)
 
   await (await openTableOptions(page)).getByRole('button', { name: 'Align right' }).click()
@@ -122,6 +122,33 @@ test('table-local controls change rows, columns, and alignment as portable Markd
   // metadata is allowed to leak into the Markdown file.
   await expect.poll(() => markdown(page)).toMatch(/\|\s*:?-+:\s*\|/)
   await expect.poll(() => markdown(page)).not.toContain('colwidth')
+})
+
+test('table rows and columns move while the GFM header remains first', async ({ page }) => {
+  await caretAtEnd(page)
+  await page.keyboard.press('Enter')
+  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+
+  const table = page.locator(`${editor} table`)
+  await table.locator('th').nth(0).click()
+  await page.keyboard.type('Left')
+  await table.locator('th').nth(1).click()
+  await page.keyboard.type('Right')
+  await table.locator('td').nth(0).click()
+  await page.keyboard.type('first')
+  const columns = await table.locator('tr').nth(1).locator('td').count()
+  await table.locator('td').nth(columns).click()
+  await page.keyboard.type('second')
+
+  await table.locator('td').nth(columns).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Move row up' }).click()
+  await expect.poll(async () => table.locator('tr').nth(1).textContent()).toContain('second')
+  await expect(table.locator('tr').first()).toContainText('Left')
+
+  await table.locator('th').nth(1).click()
+  await (await openTableOptions(page)).getByRole('button', { name: 'Move column left' }).click()
+  await expect.poll(async () => table.locator('th').first().textContent()).toContain('Right')
+  await expect.poll(() => markdown(page)).toMatch(/\|\s*Right\s*\|\s*Left\s*\|/)
 })
 
 test('Tab from the final table cell creates a new editable GFM row', async ({ page }) => {

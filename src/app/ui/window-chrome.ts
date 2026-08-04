@@ -665,6 +665,8 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
     panel.append(
       command('List', 'bulletList'),
       command('Ordered List', 'orderedList'),
+      command('Indent', 'indentListItem'),
+      command('Outdent', 'outdentListItem'),
       command('Block Quote', 'quote'),
       nestedMenu('Todo', (todo) => {
         todo.append(
@@ -711,6 +713,20 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
       command('Math', 'inlineMath'),
       command('Math Block', 'mathBlock'),
       command('Wiki Link', 'wikiLink'),
+      nestedMenu('Transform', (transform) => {
+        transform.append(
+          command('Upper Case', 'uppercase'),
+          command('Lower Case', 'lowercase'),
+          command('Title Case', 'titleCase'),
+        )
+      }),
+      nestedMenu('Current Date', (date) => {
+        date.append(
+          command('Current Date', 'insertCurrentDate'),
+          command('Long Date', 'insertLongDate'),
+          command('Date and Time', 'insertCurrentDateTime'),
+        )
+      }),
       separator(),
     )
     // When space collapses these are the controls removed from the main row.

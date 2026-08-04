@@ -9,6 +9,8 @@ import {
   imageSchema,
   insertImageCommand,
   insertHrCommand,
+  liftListItemCommand,
+  sinkListItemCommand,
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
   toggleLinkCommand,
@@ -35,7 +37,7 @@ import { $useKeymap, $view, callCommand, getMarkdown } from '@milkdown/kit/utils
 import { DOMSerializer, Fragment } from '@milkdown/kit/prose/model'
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { toggleMark } from '@milkdown/kit/prose/commands'
-import { Selection } from '@milkdown/kit/prose/state'
+import { Selection, TextSelection } from '@milkdown/kit/prose/state'
 import {
   addRowAfter,
   CellSelection,
@@ -124,12 +126,20 @@ export type EditorCommandName =
   | 'completeTask'
   | 'incompleteTask'
   | 'moveCompletedTasks'
+  | 'indentListItem'
+  | 'outdentListItem'
+  | 'uppercase'
+  | 'lowercase'
+  | 'titleCase'
   | 'calloutNote'
   | 'calloutTip'
   | 'calloutImportant'
   | 'calloutWarning'
   | 'calloutCaution'
   | 'table'
+  | 'insertCurrentDate'
+  | 'insertLongDate'
+  | 'insertCurrentDateTime'
   | 'undo'
   | 'redo'
 
@@ -407,6 +417,21 @@ export class MilkdownEditor {
       case 'moveCompletedTasks':
         this.moveCompletedTasks()
         return
+      case 'indentListItem':
+        this.editor.action(callCommand(sinkListItemCommand.key))
+        return
+      case 'outdentListItem':
+        this.editor.action(callCommand(liftListItemCommand.key))
+        return
+      case 'uppercase':
+        this.transformSelectedText('uppercase')
+        return
+      case 'lowercase':
+        this.transformSelectedText('lowercase')
+        return
+      case 'titleCase':
+        this.transformSelectedText('titleCase')
+        return
       case 'calloutNote':
         this.setCallout('note')
         return
@@ -424,6 +449,15 @@ export class MilkdownEditor {
         return
       case 'table':
         this.editor.action(callCommand(insertTableCommand.key))
+        return
+      case 'insertCurrentDate':
+        this.insertLocalDate('numeric')
+        return
+      case 'insertLongDate':
+        this.insertLocalDate('long')
+        return
+      case 'insertCurrentDateTime':
+        this.insertLocalDate('dateTime')
         return
       case 'undo':
         this.editor.action(callCommand(undoCommand.key))
@@ -590,10 +624,12 @@ export class MilkdownEditor {
     const groups: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
       ['Rows', [
         ['rowBefore', 'Row above'], ['rowAfter', 'Row below'],
+        ['moveRowUp', 'Move row up'], ['moveRowDown', 'Move row down'],
         ['selectRow', 'Select row'], ['deleteRow', 'Delete row'],
       ]],
       ['Columns', [
         ['colBefore', 'Column left'], ['colAfter', 'Column right'],
+        ['moveColumnLeft', 'Move column left'], ['moveColumnRight', 'Move column right'],
         ['selectColumn', 'Select column'], ['deleteColumn', 'Delete column'],
       ]],
       ['Column', [['alignLeft', 'Align left'], ['alignCenter', 'Align center'], ['alignRight', 'Align right']]],
@@ -1204,6 +1240,75 @@ export class MilkdownEditor {
         replacement,
       )
       view.dispatch(transaction.setSelection(Selection.near(transaction.doc.resolve(active.pos + 2))))
+      view.focus()
+    })
+  }
+
+  /** Changes selected text without discarding the marks carried by each text node. */
+  private transformSelectedText(mode: 'uppercase' | 'lowercase' | 'titleCase'): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const { from, to, empty } = view.state.selection
+      if (empty) return
+      const replacements: Array<{ from: number; to: number; text: string; marks: ProseNode['marks'] }> = []
+      let atWordStart = true
+      let lastTextEnd = from
+      view.state.doc.nodesBetween(from, to, (node, pos) => {
+        if (!node.isText || node.text === undefined) return
+        const start = Math.max(from, pos)
+        const end = Math.min(to, pos + node.nodeSize)
+        if (start >= end) return
+        if (start > lastTextEnd) atWordStart = true
+        const selected = node.text.slice(start - pos, end - pos)
+        let text: string
+        if (mode === 'uppercase') text = selected.toLocaleUpperCase()
+        else if (mode === 'lowercase') text = selected.toLocaleLowerCase()
+        else {
+          text = [...selected].map((character) => {
+            const isWord = /[\p{L}\p{N}]/u.test(character)
+            const transformed = isWord
+              ? (atWordStart ? character.toLocaleUpperCase() : character.toLocaleLowerCase())
+              : character
+            atWordStart = !isWord
+            return transformed
+          }).join('')
+        }
+        replacements.push({ from: start, to: end, text, marks: node.marks })
+        lastTextEnd = end
+      })
+      if (replacements.length === 0) return
+      const transaction = view.state.tr
+      for (const replacement of replacements.reverse()) {
+        transaction.replaceWith(
+          replacement.from,
+          replacement.to,
+          view.state.schema.text(replacement.text, replacement.marks),
+        )
+      }
+      const transformedTo = to + replacements.reduce(
+        (delta, replacement) => delta + replacement.text.length - (replacement.to - replacement.from),
+        0,
+      )
+      view.dispatch(transaction.setSelection(TextSelection.create(transaction.doc, from, transformedTo)).scrollIntoView())
+      view.focus()
+    })
+  }
+
+  /** Inserts local wall-clock text. The value is ordinary Markdown, never live metadata. */
+  private insertLocalDate(format: 'numeric' | 'long' | 'dateTime'): void {
+    const now = new Date()
+    const year = String(now.getFullYear()).padStart(4, '0')
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    const day = String(now.getDate()).padStart(2, '0')
+    const numeric = `${year}-${month}-${day}`
+    const text = format === 'numeric'
+      ? numeric
+      : format === 'long'
+        ? new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long', day: 'numeric' }).format(now)
+        : `${numeric} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.insertText(text).scrollIntoView())
       view.focus()
     })
   }

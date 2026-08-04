@@ -141,7 +141,7 @@ test('a table edit saves and reopens as an ordinary GFM pipe table', async ({ pa
   await controls.getByRole('button', { name: 'Table options' }).click()
   await controls.getByRole('button', { name: 'Row below' }).click()
   await controls.getByRole('button', { name: 'Table options' }).click()
-  await controls.getByRole('button', { name: 'Column right' }).click()
+  await controls.getByRole('button', { name: 'Column right', exact: true }).click()
   await table.locator('td').last().click()
   await page.keyboard.type('Saved cell')
 

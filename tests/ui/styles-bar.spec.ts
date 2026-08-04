@@ -107,7 +107,7 @@ test('every styles-bar menu mirrors Bear and every visible command is available'
   await bar.getByRole('button', { name: 'Lists', exact: true }).click()
   const lists = bar.locator('.styles-menu.open')
   await expect(lists.locator(':scope > .styles-control, :scope > .styles-nested-group > .styles-nested-trigger').allTextContents())
-    .resolves.toEqual(['List', 'Ordered List', 'Block Quote', 'Todo›', 'Callout›', 'Separator'])
+    .resolves.toEqual(['List', 'Ordered List', 'Indent', 'Outdent', 'Block Quote', 'Todo›', 'Callout›', 'Separator'])
   await lists.locator('.styles-nested-trigger').filter({ hasText: 'Todo' }).hover()
   await expect(lists.getByRole('button', { name: 'Todo', exact: true })).toHaveCount(2)
   await expect(lists.getByRole('button', { name: 'Mark as Completed' })).toBeEnabled()
@@ -137,6 +137,47 @@ test('every styles-bar menu mirrors Bear and every visible command is available'
 
   await page.locator('.workspace-library-head').click()
   await expect(bar.locator('.styles-menu.open')).toHaveCount(0)
+})
+
+test('portable structure corrections survive as ordinary Markdown', async ({ page }) => {
+  const bar = page.getByLabel('Styles bar', { exact: true })
+  const listCommand = async (name: string): Promise<void> => {
+    await bar.getByRole('button', { name: 'Lists', exact: true }).click()
+    await bar.locator('.styles-menu.open').getByRole('button', { name, exact: true }).click()
+  }
+  const moreNested = async (group: string, name: string): Promise<void> => {
+    await bar.getByRole('button', { name: 'More', exact: true }).click()
+    const menu = bar.locator('.styles-menu.open')
+    await menu.locator('.styles-nested-trigger').filter({ hasText: group }).hover()
+    await menu.locator('.styles-nested-menu').filter({ has: page.getByRole('button', { name, exact: true }) })
+      .getByRole('button', { name, exact: true }).click()
+  }
+
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('parent')
+  await listCommand('List')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('child')
+  await listCommand('Indent')
+  await expect.poll(() => markdown(page)).toMatch(/[*-] parent\n\s{2,}[*-] child/)
+  await listCommand('Outdent')
+  await expect.poll(() => markdown(page)).toMatch(/[*-] parent\n[*-] child/)
+
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await selectNewWord(page, 'mIXed words')
+  await moreNested('Transform', 'Title Case')
+  await expect.poll(() => markdown(page)).toContain('Mixed Words')
+  await moreNested('Transform', 'Upper Case')
+  await expect.poll(() => markdown(page)).toContain('MIXED WORDS')
+  await moreNested('Transform', 'Lower Case')
+  await expect.poll(() => markdown(page)).toContain('mixed words')
+
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await moreNested('Current Date', 'Current Date')
+  await expect.poll(() => markdown(page)).toMatch(/\d{4}-\d{2}-\d{2}/)
 })
 
 test('Todo, Callout, and every highlighter item perform persistent edits', async ({ page }) => {

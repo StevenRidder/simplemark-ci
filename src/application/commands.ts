@@ -50,6 +50,11 @@ export type DocumentCommandId =
   | 'completeTask'
   | 'incompleteTask'
   | 'moveCompletedTasks'
+  | 'indentListItem'
+  | 'outdentListItem'
+  | 'uppercase'
+  | 'lowercase'
+  | 'titleCase'
   | 'calloutNote'
   | 'calloutTip'
   | 'calloutImportant'
@@ -61,6 +66,9 @@ export type DocumentCommandId =
   | 'convertToDiagram'
   | 'moveBlockUp'
   | 'moveBlockDown'
+  | 'insertCurrentDate'
+  | 'insertLongDate'
+  | 'insertCurrentDateTime'
   // History
   | 'undo'
   | 'redo'
@@ -201,6 +209,11 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   completeTask: { id: 'completeTask', label: 'Mark as Completed', target: 'editor' },
   incompleteTask: { id: 'incompleteTask', label: 'Mark as Incomplete', target: 'editor' },
   moveCompletedTasks: { id: 'moveCompletedTasks', label: 'Move Completed to Bottom', target: 'editor' },
+  indentListItem: { id: 'indentListItem', label: 'Indent', target: 'editor', accelerator: 'CmdOrCtrl+BracketRight' },
+  outdentListItem: { id: 'outdentListItem', label: 'Outdent', target: 'editor', accelerator: 'CmdOrCtrl+BracketLeft' },
+  uppercase: { id: 'uppercase', label: 'Upper Case', target: 'editor' },
+  lowercase: { id: 'lowercase', label: 'Lower Case', target: 'editor' },
+  titleCase: { id: 'titleCase', label: 'Title Case', target: 'editor' },
   calloutNote: { id: 'calloutNote', label: 'Note', target: 'editor' },
   calloutTip: { id: 'calloutTip', label: 'Tip', target: 'editor' },
   calloutImportant: { id: 'calloutImportant', label: 'Important', target: 'editor' },
@@ -217,6 +230,9 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
     target: 'editor',
     accelerator: 'CmdOrCtrl+Shift+Down',
   },
+  insertCurrentDate: { id: 'insertCurrentDate', label: 'Current Date (YYYY-MM-DD)', target: 'editor' },
+  insertLongDate: { id: 'insertLongDate', label: 'Long Date', target: 'editor' },
+  insertCurrentDateTime: { id: 'insertCurrentDateTime', label: 'Date and Time', target: 'editor' },
 
   undo: { id: 'undo', label: 'Undo', target: 'editor', accelerator: 'CmdOrCtrl+Z' },
   redo: { id: 'redo', label: 'Redo', target: 'editor', accelerator: 'CmdOrCtrl+Shift+Z' },
@@ -474,6 +490,11 @@ export const MENUS: readonly MenuSpec[] = [
         'codeBlock',
         'mathBlock',
         'divider',
+      ],
+      [
+        { label: 'Structure', items: ['indentListItem', 'outdentListItem'] },
+        { label: 'Transform', items: ['uppercase', 'lowercase', 'titleCase'] },
+        { label: 'Current Date', items: ['insertCurrentDate', 'insertLongDate', 'insertCurrentDateTime'] },
       ],
       ['insertAsset', 'convertToDiagram'],
       ['moveBlockUp', 'moveBlockDown'],

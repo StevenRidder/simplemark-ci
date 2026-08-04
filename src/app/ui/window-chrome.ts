@@ -124,10 +124,10 @@ export interface WorkspaceOptions {
   readonly name: string
   /** Label for the catalog currently shown in the middle pane. */
   readonly collectionLabel?: string
-  /** Files explicitly opened through Finder or the file picker. */
-  readonly openNotesCount?: number
+  /** Persistent history of files explicitly opened by any route. */
+  readonly recentNotesCount?: number
   readonly folders?: readonly WorkspaceFolder[]
-  /** `open` or the handle of the selected folder collection. */
+  /** `recent` or the handle of the selected folder collection. */
   readonly activeCollectionId?: string
   readonly notes: readonly WorkspaceNote[]
   readonly activeNoteId: string
@@ -142,7 +142,7 @@ export interface WorkspaceOptions {
   readonly onCopyMarkdown?: (id: string) => Promise<void>
   readonly onDuplicateNote?: (id: string) => Promise<void>
   readonly onExportNote?: (id: string) => Promise<void>
-  /** Removes a note from the transient Open Notes collection without touching its file. */
+  /** Removes a note from Recent Notes without touching its file. */
   readonly onCloseNote?: (id: string) => Promise<void>
   readonly onTrashNote?: (id: string) => Promise<void>
 }
@@ -1509,9 +1509,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       return row
     }
     const allNotes = makeLibraryRow(
-      'Open Notes',
+      'Recent Notes',
       'notes',
-      String(workspace.openNotesCount ?? workspaceNotes.length),
+      String(workspace.recentNotesCount ?? workspaceNotes.length),
       'all',
     )
     const untagged = makeLibraryRow(
@@ -1700,7 +1700,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const exportNotes = menuRow('Export…')
     exportNotes.disabled = true
     exportNotes.title = 'Export — available when a real folder catalog is connected'
-    const showAll = menuRow('Open Notes')
+    const showAll = menuRow('Recent Notes')
     const showPinned = menuRow('Pinned')
     notesMenu.append(
       countRow,
@@ -1777,7 +1777,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const contextDuplicate = contextRow('Duplicate', async () => {
       if (contextNote !== undefined) await workspace.onDuplicateNote?.(contextNote.id)
     })
-    // Every visible note gets the same close affordance. Open Notes delegates
+    // Every visible note gets the same close affordance. Recent Notes delegates
     // to the application model; folder browsing and the native welcome row
     // hide locally because closing a view must never delete or trash a file.
     const canCloseNote = true
@@ -1810,7 +1810,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
     const paintLibrary = (): void => {
       for (const row of [allNotes, pinned]) {
-        const allIsActive = workspace.activeCollectionId === undefined || workspace.activeCollectionId === 'open'
+        const allIsActive = workspace.activeCollectionId === undefined || workspace.activeCollectionId === 'recent'
         row.classList.toggle(
           'selected',
           row === pinned ? noteFilter === 'pinned' : noteFilter === 'all' && allIsActive,
@@ -1820,7 +1820,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         row.classList.toggle('selected', row.dataset['folderId'] === workspace.activeCollectionId)
       }
       allNotes.querySelector('.folder-count')!.textContent = String(
-        workspace.openNotesCount ?? workspaceNotes.length,
+        workspace.recentNotesCount ?? workspaceNotes.length,
       )
       pinned.querySelector('.folder-count')!.textContent = String(
         workspaceNotes.filter((note) => note.pinned).length,
@@ -1833,7 +1833,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       // `<img onerror=…>` write markup into the chrome.
       const tick = (on: boolean): string => (on ? '✓  ' : '')
       const label = document.createElement('span')
-      label.textContent = noteFilter === 'pinned' ? 'Pinned' : (workspace.collectionLabel ?? 'Open Notes')
+      label.textContent = noteFilter === 'pinned' ? 'Pinned' : (workspace.collectionLabel ?? 'Recent Notes')
       const disclosure = document.createElement('span')
       disclosure.setAttribute('aria-hidden', 'true')
       disclosure.innerHTML = tablerIcon('chevron-down')
@@ -1845,7 +1845,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       previewSmall.textContent = `${tick(previewDensity === 'small')}Small preview`
       previewMedium.textContent = `${tick(previewDensity === 'medium')}Medium preview`
       previewLarge.textContent = `${tick(previewDensity === 'large')}Large preview`
-      showAll.textContent = `${tick(noteFilter === 'all')}Open Notes`
+      showAll.textContent = `${tick(noteFilter === 'all')}Recent Notes`
       showPinned.textContent = `${tick(noteFilter === 'pinned')}Pinned`
       noteList.dataset['preview'] = previewDensity
       paintLibrary()
@@ -1977,16 +1977,16 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       paintNotes()
       searchButton.focus()
     })
-    const selectOpenNotes = (): void => {
-      if (workspace.onSelectCollection !== undefined && workspace.activeCollectionId !== 'open') {
-        workspace.onSelectCollection('open')
+    const selectRecentNotes = (): void => {
+      if (workspace.onSelectCollection !== undefined && workspace.activeCollectionId !== 'recent') {
+        workspace.onSelectCollection('recent')
         return
       }
       noteFilter = 'all'
       paintMenuState()
       paintNotes()
     }
-    allNotes.addEventListener('click', selectOpenNotes)
+    allNotes.addEventListener('click', selectRecentNotes)
     pinned.addEventListener('click', () => {
       noteFilter = 'pinned'
       paintMenuState()
@@ -2023,7 +2023,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     }
     showAll.addEventListener('click', () => {
       closeNotesMenu()
-      selectOpenNotes()
+      selectRecentNotes()
     })
     showPinned.addEventListener('click', () => {
       noteFilter = 'pinned'

@@ -4,7 +4,7 @@ import { TauriWorkspaceCatalogPort } from '../../src/adapters/filesystem/tauri-w
 import type { TauriInvoke } from '../../src/adapters/filesystem/tauri-file-port.js'
 
 describe('TauriWorkspaceCatalogPort', () => {
-  it('inspects only the explicitly opened note for the Open Notes list', async () => {
+  it('inspects only the explicitly opened note for Recent Notes', async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = []
     const invoke: TauriInvoke = async <T>(command: string, args?: Record<string, unknown>) => {
       calls.push({ command, ...(args === undefined ? {} : { args }) })

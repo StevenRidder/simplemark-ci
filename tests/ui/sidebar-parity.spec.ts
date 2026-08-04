@@ -33,7 +33,7 @@ test('L2-010 each New Note accumulates instead of replacing the list', async ({ 
   await expect(notes(page).locator('.note-item')).toHaveCount(5)
   await expect(page.getByRole('button', { name: 'new-note-4', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'new-note-5', exact: true })).toHaveAttribute('aria-current', 'page')
-  await expect(page.getByLabel('Library')).toContainText('Open Notes5')
+  await expect(page.getByLabel('Library')).toContainText('Recent Notes5')
 })
 
 test('L2-040/L2-041 pinning reorders, filters, and unpins without closing the document', async ({ page }) => {
@@ -93,16 +93,16 @@ test('L2-001/L2-050/L2-060 list options expose count, sorting, and all preview d
   }
 })
 
-test('L1-050 Open Notes and Pinned keep collection title, selection, and count aligned', async ({ page }) => {
+test('L1-050 Recent Notes and Pinned keep collection title, selection, and count aligned', async ({ page }) => {
   await page.getByRole('button', { name: /Pinned\s*1/ }).click()
   await expect(page.getByRole('button', { name: 'Note list options' })).toContainText('Pinned')
   await expect(notes(page).locator('.note-item')).toHaveCount(1)
   await expect(page.getByRole('button', { name: /Pinned\s*1/ })).toHaveClass(/selected/)
 
-  await page.getByRole('button', { name: /Open Notes\s*3/ }).click()
-  await expect(page.getByRole('button', { name: 'Note list options' })).toContainText('Open Notes')
+  await page.getByRole('button', { name: /Recent Notes\s*3/ }).click()
+  await expect(page.getByRole('button', { name: 'Note list options' })).toContainText('Recent Notes')
   await expect(notes(page).locator('.note-item')).toHaveCount(3)
-  await expect(page.getByRole('button', { name: /Open Notes\s*3/ })).toHaveClass(/selected/)
+  await expect(page.getByRole('button', { name: /Recent Notes\s*3/ })).toHaveClass(/selected/)
 })
 
 test('L1-120 visible sidebar controls expose names and honest disabled states', async ({ page }) => {
@@ -149,11 +149,11 @@ test('Close Note is always visible, gains a box only on hover, and never invokes
   await close.click()
 
   await expect(page.getByRole('button', { name: 'ideas', exact: true })).toHaveCount(0)
-  await expect(page.getByLabel('Library')).toContainText('Open Notes2')
-  await expect(page.getByText('Closed from Open Notes — file remains on disk')).toBeVisible()
+  await expect(page.getByLabel('Library')).toContainText('Recent Notes2')
+  await expect(page.getByText('Removed from Recent Notes — file remains on disk')).toBeVisible()
 })
 
-test('Open Notes disclosure is a centred Tabler chevron and both columns expose resize handles', async ({ page }) => {
+test('Recent Notes disclosure is a centred Tabler chevron and both columns expose resize handles', async ({ page }) => {
   const title = page.getByRole('button', { name: 'Note list options' })
   await expect(title.locator('svg')).toHaveCount(1)
   await expect(title).toHaveCSS('align-items', 'center')

@@ -119,7 +119,7 @@ test('workspace controls are real while collaboration controls stay disabled', a
 })
 
 test('switches notes, filters the local index, creates a note, and can focus the page', async ({ page }) => {
-  await expect(page.getByLabel('Library')).toContainText('Open Notes3')
+  await expect(page.getByLabel('Library')).toContainText('Recent Notes3')
   await page.getByRole('button', { name: 'field-notes', exact: true }).click()
   await expect(page.locator('.filename')).toContainText('field-notes.md')
   await expect(page.locator(`${editor} h1`)).toContainText('Field notes')

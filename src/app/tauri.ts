@@ -24,7 +24,12 @@ import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
 import { WorkspacePins } from './workspace-pins.js'
-import { WorkspaceCollections, WorkspaceFolderStore } from './workspace-collections.js'
+import {
+  WorkspaceCollections,
+  WorkspaceFolderStore,
+  WorkspaceHiddenStore,
+  WorkspaceRecentStore,
+} from './workspace-collections.js'
 
 import './styles/tokens.css'
 import './styles/app.css'
@@ -64,11 +69,13 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
   let transition = Promise.resolve()
   let activeHandle: string | undefined
   let workspaceHandle: string | undefined
-  let activeCollectionId = 'open'
+  let activeCollectionId = 'recent'
   const collections = new WorkspaceCollections()
   const catalogPort = new TauriWorkspaceCatalogPort(invoke)
   const pins = new WorkspacePins(window.localStorage)
   const folderStore = new WorkspaceFolderStore(window.localStorage)
+  const hiddenStore = new WorkspaceHiddenStore(window.localStorage)
+  const recentStore = new WorkspaceRecentStore(window.localStorage)
   const watchedFolders = new Set<string>()
 
   const showOpenFailure = (error: unknown): void => {
@@ -103,6 +110,14 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     folderStore.save(collections.folders().map((folder) => folder.handle))
   }
 
+  const persistRecentNotes = (): void => {
+    recentStore.save(collections.recentNotes('').notes.map((note) => note.handle))
+  }
+
+  const persistHiddenNotes = (): void => {
+    hiddenStore.save(collections.hiddenHandles())
+  }
+
   const install = async (
     port: TauriFilePort,
     opened: { readonly handle: string; readonly name: string },
@@ -111,17 +126,16 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     const inspected = await catalogPort.inspect(opened.handle)
     const entry = inspected.notes[0]
     if (entry === undefined) throw new Error(`Native inspection returned no note for ${opened.handle}`)
-    // Reopening a note makes it recent without duplicating it. Ordinary file
-    // opens are an explicit Open Notes list; only Open Folder may enumerate a
-    // whole directory (especially important for Downloads).
-    if (collectionId === 'open') {
-      collections.rememberOpened(entry)
-    }
+    // Every explicit open becomes history, including a click while browsing a
+    // folder. Only that selected file is remembered; adopting a folder never
+    // dumps all of its siblings into Recent Notes.
+    collections.rememberRecent(entry)
+    persistRecentNotes()
     activeCollectionId = collectionId
     const catalog = collections.collection(collectionId, inspected.handle)
     await current.destroy()
     activeHandle = opened.handle
-    workspaceHandle = collectionId === 'open' ? inspected.handle : catalog.handle
+    workspaceHandle = collectionId === 'recent' ? inspected.handle : catalog.handle
     current = await mount(root, port, {
       filePath: opened.handle,
       onOpenFile: openFromPicker,
@@ -139,7 +153,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
         trashNote,
         folders: collections.folders(),
         activeCollectionId,
-        openNotesCount: collections.openedCount(),
+        recentNotesCount: collections.recentCount(),
       }),
     })
     await watch(port, opened.handle)
@@ -159,8 +173,8 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
 
   const selectCollection = (collectionId: string): void => {
     if (collectionId === activeCollectionId) return
-    const catalog = collectionId === 'open'
-      ? collections.openNotes(workspaceHandle ?? '')
+    const catalog = collectionId === 'recent'
+      ? collections.recentNotes(workspaceHandle ?? '')
       : collections.folder(collectionId)
     const next = catalog?.notes.find((note) => note.handle === activeHandle) ?? catalog?.notes[0]
     if (next === undefined) return
@@ -191,7 +205,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     void enqueue(async () => {
       await current.save()
       const created = await catalogPort.create(workspaceHandle!)
-      if (activeCollectionId !== 'open') {
+      if (activeCollectionId !== 'recent') {
         collections.addFolder(await catalogPort.listAround(created.handle))
       }
       const port = new TauriFilePort(invoke)
@@ -216,7 +230,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
   const duplicateNote = (handle: string): Promise<void> => enqueue(async () => {
     await current.save()
     const duplicate = await invoke<{ readonly handle: string }>('duplicate_note', { handle })
-    if (activeCollectionId !== 'open') {
+    if (activeCollectionId !== 'recent') {
       collections.addFolder(await catalogPort.listFolder(activeCollectionId))
     }
     const port = new TauriFilePort(invoke)
@@ -231,16 +245,28 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
   })
 
   const closeNote = (handle: string): Promise<void> => enqueue(async () => {
-    if (activeCollectionId !== 'open') return
+    if (activeCollectionId !== 'recent') {
+      if (handle === activeHandle) await current.save()
+      collections.hideFromFolders(handle)
+      persistHiddenNotes()
+      if (activeHandle !== undefined) {
+        const port = new TauriFilePort(invoke)
+        const opened = await port.openAt(activeHandle)
+        await install(port, opened, activeCollectionId)
+      }
+      current.setStatus('saved', 'Hidden from this folder — file remains on disk')
+      return
+    }
     if (handle === activeHandle) await current.save()
-    collections.forgetOpened(handle)
+    collections.forgetRecent(handle)
+    persistRecentNotes()
 
-    const remaining = collections.openNotes(workspaceHandle ?? '').notes
+    const remaining = collections.recentNotes(workspaceHandle ?? '').notes
     if (handle !== activeHandle && activeHandle !== undefined) {
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(activeHandle)
-      await install(port, opened, 'open')
-      current.setStatus('saved', 'Closed from Open Notes — file remains on disk')
+      await install(port, opened, 'recent')
+      current.setStatus('saved', 'Removed from Recent Notes — file remains on disk')
       return
     }
 
@@ -248,8 +274,8 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     if (next !== undefined) {
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(next.handle)
-      await install(port, opened, 'open')
-      current.setStatus('saved', 'Closed from Open Notes — file remains on disk')
+      await install(port, opened, 'recent')
+      current.setStatus('saved', 'Removed from Recent Notes — file remains on disk')
       return
     }
 
@@ -266,14 +292,15 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
         folders: collections.folders(),
       }),
     })
-    current.setStatus('saved', 'Closed from Open Notes — file remains on disk')
+    current.setStatus('saved', 'Removed from Recent Notes — file remains on disk')
   })
 
   const trashNote = (handle: string): Promise<void> => enqueue(async () => {
     if (handle === activeHandle) await current.save()
     current.setStatus('saved', 'Moving to Trash…')
     await invoke('trash_note', { handle })
-    collections.forgetOpened(handle)
+    collections.forgetRecent(handle)
+    persistRecentNotes()
     for (const folder of collections.folders()) {
       if (folder.notes.some((note) => note.handle === handle)) {
         collections.addFolder(await catalogPort.listFolder(folder.handle))
@@ -299,7 +326,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     stopWatching?.()
     activeHandle = undefined
     workspaceHandle = undefined
-    activeCollectionId = 'open'
+    activeCollectionId = 'recent'
     await current.destroy()
     current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
       filePath: 'Demo workspace · open a file to work with your own Markdown',
@@ -326,7 +353,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
       }
 
       await current.save()
-      await install(port, opened, 'open')
+      await install(port, opened, 'recent')
     })
   }
 
@@ -342,6 +369,23 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
   }
   persistFolders()
 
+  for (const handle of hiddenStore.load()) collections.hideFromFolders(handle)
+  persistHiddenNotes()
+
+  // Persist only opaque handles, then re-inspect them on launch so stale
+  // metadata never masquerades as filesystem truth. Loading oldest first
+  // preserves the store's most-recent-first order in the collection map.
+  for (const handle of [...recentStore.load()].reverse()) {
+    try {
+      const inspected = await catalogPort.inspect(handle)
+      const entry = inspected.notes[0]
+      if (entry !== undefined) collections.rememberRecent(entry)
+    } catch {
+      // Missing or moved files fall out of history instead of breaking launch.
+    }
+  }
+  persistRecentNotes()
+
   current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
     filePath: 'Demo workspace · open a file to work with your own Markdown',
     onOpenFile: openFromPicker,
@@ -351,6 +395,18 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
       folders: collections.folders(),
     }),
   })
+
+  const mostRecent = collections.recentNotes('').notes[0]
+  if (mostRecent !== undefined) {
+    try {
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(mostRecent.handle)
+      await install(port, opened, 'recent')
+    } catch {
+      collections.forgetRecent(mostRecent.handle)
+      persistRecentNotes()
+    }
+  }
 
   await listen<string>('workspace-folder-changed', (event) => {
     void enqueue(async () => {
@@ -402,7 +458,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
       await current.save()
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(path)
-      await install(port, opened, 'open')
+      await install(port, opened, 'recent')
     }),
   }
 }
@@ -480,10 +536,10 @@ function nativeWorkspace(
 ): WorkspaceOptions {
   return {
     name: 'SimpleMark',
-    collectionLabel: 'Open Notes',
-    activeCollectionId: 'open',
+    collectionLabel: 'Recent Notes',
+    activeCollectionId: 'recent',
     activeNoteId: fileName,
-    openNotesCount: 0,
+    recentNotesCount: 0,
     ...(actions === undefined ? {} : {
       onAddFolder: actions.addFolder,
       onSelectCollection: actions.selectCollection,
@@ -527,13 +583,13 @@ function catalogWorkspace(
     readonly trashNote: (id: string) => Promise<void>
     readonly folders: readonly WorkspaceCatalog[]
     readonly activeCollectionId: string
-    readonly openNotesCount: number
+    readonly recentNotesCount: number
   },
 ): WorkspaceOptions {
   return {
     name: 'SimpleMark',
     collectionLabel: catalog.name,
-    openNotesCount: actions.openNotesCount,
+    recentNotesCount: actions.recentNotesCount,
     folders: actions.folders.map((folder) => ({
       id: folder.handle,
       name: folder.name,
@@ -550,7 +606,7 @@ function catalogWorkspace(
     onCopyMarkdown: actions.copyMarkdown,
     onDuplicateNote: actions.duplicateNote,
     onExportNote: actions.exportNote,
-    ...(actions.activeCollectionId === 'open' ? { onCloseNote: actions.closeNote } : {}),
+    onCloseNote: actions.closeNote,
     onTrashNote: actions.trashNote,
     notes: catalog.notes.map((note) => ({
       id: note.handle,
@@ -669,7 +725,7 @@ async function installMarkdownDropBridge(controller: NativeController): Promise<
 
     const paths = event.payload.paths.filter((path) => /\.(md|markdown)$/i.test(path))
     if (paths.length === 0) {
-      controller.current().setStatus('error', 'Drop a Markdown file to add it to Open Notes')
+      controller.current().setStatus('error', 'Drop a Markdown file to add it to Recent Notes')
       return
     }
     for (const path of paths) void controller.openPath(path)

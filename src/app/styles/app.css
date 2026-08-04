@@ -1084,7 +1084,7 @@ section.editor::-webkit-scrollbar {
 }
 
 .workspace-notes.accepting-note-drop::after {
-  content: 'Drop to add to Open Notes';
+  content: 'Drop to add to Recent Notes';
   position: absolute;
   z-index: 30;
   inset: 8px;

@@ -155,7 +155,7 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     DEMO_NOTES.splice(index, 1)
     const nextId = id === activeId ? DEMO_NOTES[Math.min(index, DEMO_NOTES.length - 1)]!.id : activeId
     await openDemoNote(nextId, true)
-    current?.setStatus('saved', 'Closed from Open Notes — file remains on disk')
+    current?.setStatus('saved', 'Removed from Recent Notes — file remains on disk')
   }
 
   await openDemoNote(activeId)

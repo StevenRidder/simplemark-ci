@@ -25,11 +25,14 @@ does not prove that the native app can discover, create, pin, trash, or reopen r
 
 ## Product rule
 
-Opening a note adds exactly that note to **Open Notes** and selects it. Folder membership is always
+Opening a note adds exactly that note to persistent **Recent Notes** history and selects it. This
+includes Finder, the picker, and a note selected while browsing an adopted folder. Reopening moves
+the note to the top without duplication; X removes it from history without deleting the file. In a
+folder view, X persists a local exclusion so a catalog refresh cannot resurrect the row. Folder membership is always
 explicit: **Add Folder** adopts the direct Markdown children of that folder as a named collection.
 Several adopted folders may remain in the library at once, and selecting one scopes the middle
-pane without opening another window. Open Notes remains isolated from those folder collections;
-selecting it is the explicit way to leave folder mode. The files on disk remain durable authority; catalog
+pane without opening another window. Adding a folder never bulk-adds its files to Recent Notes;
+selecting Recent Notes is the explicit way to leave folder mode. The files on disk remain durable authority; catalog
 membership, pins, and preview density are shell state and never rewrite Markdown.
 
 ## Test environments
@@ -118,7 +121,7 @@ The first useful parity slice is deliberately smaller than all of Bear:
 3. Switching folder rows scopes the middle pane in the same window and saves the previous note first.
 4. New Note creates a collision-safe Markdown file in the active folder and selects it.
 5. Pin/unpin reorders immediately, drives Pinned, and survives an app restart.
-6. Search, Open Notes, and Pinned operate on the real catalog.
+6. Search, Recent Notes, and Pinned operate on the real catalog, and Recent Notes survives relaunch.
 7. External create/remove/rename refreshes the catalog without duplicating rows.
 
 Trash, tags, todo extraction, locked notes, and sync follow as separately testable slices. Until a

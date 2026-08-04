@@ -2,10 +2,10 @@
 
 * **Status:** Current product authority
 
-* **Date:** 2026-08-02
+* **Date:** 2026-08-04
 
-* **Decision:** Rendered document first; editing is an escape hatch; agent participation and
-  collaboration are expansion capabilities
+* **Decision:** Rendered document first; editing is an escape hatch; every change is a block-level
+  transaction regardless of author; agent participation and collaboration are expansion capabilities
 
 ## The job
 
@@ -143,6 +143,28 @@ An AI updating the file is the normal workflow, not a conflict edge case. Simple
 same file, refreshes only what changed, preserves reading position, and makes the update legible
 without turning every revision into a review ceremony.
 
+Watching a file as it changes is a **desktop capability**. It requires a real filesystem and
+directory notification, which mobile does not provide and cloud propagation does not deliver
+promptly. On a phone or tablet, SimpleMark reads documents that have already arrived. We say that
+plainly rather than implying the desktop experience travels.
+
+### 4a. The update is the same no matter who made it
+
+**Settled, and not reopened by later work.** Every change to a document — a human correcting a
+sentence, an AI revising a section, another client in a live session, or an external tool rewriting
+the file on disk — arrives as the same thing: a **named, attributed, block-level transaction** on
+the structured ProseMirror document.
+
+There is no second mechanism and no privileged author. A file landing from disk is imported as a
+transaction like any other; it is simply the lossiest source, because it delivers bytes and makes us
+re-derive the blocks that moved. Everything downstream — rendering only what changed, preserving
+reading position, byte-identical re-emission of untouched blocks, attribution, revert, and telling
+the reader what happened — reads from that one representation.
+
+This is the property the product is built on: **the page updates beautifully and identically no
+matter who is editing.** Any proposal that introduces a separate path for a particular kind of
+author is wrong by construction.
+
 ### 5. Editing is a small correction path
 
 The human can fix a sentence, table cell, diagram source, or formatting mistake directly. That does
@@ -160,6 +182,30 @@ workspace is required to retain the document.
 File watching, source maps, atomic writes, parser errors, renderer isolation, run fencing, document
 authority, attribution, and recovery may all exist. They appear only when the user needs to act on
 them. Implemented capability does not earn permanent screen space.
+
+### 8. Sync is the user's cloud, not ours
+
+SimpleMark never operates a sync service. Documents move between a person's devices through the
+cloud drive they already pay for — iCloud Drive, Dropbox, Google Drive, OneDrive — and every one of
+them is treated identically as a folder on disk. **No provider is privileged and no provider-specific
+code is written**, including iCloud: a customer with a Windows machine and an iPhone is served by
+Dropbox or OneDrive and would be stranded by an Apple-first path.
+
+Two consequences follow. Cloud-backed files may be placeholders whose bytes are not local, so
+"exists but not here yet" is an ordinary state and directory listing never reads content. And a
+provider that produces a conflicted copy has produced something we must show rather than merge —
+the one visible surface sync is permitted to add. Rule 6 makes that rare: a reading session writes
+nothing, so it cannot conflict.
+
+### 9. Web and native are the same product
+
+Neither shell is a preview of the other and neither has its own document model. The web client opens
+and saves real local files today, and in a live document it sends and receives the same block-level
+transactions as every other client, per rule 4a.
+
+What the web client never grows is a **second way to reach storage**: no per-provider accounts,
+connection settings, OAuth pickers, or hosted drive browsers. Where files are concerned, the browser
+reads and writes what the person points it at, exactly as the native shell does.
 
 ## What the first product is not
 

@@ -287,7 +287,15 @@ Every client holds the same document, and every client wants to write `note.md` 
 
 **Rule: exactly one client per storage location is the save leader.**
 
-- Each *vault* (a folder on a device) elects a leader among the clients attached to it — normally the only one.
+A *vault* is **where the bytes end up, not which machine holds the folder.** This distinction is
+load-bearing. `~/Dropbox/notes` on your Mac and `C:\Users\you\Dropbox\notes` on your PC are two
+devices and **one vault** — Dropbox propagates between them. Treating them as two vaults elects two
+leaders, both write byte-identical content to the same synced path, and the provider manufactures
+conflicted copies of a document nobody edited twice. That is the exact failure this section exists
+to prevent, arriving through the back door. A vault is therefore identified by its provider-synced
+root, not by device plus path.
+
+- Each vault elects a leader among the clients attached to it — normally the only one.
 - The leader alone performs the debounced Markdown write. Others render, edit, and synchronize
   through the chosen authority protocol but never touch that folder.
 - Leadership uses an explicit renewable lease owned by the authority. A CRDT-awareness lease is

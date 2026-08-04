@@ -137,6 +137,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
       exportNote,
       closeNote,
       trashNote,
+      revealInFinder,
       folders: collections.folders(),
       activeCollectionId: collectionId,
       recentNotesCount: collections.recentCount(),
@@ -176,6 +177,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
         exportNote,
         closeNote,
         trashNote,
+        revealInFinder,
         folders: collections.folders(),
         activeCollectionId,
         recentNotesCount: collections.recentCount(),
@@ -284,6 +286,10 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     if (exported) current.setStatus('saved', 'Exported')
   })
 
+  const revealInFinder = async (handle: string): Promise<void> => {
+    await invoke('reveal_in_finder', { handle })
+  }
+
   let closeNote: (handle: string) => Promise<void>
   closeNote = (handle: string): Promise<void> => enqueue(async () => {
     const before = collections.collection(activeCollectionId, workspaceHandle ?? handle)
@@ -344,6 +350,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
         exportNote,
         closeNote,
         trashNote,
+        revealInFinder,
         folders: collections.folders(),
         activeCollectionId,
         recentNotesCount: collections.recentCount(),
@@ -693,6 +700,7 @@ function catalogWorkspace(
     readonly exportNote: (id: string) => Promise<void>
     readonly closeNote: (id: string) => Promise<void>
     readonly trashNote: (id: string) => Promise<void>
+    readonly revealInFinder: (id: string) => Promise<void>
     readonly folders: readonly WorkspaceCatalog[]
     readonly activeCollectionId: string
     readonly recentNotesCount: number
@@ -720,6 +728,7 @@ function catalogWorkspace(
     onExportNote: actions.exportNote,
     onCloseNote: actions.closeNote,
     onTrashNote: actions.trashNote,
+    onRevealInFinder: actions.revealInFinder,
     notes: catalog.notes.map((note) => ({
       id: note.handle,
       identifier: note.name,

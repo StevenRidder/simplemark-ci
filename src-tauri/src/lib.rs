@@ -500,6 +500,49 @@ async fn trash_note(handle: String) -> Result<(), String> {
     move_note_to_trash(path).map_err(|error| format!("Could not move {handle} to Trash: {error}"))
 }
 
+/// Reveals a note or folder in the platform file manager, with the item
+/// selected where the platform supports that (Finder, Explorer).
+#[tauri::command]
+async fn reveal_in_finder(handle: String) -> Result<(), String> {
+    let path = PathBuf::from(&handle);
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|error| format!("Could not reveal {handle} in Finder: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut argument = std::ffi::OsString::from("/select,");
+        argument.push(path.as_os_str());
+        Command::new("explorer")
+            .arg(argument)
+            .spawn()
+            .map_err(|error| format!("Could not reveal {handle} in Explorer: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // xdg-open has no cross-desktop "reveal and select" verb, so open the
+        // containing folder — the closest portable equivalent.
+        let directory = path.parent().unwrap_or(&path);
+        Command::new("xdg-open")
+            .arg(directory)
+            .spawn()
+            .map_err(|error| format!("Could not reveal {handle}: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    Err("Revealing files is not supported on this platform".to_string())
+}
+
 fn move_note_to_trash(path: PathBuf) -> Result<(), trash::Error> {
     // trash-rs defaults to scripting Finder on macOS. That adds an Automation
     // permission prompt and can leave the app waiting for an AppleEvent timeout.
@@ -841,6 +884,7 @@ pub fn run() {
             duplicate_note,
             export_note,
             trash_note,
+            reveal_in_finder,
             take_open_note_request,
             save_note,
             print_note,

@@ -152,6 +152,8 @@ export interface WorkspaceOptions {
   /** Removes a note from Recent Notes without touching its file. */
   readonly onCloseNote?: (id: string) => Promise<void>
   readonly onTrashNote?: (id: string) => Promise<void>
+  /** Reveals a note's or folder's real file in the platform file manager (Finder). */
+  readonly onRevealInFinder?: (id: string) => Promise<void>
 }
 
 export type WorkspaceMode = 'all' | 'notes' | 'editor'
@@ -1612,6 +1614,41 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     } else addFolder.addEventListener('click', () => workspace.onAddFolder?.())
     folderHead.append(folderLabel, addFolder)
 
+    const folderContextMenu = document.createElement('div')
+    folderContextMenu.className = 'note-context-menu'
+    folderContextMenu.hidden = true
+    folderContextMenu.setAttribute('role', 'menu')
+    let contextFolderId: string | undefined
+    const contextRevealFolder = document.createElement('button')
+    contextRevealFolder.type = 'button'
+    contextRevealFolder.className = 'note-context-row'
+    contextRevealFolder.textContent = 'Show in Finder'
+    contextRevealFolder.setAttribute('role', 'menuitem')
+    contextRevealFolder.addEventListener('click', () => {
+      if (contextFolderId !== undefined) void workspace.onRevealInFinder?.(contextFolderId)
+      folderContextMenu.hidden = true
+    })
+    contextRevealFolder.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      event.preventDefault()
+      contextRevealFolder.click()
+    })
+    folderContextMenu.append(contextRevealFolder)
+    const openFolderContextMenu = (event: MouseEvent, folderId: string): void => {
+      event.preventDefault()
+      contextFolderId = folderId
+      contextRevealFolder.disabled = workspace.onRevealInFinder === undefined
+      folderContextMenu.hidden = false
+      folderContextMenu.style.left = `${event.clientX}px`
+      folderContextMenu.style.top = `${event.clientY}px`
+      requestAnimationFrame(() => {
+        const bounds = folderContextMenu.getBoundingClientRect()
+        folderContextMenu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - bounds.width - 8))}px`
+        folderContextMenu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - bounds.height - 8))}px`
+        contextRevealFolder.focus()
+      })
+    }
+
     const folderRows = new Map<string, HTMLButtonElement>()
     const paintFolderRows = (): void => {
       const live = new Set((workspace.folders ?? []).map((folder) => folder.id))
@@ -1631,6 +1668,10 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
           row.addEventListener('click', () => {
             const id = row?.dataset['folderId']
             if (id !== undefined) workspace.onSelectCollection?.(id)
+          })
+          row.addEventListener('contextmenu', (event) => {
+            const id = row?.dataset['folderId']
+            if (id !== undefined) openFolderContextMenu(event, id)
           })
           folderRows.set(folder.id, row)
         }
@@ -1662,9 +1703,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     libraryFooter.append(updateBar, sync, settings)
     if (isMacOS) {
       popover.classList.add('sidebar-settings-popover')
-      folders.append(workspaceHeader, libraryRows, libraryFooter, popover)
+      folders.append(workspaceHeader, libraryRows, libraryFooter, popover, folderContextMenu)
     } else {
-      folders.append(workspaceHeader, libraryRows, libraryFooter)
+      folders.append(workspaceHeader, libraryRows, libraryFooter, folderContextMenu)
     }
 
     const installColumnResizer = (
@@ -1849,6 +1890,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const contextExport = contextRow('Export As…', async () => {
       if (contextNote !== undefined) await workspace.onExportNote?.(contextNote.id)
     })
+    const contextRevealInFinder = contextRow('Show in Finder', async () => {
+      if (contextNote !== undefined) await workspace.onRevealInFinder?.(contextNote.id)
+    })
     const contextDelete = contextRow('Move to Trash', async () => {
       if (contextNote !== undefined) await workspace.onTrashNote?.(contextNote.id)
     })
@@ -1882,6 +1926,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       ...(workspace.onCopyText === undefined ? [] : [contextCopyLink, contextCopyIdentifier]),
       ...(workspace.onExportNote === undefined ? [] : [contextDivider(), contextExport]),
       ...(workspace.onDuplicateNote === undefined ? [] : [contextDuplicate]),
+      ...(workspace.onRevealInFinder === undefined ? [] : [contextRevealInFinder]),
       ...(canCloseNote ? [contextDivider(), contextClose] : []),
       ...(workspace.onTrashNote === undefined ? [] : [contextDivider(), contextDelete]),
     )
@@ -2032,6 +2077,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       if (!(target instanceof Node)) return
       if (!notesMenu.hidden && !notesMenu.contains(target) && !notesTitle.contains(target)) closeNotesMenu()
       if (!noteContextMenu.hidden && !noteContextMenu.contains(target)) noteContextMenu.hidden = true
+      if (!folderContextMenu.hidden && !folderContextMenu.contains(target)) folderContextMenu.hidden = true
     })
     windowEl.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return
@@ -2040,6 +2086,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         notesTitle.focus()
       } else if (!noteContextMenu.hidden) {
         noteContextMenu.hidden = true
+      } else if (!folderContextMenu.hidden) {
+        folderContextMenu.hidden = true
       } else if (notesHeader.classList.contains('searching')) {
         closeSearch.click()
       }

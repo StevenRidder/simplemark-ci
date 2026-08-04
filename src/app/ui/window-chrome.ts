@@ -35,6 +35,8 @@ import {
 } from '../reader-preferences.js'
 import type { ReaderPreferences } from '../reader-preferences.js'
 import type { DocumentStatistics } from '../document-statistics.js'
+import { describeUpdate, detailUpdate } from '../update-status.js'
+import type { UpdateStatus } from '../update-status.js'
 
 export type SaveState = 'saved' | 'dirty' | 'error'
 
@@ -75,6 +77,11 @@ export interface WindowChromeOptions {
    * fresh on every paint so neither surface caches a stale document.
    */
   readonly getStatistics?: () => DocumentStatistics
+  /**
+   * Acts on an offered update. Absent in shells with nothing to update, and the
+   * strip then never appears at all.
+   */
+  readonly onUpdate?: (() => void) | undefined
   /** Inserts an ordinary Markdown image or file link through a platform port. */
   readonly onInsertAsset?: (() => void) | undefined
   /** Whether the quiet, single-row editing strip is shown. This is shell state. */
@@ -186,6 +193,13 @@ export interface WindowChrome {
    * has to poll and neither can show yesterday's number.
    */
   refreshStatistics(): void
+  /**
+   * Shows, changes, or removes the library footer's update strip.
+   *
+   * `current` removes it. Nothing else does — an app that stops mentioning a
+   * failed check has quietly turned missing evidence into a green result.
+   */
+  setUpdateStatus(status: UpdateStatus): void
   /**
    * Accepts a preference change made elsewhere — the View menu — and repaints
    * the "Aa" popover to match. It deliberately does not call back into
@@ -1472,6 +1486,48 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   let repaintNoteList = (): void => {}
   let reconcileWorkspace = (_workspace: WorkspaceOptions): void => {}
 
+  /**
+   * The update strip in the library footer (docs/UPDATE-NOTIFICATION.md §2).
+   *
+   * Hidden is the resting state and the common one. It appears only when there
+   * is something to say — a newer build, or a check that could not complete —
+   * because chrome that is permanently present to report nothing is chrome
+   * people stop reading, and the sidebar's job is to anchor without competing
+   * with the document.
+   */
+  const updateBar = document.createElement('button')
+  updateBar.type = 'button'
+  updateBar.className = 'library-update'
+  updateBar.hidden = true
+
+  const showUpdate = (status: UpdateStatus): void => {
+    if (status.state === 'current') {
+      updateBar.hidden = true
+      updateBar.title = ''
+      updateBar.disabled = false
+      delete updateBar.dataset['state']
+      updateBar.replaceChildren()
+      return
+    }
+
+    const available = status.state === 'behind'
+    updateBar.hidden = false
+    updateBar.dataset['state'] = status.state
+    // Muted and inert when the check failed: it must never be mistakable for an
+    // available update, and there is nothing to act on.
+    updateBar.disabled = !available
+    updateBar.title = detailUpdate(status)
+
+    const icon = document.createElement('span')
+    icon.setAttribute('aria-hidden', 'true')
+    icon.innerHTML = tablerIcon(available ? 'arrow-down' : 'alert-triangle')
+    const label = document.createElement('span')
+    label.textContent = describeUpdate(status)
+    updateBar.replaceChildren(icon, label)
+  }
+
+  updateBar.addEventListener('click', () => options.onUpdate?.())
+
   if (options.workspace === undefined) {
     windowEl.append(titlebar, documentSurface)
   } else {
@@ -1603,7 +1659,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       const open = popover.classList.toggle('open')
       settings.classList.toggle('active', open)
     })
-    libraryFooter.append(sync, settings)
+    libraryFooter.append(updateBar, sync, settings)
     if (isMacOS) {
       popover.classList.add('sidebar-settings-popover')
       folders.append(workspaceHeader, libraryRows, libraryFooter, popover)
@@ -2127,6 +2183,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       preferences = next
       paintPreferenceUi()
     },
+    setUpdateStatus: showUpdate,
     toggleHistoryNavigation,
     historyNavigationVisible: () => !historyNavigation.hidden,
     setWorkspaceMode: (mode) => setWorkspaceMode(mode),

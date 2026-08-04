@@ -19,6 +19,16 @@ export interface BuildProvenance {
   readonly shortSha: string
   /** ISO-8601 UTC build instant, or `unknown`. */
   readonly builtAt: string
+  /**
+   * `owner/name` this build came from, or `unknown`.
+   *
+   * Read from the build's own remote rather than written into any source file.
+   * The canonical repository is private and `scripts/mirror` refuses to publish
+   * source naming it, so a constant would either leak that identity publicly or
+   * be wrong in the mirror. This is also what a fork wants: it checks itself,
+   * with no configuration.
+   */
+  readonly repository: string
 }
 
 const UNKNOWN = 'unknown'
@@ -83,5 +93,11 @@ export function readProvenance(value: unknown): BuildProvenance | undefined {
   const sha = typeof record['sha'] === 'string' ? record['sha'] : UNKNOWN
   const builtAt = typeof record['built_at'] === 'string' ? record['built_at'] : UNKNOWN
   const shortSha = typeof record['short_sha'] === 'string' ? record['short_sha'] : sha
-  return { sha, shortSha, builtAt }
+  const repository = typeof record['repository'] === 'string' ? record['repository'] : UNKNOWN
+  return { sha, shortSha, builtAt, repository }
+}
+
+/** True when the build named a repository it could actually ask about. */
+export function isRepository(value: string): boolean {
+  return /^[\w.-]+\/[\w.-]+$/.test(value) && value !== UNKNOWN
 }

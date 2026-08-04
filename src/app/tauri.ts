@@ -17,8 +17,10 @@ import { TauriWorkspaceCatalogPort } from '../adapters/filesystem/tauri-workspac
 import { TauriDocumentLinkPort } from '../adapters/filesystem/tauri-document-link-port.js'
 import type { FilePort, WorkspaceCatalog } from '../application/index.js'
 import { installNativeMenu } from './ui/native-menu.js'
-import { readProvenance } from './build-provenance.js'
+import { isCommit, isRepository, readProvenance } from './build-provenance.js'
 import type { BuildProvenance } from './build-provenance.js'
+import { readComparison, updateStatus } from './update-status.js'
+import type { UpdateStatus } from './update-status.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
@@ -536,6 +538,17 @@ async function mount(
     // has to be raised from the native side. What lands on paper is still the
     // shared print stylesheet — this only opens the door.
     onPrint: () => void invoke('print_note'),
+    // Phase 1 hands over the documented install rather than performing it
+    // (docs/UPDATE-NOTIFICATION.md §6). One-click needs a signing key, a
+    // published feed, and notarization; none of them exist, and an app that
+    // silently shelled out to a two-minute build with no window on screen
+    // would be a worse answer than a command you can read.
+    onUpdate: () => {
+      void navigator.clipboard
+        .writeText('bash scripts/install-main.sh')
+        .then(() => app.setStatus('saved', 'Update command copied — run it in the repository'))
+        .catch(() => app.setStatus('error', 'Run: bash scripts/install-main.sh'))
+    },
   })
 
   root.replaceChildren(app.element)
@@ -560,7 +573,56 @@ async function mount(
     ...(provenance === undefined ? {} : { provenance }),
   })
 
+  // Once, at launch, and never on a timer (docs/UPDATE-NOTIFICATION.md §8):
+  // one call per launch is far inside the unauthenticated rate limit, and a
+  // strip that can appear mid-sentence is a strip that interrupts reading.
+  void checkForUpdate(provenance).then((status) => app.setUpdateStatus(status))
+
   return app
+}
+
+/**
+ * Asks GitHub how far this build trails `main`.
+ *
+ * The app never computes ancestry — `build-provenance.ts` is explicit that a
+ * bundle carries one SHA and no history. This asks the remote that does have
+ * the history and reports what it was told, and any failure to get an answer
+ * becomes `unknown` rather than silence.
+ */
+async function checkForUpdate(provenance: BuildProvenance | undefined): Promise<UpdateStatus> {
+  if (provenance === undefined || !isCommit(provenance.sha)) {
+    return updateStatus(provenance, null)
+  }
+  // No source file names a repository (build-provenance.ts), so a build that
+  // could not read its own remote has nothing to ask and says so.
+  if (!isRepository(provenance.repository)) {
+    return updateStatus(provenance, null, 'This build did not record where it came from')
+  }
+  const url = `https://api.github.com/repos/${provenance.repository}/compare/${provenance.sha}...main`
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
+    if (!response.ok) {
+      // 404 is what a private repository returns to an anonymous caller, and
+      // saying so beats a generic failure — it is the difference between "no
+      // network" and "this check needs credentials" (§9).
+      const reason =
+        response.status === 404
+          ? 'Update checks need access to the repository'
+          : `Update check failed (${response.status})`
+      return updateStatus(provenance, null, reason)
+    }
+    const body = (await response.json()) as Record<string, unknown>
+    return updateStatus(
+      provenance,
+      readComparison({
+        status: body['status'],
+        latestSha: (body['commits'] as { sha?: unknown }[] | undefined)?.at(-1)?.sha,
+        behindBy: body['behind_by'],
+      }),
+    )
+  } catch {
+    return updateStatus(provenance, null, 'Could not reach GitHub')
+  }
 }
 
 /** The welcome state is honest until a real local note supplies a folder. */

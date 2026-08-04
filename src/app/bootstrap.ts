@@ -18,6 +18,7 @@ import {
   preferenceVariables,
 } from './reader-preferences.js'
 import type { ReaderPreferences } from './reader-preferences.js'
+import type { UpdateStatus } from './update-status.js'
 import { documentStatistics } from './document-statistics.js'
 
 /**
@@ -62,6 +63,13 @@ export interface AppComposition {
   run(command: DocumentCommandId): void
   /** Whether the optional styles bar is showing, for the View menu checkmark. */
   stylesBarVisible(): boolean
+  /**
+   * Reports an update check to the library footer.
+   *
+   * The check itself belongs to the platform entrypoint — only it knows whether
+   * there is a bundle to update — so the composition root just forwards.
+   */
+  setUpdateStatus(status: UpdateStatus): void
   /** Current availability and checkmark state for any shared command surface. */
   commandState(command: DocumentCommandId): { readonly enabled: boolean; readonly checked: boolean }
   /** Reconciles shell catalog state while preserving the mounted editor and its selection. */
@@ -95,6 +103,8 @@ export interface ComposeOptions {
    * by `styles/print.css`, never here.
    */
   readonly onPrint?: () => void
+  /** Acts on an offered update. Absent where there is no bundle to replace. */
+  readonly onUpdate?: () => void
   /** Shared navigation supplied by the platform composition root. */
   readonly workspace?: WorkspaceOptions
   /** Which platform owns the application chrome around the shared workspace. */
@@ -429,6 +439,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     // Measured from the session rather than the editor: the session is the one
     // that knows what the document currently is.
     getStatistics: () => documentStatistics(session.snapshot().markdown),
+    onUpdate: options.onUpdate,
     onContinueWriting: () => editor?.continueAfterLastBlock(),
     // The temporary contents popover (EDITOR-3) reads the outline fresh on
     // every open and navigates through the editor — the chrome itself never
@@ -510,6 +521,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     element: chrome.element,
     run: runCommand,
     stylesBarVisible: () => chrome.stylesBarVisible(),
+    setUpdateStatus: (status) => chrome.setUpdateStatus(status),
     commandState,
     reconcileWorkspace: (workspace) => chrome.reconcileWorkspace(workspace),
     session,

@@ -43,6 +43,9 @@ pub struct BuildProvenance {
     sha: String,
     short_sha: String,
     built_at: String,
+    /// `owner/name` this build came from, or `unknown`. Read from the build's
+    /// own remote so no source file names the private canonical repository.
+    repository: String,
 }
 
 /// The commit and time this binary was built from.
@@ -53,6 +56,7 @@ fn build_provenance() -> BuildProvenance {
         short_sha: short_sha(&sha),
         sha,
         built_at: env!("SIMPLEMARK_BUILD_TIME").to_string(),
+        repository: env!("SIMPLEMARK_BUILD_REPOSITORY").to_string(),
     }
 }
 

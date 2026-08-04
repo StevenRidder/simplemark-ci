@@ -24,8 +24,13 @@ use std::process::Command;
 fn main() {
     println!("cargo:rustc-env=SIMPLEMARK_BUILD_SHA={}", resolve_sha());
     println!("cargo:rustc-env=SIMPLEMARK_BUILD_TIME={}", build_time());
+    println!(
+        "cargo:rustc-env=SIMPLEMARK_BUILD_REPOSITORY={}",
+        resolve_repository()
+    );
 
     println!("cargo:rerun-if-env-changed=SIMPLEMARK_BUILD_SHA");
+    println!("cargo:rerun-if-env-changed=SIMPLEMARK_BUILD_REPOSITORY");
     // Best effort only: a plain checkout moves HEAD, but a commit on the branch
     // you are already on moves a ref file this cannot name in advance. The
     // installer's explicit env var is what actually guarantees freshness; these
@@ -53,6 +58,44 @@ fn build_time() -> String {
         return supplied;
     }
     run("date", &["-u", "+%Y-%m-%dT%H:%M:%SZ"]).unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Which repository this build should ask about updates, as `owner/name`.
+///
+/// Read from the build's own `origin` rather than written into the source. The
+/// canonical repository is private, and `scripts/mirror` refuses to publish any
+/// source naming it — so a constant would either leak the private identity into
+/// the public mirror or have to be wrong there. Reading the remote is also the
+/// behaviour a fork wants: it checks itself, with no configuration, and the
+/// public mirror checks the public mirror.
+///
+/// `unknown` when there is no git, no remote, or an unrecognised URL shape. The
+/// update check then reports that it cannot run rather than guessing a target.
+fn resolve_repository() -> String {
+    if let Some(supplied) = supplied("SIMPLEMARK_BUILD_REPOSITORY") {
+        return supplied;
+    }
+    git(&["remote", "get-url", "origin"])
+        .and_then(|url| normalise_repository(&url))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// `owner/name` from either remote form, HTTPS or SSH.
+fn normalise_repository(url: &str) -> Option<String> {
+    let without_suffix = url.trim().strip_suffix(".git").unwrap_or(url.trim());
+    // `git@host:owner/name` and `https://host/owner/name` both end in the two
+    // segments we want, so take them from the end rather than parsing the host.
+    let tail = without_suffix
+        .rsplit(['/', ':'])
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>();
+    if tail.len() != 2 || tail.iter().any(|part| part.is_empty()) {
+        return None;
+    }
+    Some(tail.join("/"))
 }
 
 fn supplied(name: &str) -> Option<String> {

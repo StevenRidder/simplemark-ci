@@ -7,7 +7,9 @@
  */
 
 export type TablerIconName =
+  | 'alert-triangle'
   | 'archive'
+  | 'arrow-down'
   | 'bold'
   | 'calendar'
   | 'checkbox'
@@ -36,8 +38,11 @@ export type TablerIconName =
   | 'x'
 
 const paths: Record<TablerIconName, string> = {
+  'alert-triangle':
+    '<path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z"/><path d="M12 16h.01"/>',
   archive:
     '<path d="M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-10"/><path d="M10 12l4 0"/>',
+  'arrow-down': '<path d="M12 5l0 14"/><path d="M18 13l-6 6"/><path d="M6 13l6 6"/>',
   bold:
     '<path d="M7 5h6a3.5 3.5 0 0 1 0 7h-6l0 -7"/><path d="M13 12h1a3.5 3.5 0 0 1 0 7h-7v-7"/>',
   calendar:

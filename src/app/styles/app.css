@@ -938,7 +938,58 @@ section.editor::-webkit-scrollbar {
   bottom: 10px;
   left: 10px;
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: space-between;
+}
+
+/* The update strip (docs/UPDATE-NOTIFICATION.md §2).
+   `order: -1` with a full-width basis puts it on its own line above the two
+   icons without restructuring the footer, and it takes up no room at all while
+   hidden — the resting state, and the common one. */
+/* Specificity has to beat `.workspace-library-footer button`, which sizes the
+   two icons as 30px circles and would otherwise crush the strip into one. */
+.workspace-library-footer .library-update {
+  order: -1;
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: rgb(151 196 89 / 14%);
+  color: #c0dd97;
+  font: 500 11.5px/1.2 var(--sans);
+  text-align: left;
+}
+
+.workspace-library-footer .library-update[hidden] {
+  display: none;
+}
+
+.workspace-library-footer .library-update:not(:disabled):hover {
+  background: rgb(151 196 89 / 24%);
+  color: #eaf3de;
+}
+
+/* A failed check is muted and inert: it must carry the same weight as a
+   footnote, never the weight of an available update. */
+.workspace-library-footer .library-update[data-state='unknown'] {
+  background: rgb(255 255 255 / 7%);
+  color: #b4b2a9;
+  cursor: default;
+}
+
+.workspace-library-footer .library-update svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .library-rows {

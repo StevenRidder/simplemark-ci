@@ -61,7 +61,7 @@ No CRDT, no relay server, no accounts, no hosting bill. The notes folder lives i
 **Accepted costs:**
 - Simultaneous offline edits on two devices produce a `(conflicted copy)` file. Handled per §8.
 - No real-time collaboration. Not wanted.
-- iOS is the weak spot: iCloud Drive works via the file provider; Dropbox and Google Drive on iOS are apps rather than filesystems and background folder sync is unreliable. **iCloud Drive is the supported iOS path.**
+- iOS is the weak spot: iCloud Drive works via the file provider; Dropbox and Google Drive on iOS are apps rather than filesystems and background folder sync is unreliable. ~~**iCloud Drive is the supported iOS path.**~~ **Superseded by [ADR-0006](decisions/0006-one-authoritative-change-stream.md):** external bytes reach the document through a source-specific adapter, so the supported path is whichever provider an adapter can read honestly — never inferred from a provider name or path.
 
 **Amended by D8, ADR-0002, and ADR-0005:** external file propagation is the first agent integration:
 the agent writes the ordinary file and SimpleMark watches it. This is not real-time peer transport.

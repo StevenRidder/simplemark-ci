@@ -10,3 +10,4 @@ accepted ADR, update the plan before executing it; do not silently choose the ea
 | [0003](0003-rendered-block-frame.md) | Accepted | Rendered blocks keep a shared frame; their controls fade in on hover or focus |
 | [0004](0004-mcp-as-participant-client.md) | Accepted | MCP is a participant client of the document authority: one tool surface, rebase rather than compare-and-swap, hosted in the app process |
 | [0005](0005-rendered-document-before-agent-participation.md) | Accepted | Prove the beautiful living local document before in-app agent participation or collaboration |
+| [0006](0006-one-authoritative-change-stream.md) | Accepted | Editor steps, participant operations, remote steps and external bytes converge on one authoritative accepted-change stream; supersedes the iCloud-only mobile policy in `DESIGN.md` D2 |

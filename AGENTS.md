@@ -13,6 +13,8 @@ this file says how to change it.
    one package, enforced module boundaries) and **ADR-0002** (local `DocumentSession`
    before any CRDT) remain load-bearing; **ADR-0005** makes the rendered-document proof precede
    in-app agent participation.
+   **ADR-0006** requires source-specific adapters to converge on one authoritative accepted-change
+   stream while keeping provenance and platform capabilities honest.
 4. [`docs/POC.md`](docs/POC.md) — the next executable target and its ten-step acceptance test.
 5. [`docs/superpowers/plans/`](docs/superpowers/plans/) — executable implementation plans.
 
@@ -77,6 +79,10 @@ Further invariants:
 - **Fidelity (D7).** Untouched blocks re-emit their original bytes; only dirty blocks
   serialize. `originalSource` is an immutable save baseline, never collaborative content.
   `dirty` is monotonic until a successful atomic save.
+- **One accepted-change stream (ADR-0006).** Human editor steps, participant operations, remote
+  steps, and external bytes need different adapters, but only the application authority accepts a
+  document change. Never guess an external writer's identity or infer a shared cloud root from a
+  provider name or path.
 - **No Yjs in Phase 1** (ADR-0002). The multi-client authority decision is a later,
   version-pinned spike gated on the one-day dogfood result.
 - **Communication is not control.** A message saying "stop" posts a message. The Stop

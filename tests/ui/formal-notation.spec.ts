@@ -101,6 +101,19 @@ test('display math stores as a portable $$ block, not a fence', async ({ page })
   expect(markdown).not.toContain('```math')
 })
 
+test('malformed display math fails visibly without rewriting its source', async ({ page }) => {
+  const source = '$$\\frac{broken$$'
+  await paste(page, source)
+
+  // An invalid expression may be rejected before it becomes a math node. The
+  // readable fallback is then the literal expression, never a blank block.
+  await expect(page.locator(EDITOR)).toContainText('\\frac{broken')
+
+  const markdown = await page.evaluate(() => window.simplemark!.editor.serialize())
+  expect(markdown).toContain('\\frac{broken')
+  expect(markdown).not.toContain('```math')
+})
+
 test('a dollar amount in prose is never claimed as math', async ({ page }) => {
   await paste(page, 'The licence costs $100 and renews yearly.')
 

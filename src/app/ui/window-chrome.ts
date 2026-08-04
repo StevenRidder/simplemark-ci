@@ -84,6 +84,17 @@ export interface WindowChromeOptions {
   readonly onUpdate?: (() => void) | undefined
   /** Inserts an ordinary Markdown image or file link through a platform port. */
   readonly onInsertAsset?: (() => void) | undefined
+  /**
+   * Runs one of the portable clipboard exports for the current selection.
+   * Absent where no clipboard port is available, which hides the whole menu
+   * rather than offering items that cannot work.
+   */
+  readonly onClipboardExport?: ((command: string) => void) | undefined
+  /**
+   * What the caret is sitting in, so the menu offers table and code items only
+   * where they apply — absent beats present-and-refusing.
+   */
+  readonly getSelectionShape?: () => { readonly inTable: boolean; readonly inCode: boolean }
   /** Whether the quiet, single-row editing strip is shown. This is shell state. */
   readonly stylesBarVisible: boolean
   /** Persists the shell-only styles-bar preference in the composition root. */
@@ -2224,6 +2235,98 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       windowEl.append(titlebar, workspaceBody)
     }
   }
+  // ---- selection context menu (EDITOR-13) ----
+  //
+  // Right-click is where people reach for copy, and the exports were only in
+  // the Edit menu. The first item is plain Copy, which deliberately delegates
+  // to the platform's own copy — document.execCommand('copy') runs the exact
+  // ProseMirror path Cmd+C does, so this menu adds choices without changing
+  // what Copy has always meant.
+  const selectionMenu = document.createElement('div')
+  selectionMenu.className = 'note-context-menu selection-context-menu'
+  selectionMenu.hidden = true
+  selectionMenu.setAttribute('role', 'menu')
+
+  const menuRow = (label: string, run: () => void): HTMLButtonElement => {
+    const row = document.createElement('button')
+    row.type = 'button'
+    row.className = 'note-context-row'
+    row.textContent = label
+    row.setAttribute('role', 'menuitem')
+    // mousedown, not click, for the focus suppression: pressing a row must not
+    // move focus out of the editor, because that collapses the DOM selection —
+    // and then Copy has nothing to copy. Every command in this menu reads the
+    // selection, so losing it silently empties all of them.
+    row.addEventListener('mousedown', (event) => event.preventDefault())
+    row.addEventListener('click', () => {
+      selectionMenu.hidden = true
+      run()
+    })
+    return row
+  }
+
+  const closeSelectionMenu = (): void => {
+    selectionMenu.hidden = true
+  }
+
+  const buildSelectionMenu = (): void => {
+    selectionMenu.replaceChildren()
+    // Plain Copy first, and unchanged: the browser performs its own copy.
+    selectionMenu.append(menuRow('Copy', () => document.execCommand('copy')))
+    const rule = document.createElement('hr')
+    selectionMenu.append(rule)
+    for (const [label, id] of [
+      ['Copy as Markdown', 'copyAsMarkdown'],
+      ['Copy as Plain Text', 'copyAsPlainText'],
+      ['Copy as Rich Text', 'copyAsRichText'],
+      ['Copy as HTML', 'copyAsHtml'],
+    ] as const) {
+      selectionMenu.append(menuRow(label, () => options.onClipboardExport?.(id)))
+    }
+
+    const shape = options.getSelectionShape?.() ?? { inTable: false, inCode: false }
+    if (shape.inCode) {
+      selectionMenu.append(document.createElement('hr'))
+      selectionMenu.append(menuRow('Copy Code', () => options.onClipboardExport?.('copyCode')))
+    }
+    if (shape.inTable) {
+      selectionMenu.append(document.createElement('hr'))
+      for (const [label, id] of [
+        ['Copy Table as Markdown', 'copyTableAsMarkdown'],
+        ['Copy Table as HTML', 'copyTableAsHtml'],
+        ['Copy Table as CSV', 'copyTableAsCsv'],
+      ] as const) {
+        selectionMenu.append(menuRow(label, () => options.onClipboardExport?.(id)))
+      }
+    }
+  }
+
+  page.addEventListener('contextmenu', (event) => {
+    if (options.onClipboardExport === undefined) return
+    event.preventDefault()
+    buildSelectionMenu()
+    selectionMenu.hidden = false
+    selectionMenu.style.left = `${event.clientX}px`
+    selectionMenu.style.top = `${event.clientY}px`
+    requestAnimationFrame(() => {
+      const bounds = selectionMenu.getBoundingClientRect()
+      selectionMenu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - bounds.width - 8))}px`
+      selectionMenu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - bounds.height - 8))}px`
+    })
+  })
+
+  // Deliberately no autofocus on open: focusing a row collapses the selection
+  // the whole menu exists to act on. Keyboard users reach the rows by Tab,
+  // which is a decision they make after the selection has already been used.
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeSelectionMenu()
+  })
+  document.addEventListener('mousedown', (event) => {
+    if (!selectionMenu.hidden && !selectionMenu.contains(event.target as Node)) closeSelectionMenu()
+  })
+  page.addEventListener('scroll', closeSelectionMenu, { passive: true })
+  stage.append(selectionMenu)
+
   stage.append(windowEl)
 
   return {

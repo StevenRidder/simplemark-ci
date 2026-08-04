@@ -462,6 +462,18 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     // that knows what the document currently is.
     getStatistics: () => documentStatistics(session.snapshot().markdown),
     onUpdate: options.onUpdate,
+    onClipboardExport: ports.clipboard === undefined
+      ? undefined
+      : (command) => runCommand(command as DocumentCommandId),
+    // The same pure predicates the exports use, so the menu can never offer an
+    // item that the command would then refuse.
+    getSelectionShape: () => {
+      const markdown = editor?.selectionMarkdown() ?? ''
+      return {
+        inTable: markdownTableToCsv(markdown) !== null,
+        inCode: codeFenceContent(markdown) !== null,
+      }
+    },
     onContinueWriting: () => editor?.continueAfterLastBlock(),
     // The temporary contents popover (EDITOR-3) reads the outline fresh on
     // every open and navigates through the editor — the chrome itself never

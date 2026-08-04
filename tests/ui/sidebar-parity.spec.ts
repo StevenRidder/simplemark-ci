@@ -107,6 +107,11 @@ test('L1-050 Recent Notes and Pinned keep collection title, selection, and count
 
 test('L1-120 visible sidebar controls expose names and honest disabled states', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Search' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Open note' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Open note' })).toHaveAttribute(
+    'title',
+    'Open an existing Markdown file',
+  )
   await expect(page.getByRole('button', { name: 'New note' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Sidebar options' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Folder sync status' })).toBeDisabled()

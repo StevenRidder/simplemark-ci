@@ -113,6 +113,7 @@ test('workspace controls are real while collaboration controls stay disabled', a
   await expect(page.getByRole('button', { name: 'Work with AI' })).toBeDisabled()
   await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Search' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Open note' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Document list' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'New note' })).toBeEnabled()
   await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Table' })).toBeEnabled()

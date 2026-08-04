@@ -1760,6 +1760,19 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       'Search',
       tablerIconPaths('search'),
     )
+    const openNoteButton = svgButton(
+      'notes-action',
+      'Open note',
+      tablerIconPaths('folder'),
+    )
+    if (options.onOpenFile === undefined) {
+      openNoteButton.disabled = true
+      openNoteButton.title =
+        options.openFileUnavailableReason ?? 'Open Note — not available on this platform'
+    } else {
+      openNoteButton.title = 'Open an existing Markdown file'
+      openNoteButton.addEventListener('click', () => options.onOpenFile?.())
+    }
     const newNoteButton = svgButton(
       'notes-action',
       'New note',
@@ -1785,7 +1798,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     closeSearch.setAttribute('aria-label', 'Close search')
     closeSearch.textContent = '×'
     searchWrap.append(search, closeSearch)
-    notesHeader.append(notesTitle, searchButton, newNoteButton, searchWrap)
+    notesHeader.append(notesTitle, searchButton, openNoteButton, newNoteButton, searchWrap)
 
     const notesMenu = document.createElement('div')
     notesMenu.className = 'notes-menu'

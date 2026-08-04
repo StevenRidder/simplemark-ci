@@ -236,3 +236,22 @@ test('the Safari fallback opens a file and saves an explicitly downloaded replac
   expect((await download).suggestedFilename()).toBe('safari-note.md')
   await expect(page.locator('.status')).toContainText('Downloaded safari-note.md')
 })
+
+test('the middle-panel Open Note control uses the real file-open path', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'showOpenFilePicker', { configurable: true, value: undefined })
+  })
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: 'Open note' }).click()
+  await (await chooser).setFiles({
+    name: 'middle-panel-open.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# Opened from the middle panel\n\nThe same portable file path is reused.\n'),
+  })
+
+  await expect(page.locator('.filename')).toContainText('middle-panel-open.md')
+  await expect(page.locator(`${EDITOR} h1`)).toContainText('Opened from the middle panel')
+})

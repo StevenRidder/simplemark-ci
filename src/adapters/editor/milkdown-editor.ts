@@ -1,4 +1,4 @@
-import { Editor, defaultValueCtx, editorViewCtx, rootCtx } from '@milkdown/kit/core'
+import { Editor, defaultValueCtx, editorViewCtx, rootCtx, serializerCtx } from '@milkdown/kit/core'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
 import { history, redoCommand, undoCommand } from '@milkdown/kit/plugin/history'
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
@@ -32,8 +32,8 @@ import {
   footnoteReferenceSchema,
 } from '@milkdown/kit/preset/gfm'
 import { $useKeymap, $view, callCommand, getMarkdown } from '@milkdown/kit/utils'
-import { Fragment } from '@milkdown/kit/prose/model'
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { DOMSerializer, Fragment } from '@milkdown/kit/prose/model'
+import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { toggleMark } from '@milkdown/kit/prose/commands'
 import { Selection } from '@milkdown/kit/prose/state'
 import {
@@ -1320,6 +1320,72 @@ export class MilkdownEditor {
     return this.editor.action(getMarkdown())
   }
 
+  /**
+   * The current selection as Markdown — the whole containing block when the
+   * caret is collapsed.
+   *
+   * Collapsed-means-block is deliberate: "Copy as Markdown" with the caret
+   * resting in a table or a fence should give you that table or that fence,
+   * which is the thing a reader means by "this". Requiring a manual selection
+   * first would make the useful cases the fiddliest ones.
+   */
+  selectionMarkdown(): string {
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const serializer = ctx.get(serializerCtx)
+      const { state } = view
+      const content = state.selection.empty
+        ? blockAround(state.selection.$from)
+        : state.doc.slice(state.selection.from, state.selection.to).content
+      return serializer(state.schema.topNodeType.create(null, content)).trim()
+    })
+  }
+
+  /**
+   * Replaces the selection with literal text, deliberately unparsed.
+   *
+   * This is the whole point of Paste as Plain Text: the ordinary paste path
+   * runs the §4.2 sniffers and the Markdown parser, and sometimes you want the
+   * characters and nothing else. Newlines become hard breaks so a multi-line
+   * paste stays one block rather than silently becoming several.
+   */
+  insertPlainText(text: string): void {
+    if (text === '') return
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const { schema } = view.state
+      const parts = text.split('\n')
+      const nodes: ProseNode[] = []
+      parts.forEach((part, index) => {
+        if (part !== '') nodes.push(schema.text(part))
+        if (index < parts.length - 1 && schema.nodes['hardbreak'] !== undefined) {
+          nodes.push(schema.nodes['hardbreak'].create())
+        }
+      })
+      if (nodes.length === 0) return
+      view.dispatch(
+        view.state.tr.replaceSelectionWith(schema.nodes['paragraph']!.create(null, nodes), false)
+          .scrollIntoView(),
+      )
+      view.focus()
+    })
+  }
+
+  /** The same selection as rendered HTML, for hosts that accept rich text. */
+  selectionHtml(): string {
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const { state } = view
+      const content = state.selection.empty
+        ? blockAround(state.selection.$from)
+        : state.doc.slice(state.selection.from, state.selection.to).content
+      const fragment = DOMSerializer.fromSchema(state.schema).serializeFragment(content)
+      const host = document.createElement('div')
+      host.append(fragment)
+      return host.innerHTML
+    })
+  }
+
   async destroy(): Promise<void> {
     // The editor root is replaced when a reader opens another file. Table
     // controls deliberately live above that root so they can sit beside the
@@ -1331,4 +1397,11 @@ export class MilkdownEditor {
     this.#activeTableCell = undefined
     await this.editor.destroy()
   }
+}
+
+
+/** The top-level block a position sits inside, as a fragment. */
+function blockAround($pos: ResolvedPos): Fragment {
+  const node = $pos.node($pos.depth > 0 ? 1 : 0)
+  return node.type.name === 'doc' ? node.content : Fragment.from(node)
 }

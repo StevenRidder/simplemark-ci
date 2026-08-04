@@ -8,6 +8,7 @@ import { BrowserFilePort } from '../adapters/filesystem/browser-file-port.js'
 import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
 import { BrowserDocumentLinkPort } from '../adapters/filesystem/browser-document-link-port.js'
 import { BrowserUploadFilePort } from '../adapters/filesystem/browser-upload-file-port.js'
+import { BrowserClipboardPort } from '../adapters/clipboard/browser-clipboard-port.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import type { FilePort } from '../application/index.js'
 import { composeApp } from './bootstrap.js'
@@ -243,6 +244,7 @@ async function mount(
       assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
       links: new BrowserDocumentLinkPort(window),
       // One port, several renderers. DOT, KaTeX, Vega-Lite and Markmap join here.
+      clipboard: new BrowserClipboardPort(),
       diagrams: new CompositeRenderer([
         new MermaidRenderer(),
         new SvgRenderer(),

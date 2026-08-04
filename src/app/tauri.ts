@@ -11,6 +11,7 @@ import { TextCardRenderer } from '../adapters/renderers/text-card-renderer.js'
 import { GraphvizRenderer } from '../adapters/renderers/graphviz-renderer.js'
 import { KatexRenderer } from '../adapters/renderers/katex-renderer.js'
 import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
+import { BrowserClipboardPort } from '../adapters/clipboard/browser-clipboard-port.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import { OpenCancelled, TauriFilePort } from '../adapters/filesystem/tauri-file-port.js'
 import { TauriWorkspaceCatalogPort } from '../adapters/filesystem/tauri-workspace-catalog-port.js'
@@ -541,6 +542,7 @@ async function mount(
       // not claim; the port says so rather than pretending.
       assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
       links: new TauriDocumentLinkPort(invoke),
+      clipboard: new BrowserClipboardPort(),
       diagrams: new CompositeRenderer([
         new MermaidRenderer(),
         new SvgRenderer(),

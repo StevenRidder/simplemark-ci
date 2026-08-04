@@ -65,6 +65,17 @@ export type DocumentCommandId =
   | 'undo'
   | 'redo'
   // Shell
+  // Portable clipboard exports (EDITOR-10). Shell-targeted: the selection is
+  // the editor's, but the format conversion and the platform clipboard are not.
+  | 'copyAsMarkdown'
+  | 'copyAsPlainText'
+  | 'copyAsRichText'
+  | 'copyAsHtml'
+  | 'copyCode'
+  | 'copyTableAsMarkdown'
+  | 'copyTableAsHtml'
+  | 'copyTableAsCsv'
+  | 'pasteAsPlainText'
   | 'openFile'
   | 'openFolder'
   | 'newNote'
@@ -210,6 +221,15 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   undo: { id: 'undo', label: 'Undo', target: 'editor', accelerator: 'CmdOrCtrl+Z' },
   redo: { id: 'redo', label: 'Redo', target: 'editor', accelerator: 'CmdOrCtrl+Shift+Z' },
 
+  copyAsMarkdown: { id: 'copyAsMarkdown', label: 'Copy as Markdown', target: 'shell', accelerator: 'CmdOrCtrl+Shift+M' },
+  copyAsPlainText: { id: 'copyAsPlainText', label: 'Copy as Plain Text', target: 'shell' },
+  copyAsRichText: { id: 'copyAsRichText', label: 'Copy as Rich Text', target: 'shell' },
+  copyAsHtml: { id: 'copyAsHtml', label: 'Copy as HTML', target: 'shell' },
+  copyCode: { id: 'copyCode', label: 'Copy Code', target: 'shell' },
+  copyTableAsMarkdown: { id: 'copyTableAsMarkdown', label: 'Copy Table as Markdown', target: 'shell' },
+  copyTableAsHtml: { id: 'copyTableAsHtml', label: 'Copy Table as HTML', target: 'shell' },
+  copyTableAsCsv: { id: 'copyTableAsCsv', label: 'Copy Table as CSV', target: 'shell' },
+  pasteAsPlainText: { id: 'pasteAsPlainText', label: 'Paste as Plain Text', target: 'shell', accelerator: 'CmdOrCtrl+Shift+V' },
   openFile: { id: 'openFile', label: 'Open…', target: 'shell', accelerator: 'CmdOrCtrl+O' },
   openFolder: { id: 'openFolder', label: 'Open Folder…', target: 'shell' },
   newNote: { id: 'newNote', label: 'New Note', target: 'shell', accelerator: 'CmdOrCtrl+N' },
@@ -416,7 +436,16 @@ export const MENUS: readonly MenuSpec[] = [
   },
   {
     label: 'Edit',
-    sections: [['undo', 'redo'], ['find']],
+    sections: [
+      ['undo', 'redo'],
+      // Copy As sits in Edit, beside the system Copy it complements, rather
+      // than in Format: these produce a clipboard flavour, never a document
+      // change. Copy never mutates the file.
+      ['copyAsMarkdown', 'copyAsPlainText', 'copyAsRichText', 'copyAsHtml'],
+      ['copyCode', 'copyTableAsMarkdown', 'copyTableAsHtml', 'copyTableAsCsv'],
+      ['pasteAsPlainText'],
+      ['find'],
+    ],
   },
   {
     label: 'Format',

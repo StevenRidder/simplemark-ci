@@ -18,6 +18,8 @@ export type {
   DocumentLinkPort,
   DiagramRenderer,
   RenderedDiagram,
+  ClipboardPayload,
+  ClipboardPort,
 } from './ports.js'
 export { DocumentSession } from './document-session.js'
 export type {

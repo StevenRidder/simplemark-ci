@@ -139,3 +139,27 @@ export interface DiagramRenderer {
   readonly languages: readonly string[]
   render(language: string, source: string): Promise<RenderedDiagram>
 }
+
+/** What a copy places on the clipboard, keyed by MIME type. */
+export interface ClipboardPayload {
+  readonly 'text/plain': string
+  readonly 'text/html'?: string
+}
+
+/**
+ * Writing and reading the platform clipboard (EDITOR-10).
+ *
+ * A port rather than a direct `navigator.clipboard` call because the hosts
+ * genuinely differ — the browser needs a user gesture and may refuse, and the
+ * native shell talks to NSPasteboard. What must not differ is the
+ * selection-to-format contract, which is why the conversions live in `domain`
+ * and this interface only carries finished strings.
+ *
+ * `write` resolves `false` rather than throwing when the host refuses, so a
+ * blocked clipboard becomes a visible message instead of a silent no-op.
+ */
+export interface ClipboardPort {
+  write(payload: ClipboardPayload): Promise<boolean>
+  /** The clipboard's text, or null when the host will not surrender it. */
+  readText(): Promise<string | null>
+}

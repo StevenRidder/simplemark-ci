@@ -1,4 +1,16 @@
-import type { AssetReferencePort, DiagramRenderer, DocumentLinkPort, FilePort } from '../application/index.js'
+import type {
+  AssetReferencePort,
+  ClipboardPort,
+  DiagramRenderer,
+  DocumentLinkPort,
+  FilePort,
+} from '../application/index.js'
+import {
+  codeFenceContent,
+  markdownTableToCsv,
+  markdownTableToHtml,
+  markdownToPlainText,
+} from '../domain/index.js'
 import { DocumentSession } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
@@ -40,6 +52,7 @@ export interface AppPorts {
   readonly file: FilePort
   readonly assets?: AssetReferencePort
   readonly links?: DocumentLinkPort
+  readonly clipboard?: ClipboardPort
   readonly diagrams: DiagramRenderer
 }
 
@@ -168,6 +181,19 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         return
       case 'insertAsset':
         void insertAsset()
+        return
+      case 'copyAsMarkdown':
+      case 'copyAsPlainText':
+      case 'copyAsRichText':
+      case 'copyAsHtml':
+      case 'copyCode':
+      case 'copyTableAsMarkdown':
+      case 'copyTableAsHtml':
+      case 'copyTableAsCsv':
+        void copySelection(id)
+        return
+      case 'pasteAsPlainText':
+        void pasteAsPlainText()
         return
       case 'find':
         findBar.open()
@@ -504,6 +530,93 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       findBar.open()
     }
   })
+
+  /**
+   * Copy As, in every flavour (EDITOR-10).
+   *
+   * The selection is converted by the shared `domain` rules and only then
+   * handed to a platform clipboard, so a browser and the native shell produce
+   * identical bytes. Nothing here writes to the document: copy never mutates
+   * the file.
+   *
+   * A refused clipboard is reported. Browsers can decline a write for reasons
+   * the document cannot control, and a success message for something that did
+   * not happen is exactly the silent-wrong-state this product refuses.
+   */
+  async function copySelection(id: DocumentCommandId): Promise<void> {
+    const port = ports.clipboard
+    if (port === undefined || editor === undefined) return
+    const markdown = editor.selectionMarkdown()
+
+    let payload: { 'text/plain': string; 'text/html'?: string } | null = null
+    let describe = 'Copied'
+
+    switch (id) {
+      case 'copyAsMarkdown':
+        payload = { 'text/plain': markdown }
+        describe = 'Copied as Markdown'
+        break
+      case 'copyAsPlainText':
+        payload = { 'text/plain': markdownToPlainText(markdown) }
+        describe = 'Copied as plain text'
+        break
+      case 'copyAsRichText':
+        payload = { 'text/plain': markdownToPlainText(markdown), 'text/html': editor.selectionHtml() }
+        describe = 'Copied as rich text'
+        break
+      case 'copyAsHtml':
+        // The markup itself is the payload here, so it travels as text.
+        payload = { 'text/plain': editor.selectionHtml() }
+        describe = 'Copied as HTML'
+        break
+      case 'copyCode': {
+        const code = codeFenceContent(markdown)
+        if (code === null) {
+          chrome.setStatus('error', 'Copy Code needs a code block — put the caret inside one')
+          return
+        }
+        payload = { 'text/plain': code }
+        describe = 'Copied code'
+        break
+      }
+      case 'copyTableAsMarkdown':
+      case 'copyTableAsHtml':
+      case 'copyTableAsCsv': {
+        const table =
+          id === 'copyTableAsCsv'
+            ? markdownTableToCsv(markdown)
+            : id === 'copyTableAsHtml'
+              ? markdownTableToHtml(markdown)
+              : markdownTableToCsv(markdown) === null
+                ? null
+                : markdown
+        if (table === null) {
+          chrome.setStatus('error', 'Copy Table needs a table — put the caret inside one')
+          return
+        }
+        payload = { 'text/plain': table }
+        describe = `Copied table as ${id === 'copyTableAsCsv' ? 'CSV' : id === 'copyTableAsHtml' ? 'HTML' : 'Markdown'}`
+        break
+      }
+      default:
+        return
+    }
+
+    const ok = await port.write(payload)
+    chrome.setStatus(ok ? 'saved' : 'error', ok ? describe : 'Clipboard refused the copy')
+  }
+
+  /** Paste that deliberately drops any rich flavour the source offered. */
+  async function pasteAsPlainText(): Promise<void> {
+    const port = ports.clipboard
+    if (port === undefined || editor === undefined) return
+    const text = await port.readText()
+    if (text === null) {
+      chrome.setStatus('error', 'Clipboard unavailable — paste needs permission')
+      return
+    }
+    editor.insertPlainText(text)
+  }
 
   async function insertAsset(): Promise<void> {
     try {

@@ -3303,6 +3303,8 @@ dependencies = [
  "base64 0.22.1",
  "muda",
  "notify",
+ "objc2",
+ "objc2-app-kit",
  "serde",
  "serde_json",
  "tauri",

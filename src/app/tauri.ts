@@ -18,6 +18,7 @@ import { TauriWorkspaceCatalogPort } from '../adapters/filesystem/tauri-workspac
 import { TauriDocumentLinkPort } from '../adapters/filesystem/tauri-document-link-port.js'
 import type { FilePort, WorkspaceCatalog } from '../application/index.js'
 import { installNativeMenu } from './ui/native-menu.js'
+import type { MacosTextServiceId } from './ui/native-menu.js'
 import { isCommit, isRepository, readProvenance } from './build-provenance.js'
 import type { BuildProvenance } from './build-provenance.js'
 import { readComparison, updateStatus } from './update-status.js'
@@ -595,6 +596,11 @@ async function mount(
   await installNativeMenu({
     run: (command) => app.run(command),
     state: (command) => app.commandState(command),
+    runTextService: (service: MacosTextServiceId) => {
+      void invoke('perform_macos_text_service', { service }).catch((error) => {
+        app.setStatus('error', `macOS text service unavailable — ${String(error)}`)
+      })
+    },
     ...(provenance === undefined ? {} : { provenance }),
   })
 

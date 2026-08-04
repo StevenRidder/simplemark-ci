@@ -33,6 +33,11 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, Url};
 use tauri_plugin_dialog::DialogExt;
 
+#[cfg(target_os = "macos")]
+use objc2::{sel, MainThreadMarker};
+#[cfg(target_os = "macos")]
+use objc2_app_kit::NSApplication;
+
 /// Which commit produced this bundle, captured at compile time by `build.rs`.
 ///
 /// Reported, never interpreted. The shell decides how to say it; this only
@@ -858,6 +863,47 @@ fn print_note(window: tauri::WebviewWindow) -> Result<(), String> {
         .map_err(|error| format!("Could not open the print panel: {error}"))
 }
 
+/// Sends a standard AppKit text-service action through the responder chain.
+///
+/// The focused WKWebView remains the target, so macOS owns dictionaries,
+/// substitutions, replacements, language settings, and speech. The shared
+/// editor neither reimplements those services nor receives document text over
+/// IPC. The allow-list is intentionally closed: this is not a generic Cocoa
+/// selector bridge.
+#[tauri::command]
+#[cfg(target_os = "macos")]
+fn perform_macos_text_service(service: String) -> Result<(), String> {
+    let action = match service.as_str() {
+        "show_spelling_and_grammar" => sel!(showGuessPanel:),
+        "check_spelling" => sel!(checkSpelling:),
+        "toggle_continuous_spell_checking" => sel!(toggleContinuousSpellChecking:),
+        "toggle_grammar_checking" => sel!(toggleGrammarChecking:),
+        "show_substitutions" => sel!(orderFrontSubstitutionsPanel:),
+        "toggle_smart_quotes" => sel!(toggleAutomaticQuoteSubstitution:),
+        "toggle_smart_dashes" => sel!(toggleAutomaticDashSubstitution:),
+        "toggle_text_replacement" => sel!(toggleAutomaticTextReplacement:),
+        "start_speaking" => sel!(startSpeaking:),
+        "stop_speaking" => sel!(stopSpeaking:),
+        _ => return Err(format!("Unsupported macOS text service: {service}")),
+    };
+    let marker = MainThreadMarker::new()
+        .ok_or_else(|| "macOS text services must run on the main thread".to_string())?;
+    let application = NSApplication::sharedApplication(marker);
+    // SAFETY: every selector above is a standard NSResponder action, the
+    // target is intentionally nil so AppKit resolves the focused responder,
+    // and no untrusted selector crosses this boundary.
+    let handled = unsafe { application.sendAction_to_from(action, None, None) };
+    handled
+        .then_some(())
+        .ok_or_else(|| "The focused control does not support that macOS text service".to_string())
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+fn perform_macos_text_service(_service: String) -> Result<(), String> {
+    Err("macOS text services are available only on macOS".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -888,6 +934,7 @@ pub fn run() {
             take_open_note_request,
             save_note,
             print_note,
+            perform_macos_text_service,
             build_provenance,
             watch_note,
             stop_watching_note,

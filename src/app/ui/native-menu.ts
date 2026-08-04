@@ -35,6 +35,67 @@ export interface NativeMenuOptions {
    * instead of quietly omitting the line.
    */
   readonly provenance?: BuildProvenance
+  /** Sends a named action through macOS's focused responder chain. */
+  readonly runTextService?: (service: MacosTextServiceId) => void
+}
+
+export type MacosTextServiceId =
+  | 'show_spelling_and_grammar'
+  | 'check_spelling'
+  | 'toggle_continuous_spell_checking'
+  | 'toggle_grammar_checking'
+  | 'show_substitutions'
+  | 'toggle_smart_quotes'
+  | 'toggle_smart_dashes'
+  | 'toggle_text_replacement'
+  | 'start_speaking'
+  | 'stop_speaking'
+
+export const MACOS_TEXT_SERVICE_MENUS: ReadonlyArray<{
+  readonly label: string
+  readonly items: ReadonlyArray<{ readonly id: MacosTextServiceId; readonly label: string }>
+}> = [
+  {
+    label: 'Spelling and Grammar',
+    items: [
+      { id: 'show_spelling_and_grammar', label: 'Show Spelling and Grammar' },
+      { id: 'check_spelling', label: 'Check Document Now' },
+      { id: 'toggle_continuous_spell_checking', label: 'Check Spelling While Typing' },
+      { id: 'toggle_grammar_checking', label: 'Check Grammar With Spelling' },
+    ],
+  },
+  {
+    label: 'Substitutions',
+    items: [
+      { id: 'show_substitutions', label: 'Show Substitutions' },
+      { id: 'toggle_smart_quotes', label: 'Smart Quotes' },
+      { id: 'toggle_smart_dashes', label: 'Smart Dashes' },
+      { id: 'toggle_text_replacement', label: 'Text Replacement' },
+    ],
+  },
+  {
+    label: 'Speech',
+    items: [
+      { id: 'start_speaking', label: 'Start Speaking' },
+      { id: 'stop_speaking', label: 'Stop Speaking' },
+    ],
+  },
+]
+
+async function buildTextServiceMenu(
+  spec: (typeof MACOS_TEXT_SERVICE_MENUS)[number],
+  options: NativeMenuOptions,
+): Promise<Submenu> {
+  const items = []
+  for (const service of spec.items) {
+    items.push(await MenuItem.new({
+      id: `macos:${service.id}`,
+      text: service.label,
+      enabled: options.runTextService !== undefined,
+      action: () => options.runTextService?.(service.id),
+    }))
+  }
+  return Submenu.new({ text: spec.label, items })
 }
 
 /**
@@ -163,6 +224,19 @@ export async function installNativeMenu(options: NativeMenuOptions): Promise<Men
       await PredefinedMenuItem.new({ item: 'Copy' }),
       await PredefinedMenuItem.new({ item: 'Paste' }),
       await PredefinedMenuItem.new({ item: 'SelectAll' }),
+      await PredefinedMenuItem.new({ item: 'Separator' }),
+      ...await Promise.all(MACOS_TEXT_SERVICE_MENUS.map((spec) => buildTextServiceMenu(spec, options))),
+    ])
+  }
+
+  // Full screen is window behaviour, not a document command. Using the
+  // predefined item gives macOS ownership of the title, shortcut, state, and
+  // green-window-button behaviour.
+  const view = owned.find((submenu, index) => MENUS[index]?.label === 'View')
+  if (view !== undefined) {
+    await view.append([
+      await PredefinedMenuItem.new({ item: 'Separator' }),
+      await PredefinedMenuItem.new({ item: 'Fullscreen' }),
     ])
   }
 

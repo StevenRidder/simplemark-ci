@@ -214,6 +214,8 @@ export interface WindowChrome {
   foldersAtoZ(): boolean
   togglePinned(id: string): void
   isPinned(id: string): boolean
+  /** Reconciles shell catalog state without replacing the live editor view. */
+  reconcileWorkspace(workspace: WorkspaceOptions): void
   /** Releases observers owned by this detached presentation tree. */
   dispose(): void
 }
@@ -1468,14 +1470,15 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   let foldersSort: FoldersSort = 'title'
   let foldersAtoZ = false
   let repaintNoteList = (): void => {}
+  let reconcileWorkspace = (_workspace: WorkspaceOptions): void => {}
 
   if (options.workspace === undefined) {
     windowEl.append(titlebar, documentSurface)
   } else {
-    const workspace = options.workspace
-    const workspaceNotes = workspace.notes.map((note) => ({ ...note }))
-    const modifiedOrder = new Map(workspaceNotes.map((note, index) => [note.id, index]))
-    const pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
+    let workspace = options.workspace
+    let workspaceNotes = workspace.notes.map((note) => ({ ...note }))
+    let modifiedOrder = new Map(workspaceNotes.map((note, index) => [note.id, index]))
+    let pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
     let pinSequence = 0
     const workspaceBody = document.createElement('div')
     workspaceBody.className = 'workspace-body'
@@ -1553,17 +1556,36 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     } else addFolder.addEventListener('click', () => workspace.onAddFolder?.())
     folderHead.append(folderLabel, addFolder)
 
-    const folderRows = (workspace.folders ?? []).map((folder) => {
-      const row = document.createElement('button')
-      row.type = 'button'
-      row.className = 'folder-row folder-root'
-      row.dataset['folderId'] = folder.id
-      row.innerHTML = `<span class="library-icon" aria-hidden="true">${tablerIcon('folder')}</span><span>${folder.name}</span><span class="folder-count">${folder.count}</span>`
-      if (workspace.onSelectCollection === undefined) row.disabled = true
-      else row.addEventListener('click', () => workspace.onSelectCollection?.(folder.id))
-      return row
-    })
-    libraryRows.append(allNotes, untagged, todo, today, pinned, trash, folderHead, ...folderRows)
+    const folderRows = new Map<string, HTMLButtonElement>()
+    const paintFolderRows = (): void => {
+      const live = new Set((workspace.folders ?? []).map((folder) => folder.id))
+      for (const [id, row] of folderRows) {
+        if (live.has(id)) continue
+        row.remove()
+        folderRows.delete(id)
+      }
+      for (const folder of workspace.folders ?? []) {
+        let row = folderRows.get(folder.id)
+        if (row === undefined) {
+          row = document.createElement('button')
+          row.type = 'button'
+          row.className = 'folder-row folder-root'
+          row.dataset['folderId'] = folder.id
+          row.innerHTML = `<span class="library-icon" aria-hidden="true">${tablerIcon('folder')}</span><span class="folder-name"></span><span class="folder-count"></span>`
+          row.addEventListener('click', () => {
+            const id = row?.dataset['folderId']
+            if (id !== undefined) workspace.onSelectCollection?.(id)
+          })
+          folderRows.set(folder.id, row)
+        }
+        row.querySelector('.folder-name')!.textContent = folder.name
+        row.querySelector('.folder-count')!.textContent = String(folder.count)
+        row.disabled = workspace.onSelectCollection === undefined
+        libraryRows.append(row)
+      }
+    }
+    libraryRows.append(allNotes, untagged, todo, today, pinned, trash, folderHead)
+    paintFolderRows()
     const libraryFooter = document.createElement('div')
     libraryFooter.className = 'workspace-library-footer'
     const sync = document.createElement('button')
@@ -1816,7 +1838,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
           row === pinned ? noteFilter === 'pinned' : noteFilter === 'all' && allIsActive,
         )
       }
-      for (const row of folderRows) {
+      for (const row of folderRows.values()) {
         row.classList.toggle('selected', row.dataset['folderId'] === workspace.activeCollectionId)
       }
       allNotes.querySelector('.folder-count')!.textContent = String(
@@ -2051,6 +2073,14 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       paintMenuState()
       paintNotes()
     }
+    reconcileWorkspace = (next): void => {
+      workspace = next
+      workspaceNotes = next.notes.map((note) => ({ ...note }))
+      modifiedOrder = new Map(workspaceNotes.map((note, index) => [note.id, index]))
+      pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
+      paintFolderRows()
+      repaintNoteList()
+    }
     repaintNoteList()
     noteItems.addEventListener('scroll', () => {
       noteContextMenu.hidden = true
@@ -2126,6 +2156,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     foldersAtoZ: () => foldersAtoZ,
     togglePinned: (id) => toggleWorkspacePin(id),
     isPinned: (id) => workspacePinState(id),
+    reconcileWorkspace: (workspace) => reconcileWorkspace(workspace),
     dispose: disposeDocumentScrollIndicator,
     setStatus(state, message) {
       status.dataset['state'] = state

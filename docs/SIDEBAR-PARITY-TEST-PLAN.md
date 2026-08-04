@@ -27,8 +27,10 @@ does not prove that the native app can discover, create, pin, trash, or reopen r
 
 Opening a note adds exactly that note to persistent **Recent Notes** history and selects it. This
 includes Finder, the picker, and a note selected while browsing an adopted folder. Reopening moves
-the note to the top without duplication; X removes it from history without deleting the file. In a
-folder view, X persists a local exclusion so a catalog refresh cannot resurrect the row. Folder membership is always
+the note to the top without duplication; X removes it from history without deleting the file or
+recreating the editor. In a folder view, X persists a local exclusion so a catalog refresh cannot
+resurrect the row. The open editor DOM, selection, and scroll position must remain stable while the
+workspace catalog reconciles. Folder membership is always
 explicit: **Add Folder** adopts the direct Markdown children of that folder as a named collection.
 Several adopted folders may remain in the library at once, and selecting one scopes the middle
 pane without opening another window. Adding a folder never bulk-adds its files to Recent Notes;
@@ -107,6 +109,7 @@ Status meanings: **pass** is automated against that surface; **observed** is man
 | L2-110 | Folder | External add | New Markdown file appears once without relaunch | planned | gap | native watcher |
 | L2-111 | Folder | External rename | One row renames; identity/selection handled explicitly | planned | gap | native watcher |
 | L2-112 | Folder | External remove | Row disappears; dirty open note is protected | planned | gap | native watcher |
+| L2-113 | App | Switch watched note | Prior watcher stops; same path deduplicates; quit never panics | n/a | pass | native unit + installed smoke |
 | L2-120 | List | Arrow/Return/Delete keys | Selection and destructive shortcuts match menu commands | planned | gap | keyboard + native |
 | L2-130 | List | Scroll and selection | Selected row stays visible; no jump after refresh | planned | gap | component + native |
 | L2-140 | List | Duplicate filenames | Full paths remain unique; labels disambiguate safely | planned | gap | native filesystem |
@@ -150,6 +153,8 @@ behavioral gap, and a browser-only pass cannot close a native gap.
 - Pin two notes, switch to Pinned, unpin the selected note, and confirm the editor stays open.
 - Quit and relaunch; pins, density, and pane widths return.
 - Add, rename, and remove files in Finder while SimpleMark is open; list state converges once.
+- Switch between notes repeatedly, hide a row, then quit; the app stays stable and does not leave a
+  watcher capable of emitting or panicking after replacement.
 - Exercise every visible button in both sidebars with mouse and keyboard.
 - Run empty, one-note, 100-note, long-title, duplicate-title, Unicode-title, and unreadable-file
   fixtures.

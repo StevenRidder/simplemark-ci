@@ -110,18 +110,7 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     activeId = id
     current = await mount(root, port, {
       filePath: 'Demo workspace · open a file to work with your own Markdown',
-      workspace: workspaceOptions(
-        activeId,
-        openDemoNote,
-        createDemoNote,
-        togglePinned,
-        (text) => navigator.clipboard.writeText(text),
-        async (id) => {
-          const markdown = DEMO_NOTES.find((candidate) => candidate.id === id)?.markdown
-          if (markdown !== undefined) await navigator.clipboard.writeText(markdown)
-        },
-        closeDemoNote,
-      ),
+      workspace: workspaceSnapshot(),
     })
   }
 
@@ -153,10 +142,22 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     const index = DEMO_NOTES.findIndex((candidate) => candidate.id === id)
     if (index < 0 || DEMO_NOTES.length === 1) return
     DEMO_NOTES.splice(index, 1)
-    const nextId = id === activeId ? DEMO_NOTES[Math.min(index, DEMO_NOTES.length - 1)]!.id : activeId
-    await openDemoNote(nextId, true)
+    current?.reconcileWorkspace(workspaceSnapshot())
     current?.setStatus('saved', 'Removed from Recent Notes — file remains on disk')
   }
+
+  const workspaceSnapshot = (): WorkspaceOptions => workspaceOptions(
+    activeId,
+    openDemoNote,
+    createDemoNote,
+    togglePinned,
+    (text) => navigator.clipboard.writeText(text),
+    async (id) => {
+      const markdown = DEMO_NOTES.find((candidate) => candidate.id === id)?.markdown
+      if (markdown !== undefined) await navigator.clipboard.writeText(markdown)
+    },
+    closeDemoNote,
+  )
 
   await openDemoNote(activeId)
   return current!

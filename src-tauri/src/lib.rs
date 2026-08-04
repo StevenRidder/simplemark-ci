@@ -22,8 +22,8 @@ use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc::channel;
-use std::sync::Mutex;
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -97,8 +97,39 @@ pub struct WorkspaceCatalog {
 
 /// What this process last wrote to each path, so the watcher can tell our own
 /// saves apart from someone else's edit.
+#[derive(Clone, Default)]
+pub struct WriteLedger(Arc<Mutex<HashMap<PathBuf, u64>>>);
+
+/// Owns the one filesystem watcher associated with the current document.
+///
+/// Reopening or switching a note replaces the previous generation and signals
+/// its thread to stop. The stop sender also disconnects during application
+/// teardown, so no detached watcher can outlive Tauri's managed state.
 #[derive(Default)]
-pub struct WriteLedger(Mutex<HashMap<PathBuf, u64>>);
+pub struct NoteWatchControl(Mutex<Option<ActiveNoteWatch>>);
+
+struct ActiveNoteWatch {
+    path: PathBuf,
+    stop: Sender<()>,
+}
+
+fn watcher_was_stopped(stop: &Receiver<()>) -> bool {
+    matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected))
+}
+
+fn active_note_watch_matches(active: &Option<ActiveNoteWatch>, path: &Path) -> bool {
+    active.as_ref().is_some_and(|watch| watch.path == path)
+}
+
+fn replace_active_note_watch(
+    active: &mut Option<ActiveNoteWatch>,
+    path: PathBuf,
+    stop: Sender<()>,
+) {
+    if let Some(previous) = active.replace(ActiveNoteWatch { path, stop }) {
+        let _ = previous.stop.send(());
+    }
+}
 
 /// Finder may hand the app a file before the webview has installed listeners.
 /// Keep those paths until the TypeScript composition root explicitly takes
@@ -607,29 +638,61 @@ fn save_note(handle: String, bytes: String, ledger: State<'_, WriteLedger>) -> R
 /// The event carries only the path. The shared application layer decides what a
 /// change means; this crate must not reach into the document to apply it.
 #[tauri::command]
-fn watch_note(app: AppHandle, handle: String) -> Result<(), String> {
+fn watch_note(
+    app: AppHandle,
+    handle: String,
+    ledger: State<'_, WriteLedger>,
+    control: State<'_, NoteWatchControl>,
+) -> Result<(), String> {
     let path = PathBuf::from(&handle);
     let directory = path
         .parent()
         .ok_or_else(|| format!("{handle} has no parent directory to watch"))?
         .to_path_buf();
 
-    std::thread::spawn(move || {
-        let (sender, receiver) = channel::<notify::Result<Event>>();
-        let Ok(mut watcher) = notify::recommended_watcher(sender) else {
-            return;
-        };
-        // Watch the directory, not the file: editors that save by rename
-        // replace the inode, and a file watch would follow the old one into
-        // oblivion and then report nothing forever.
-        if watcher
-            .watch(&directory, RecursiveMode::NonRecursive)
-            .is_err()
-        {
-            return;
-        }
+    let mut active = control
+        .0
+        .lock()
+        .map_err(|_| "The note watcher registry was poisoned by an earlier panic".to_string())?;
+    if active_note_watch_matches(&active, &path) {
+        return Ok(());
+    }
 
-        for event in receiver {
+    // Establish the replacement before retiring the old watcher. A setup
+    // failure must leave the known-good watcher running and be visible to the
+    // caller rather than silently disabling external-change detection.
+    let (event_sender, event_receiver) = channel::<notify::Result<Event>>();
+    let mut watcher = notify::recommended_watcher(event_sender)
+        .map_err(|error| format!("Could not watch {handle}: {error}"))?;
+    // Watch the directory, not the file: editors that save by rename replace
+    // the inode, and a file watch would follow the old one into oblivion.
+    watcher
+        .watch(&directory, RecursiveMode::NonRecursive)
+        .map_err(|error| format!("Could not watch {}: {error}", directory.display()))?;
+
+    let (stop_sender, stop_receiver) = channel::<()>();
+    replace_active_note_watch(&mut active, path.clone(), stop_sender);
+    drop(active);
+
+    // Clone the narrow state this worker needs. It never reaches back through
+    // `AppHandle::state`, whose missing-state path intentionally panics during
+    // teardown.
+    let ledger = ledger.inner().clone();
+    std::thread::spawn(move || {
+        // Moving `watcher` into the worker makes its lifetime explicit: notify
+        // stops monitoring when this loop exits and the watcher is dropped.
+        let _watcher = watcher;
+        loop {
+            if watcher_was_stopped(&stop_receiver) {
+                break;
+            }
+
+            let event = match event_receiver.recv_timeout(Duration::from_millis(100)) {
+                Ok(event) => event,
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => break,
+            };
+
             let Ok(event) = event else { continue };
             if !matches!(
                 event.kind,
@@ -643,14 +706,16 @@ fn watch_note(app: AppHandle, handle: String) -> Result<(), String> {
 
             // Coalesce: one logical save produces several filesystem events.
             std::thread::sleep(Duration::from_millis(120));
+            if watcher_was_stopped(&stop_receiver) {
+                break;
+            }
 
             let Ok(current) = fs::read(&path) else {
                 continue;
             };
             let hash = content_hash(&current);
 
-            let ours = app
-                .state::<WriteLedger>()
+            let ours = ledger
                 .0
                 .lock()
                 .map(|ledger| ledger.get(&path).copied() == Some(hash))
@@ -735,6 +800,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(WriteLedger::default())
+        .manage(NoteWatchControl::default())
         .manage(OpenRequestQueue::default())
         .invoke_handler(tauri::generate_handler![
             open_note,
@@ -791,7 +857,10 @@ mod tests {
 
     #[test]
     fn short_sha_abbreviates_commits_and_leaves_non_commits_intact() {
-        assert_eq!(short_sha("7670ea436b308c4ba6669ddc47c54565deb6fa26"), "7670ea4");
+        assert_eq!(
+            short_sha("7670ea436b308c4ba6669ddc47c54565deb6fa26"),
+            "7670ea4"
+        );
         // Never abbreviate the honest fallback into something SHA-shaped.
         assert_eq!(short_sha("unknown"), "unknown");
     }
@@ -800,6 +869,62 @@ mod tests {
     fn identical_content_hashes_identically() {
         assert_eq!(content_hash(b"# note\n"), content_hash(b"# note\n"));
         assert_ne!(content_hash(b"# note\n"), content_hash(b"# note"));
+    }
+
+    #[test]
+    fn replacing_note_watcher_cancels_the_previous_generation() {
+        let (first_stop, first_stopped) = channel();
+        let (second_stop, second_stopped) = channel();
+        let mut active = Some(ActiveNoteWatch {
+            path: PathBuf::from("/tmp/first.md"),
+            stop: first_stop,
+        });
+
+        replace_active_note_watch(&mut active, PathBuf::from("/tmp/second.md"), second_stop);
+
+        assert_eq!(
+            first_stopped.recv_timeout(Duration::from_millis(20)),
+            Ok(())
+        );
+        assert!(matches!(
+            second_stopped.try_recv(),
+            Err(TryRecvError::Empty)
+        ));
+        assert_eq!(
+            active.as_ref().map(|watch| watch.path.as_path()),
+            Some(Path::new("/tmp/second.md"))
+        );
+    }
+
+    #[test]
+    fn reopening_the_same_note_deduplicates_its_watcher() {
+        let (stop, _stopped) = channel();
+        let active = Some(ActiveNoteWatch {
+            path: PathBuf::from("/tmp/note.md"),
+            stop,
+        });
+
+        assert!(active_note_watch_matches(
+            &active,
+            Path::new("/tmp/note.md")
+        ));
+        assert!(!active_note_watch_matches(
+            &active,
+            Path::new("/tmp/other.md")
+        ));
+    }
+
+    #[test]
+    fn dropping_note_watcher_control_stops_the_worker() {
+        let (stop, stopped) = channel();
+        let active = Some(ActiveNoteWatch {
+            path: PathBuf::from("/tmp/note.md"),
+            stop,
+        });
+
+        drop(active);
+
+        assert!(watcher_was_stopped(&stopped));
     }
 
     /// Every menu shortcut, parsed by the parser the menubar really uses.

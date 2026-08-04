@@ -57,8 +57,10 @@ Markdown children as a named collection, and several collections can remain in t
 person can switch the middle pane between them. Recent Notes is persistent, most-recent-first
 history: Finder, the file picker, and opening one note while browsing a folder each add exactly that
 note. Reopening moves it to the top without duplication; X removes it from history without touching
-the file. In a folder view, X records a persistent local exclusion so filesystem refreshes do not
-bring the row back; the file remains on disk and can still be opened through Finder. Clicking Recent Notes exits folder mode immediately. New Note writes into the active folder. Untagged, Todo,
+the file or remounting the live editor. In a folder view, X records a persistent local exclusion so
+filesystem refreshes do not bring the row back; the workspace snapshot reconciles in place while
+the editor, selection, and document scroll remain mounted. The file remains on disk and can still
+be opened through Finder. Clicking Recent Notes exits folder mode immediately. New Note writes into the active folder. Untagged, Todo,
 Today, Trash, recursive folder watching, and sync stay visibly disabled until their own acceptance
 slices land. The dark sidebar is a stable visual anchor; it must not compete with the document.
 
@@ -197,6 +199,18 @@ future hosted client ─┘
 - `src/app/browser.ts` supplies the labelled demo catalog until a browser folder port is selected.
 - `src/app/tauri.ts` composes native ports and installs native menus.
 - `src-tauri/` owns native filesystem/window/menu transport only.
+
+Workspace-only commands follow one state path: the shell mutates `WorkspaceCollections`, creates a
+new `WorkspaceOptions` snapshot, and calls `AppComposition.reconcileWorkspace`. The shared chrome
+diffs that snapshot into the library and note list. It never destroys the `DocumentSession`,
+Milkdown editor, or ProseMirror view merely because catalog membership changed.
+
+The native bridge owns exactly one active document watcher. Opening another document installs its
+watcher before cancelling the previous generation; reopening the same path is idempotent. The
+worker holds only a cloned write ledger and an application event handle, never retrieves managed
+Tauri state from a detached thread, and exits when replaced or when its stop sender disconnects at
+shutdown. Watcher setup errors return through the command instead of silently disabling external
+change detection.
 
 ## Delivery order
 

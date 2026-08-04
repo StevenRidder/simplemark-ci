@@ -64,6 +64,8 @@ export interface AppComposition {
   stylesBarVisible(): boolean
   /** Current availability and checkmark state for any shared command surface. */
   commandState(command: DocumentCommandId): { readonly enabled: boolean; readonly checked: boolean }
+  /** Reconciles shell catalog state while preserving the mounted editor and its selection. */
+  reconcileWorkspace(workspace: WorkspaceOptions): void
 }
 
 export interface ComposeOptions {
@@ -509,6 +511,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     run: runCommand,
     stylesBarVisible: () => chrome.stylesBarVisible(),
     commandState,
+    reconcileWorkspace: (workspace) => chrome.reconcileWorkspace(workspace),
     session,
     editor,
     async destroy() {

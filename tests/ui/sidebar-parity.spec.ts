@@ -139,8 +139,11 @@ test('L2-070 right-click exposes only actions that really work on this client', 
   await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
 })
 
-test('Close Note is always visible, gains a box only on hover, and never invokes Trash', async ({ page }) => {
+test('Close Note hides the row in place without remounting the editor or invoking Trash', async ({ page }) => {
   const close = page.getByRole('button', { name: 'Close ideas' })
+  await page.locator('.milkdown .ProseMirror').evaluate((editor) => {
+    ;(window as typeof window & { __simplemarkEditorBeforeClose?: Element }).__simplemarkEditorBeforeClose = editor
+  })
   await expect(close).toBeVisible()
   await expect(close).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
 
@@ -151,6 +154,9 @@ test('Close Note is always visible, gains a box only on hover, and never invokes
   await expect(page.getByRole('button', { name: 'ideas', exact: true })).toHaveCount(0)
   await expect(page.getByLabel('Library')).toContainText('Recent Notes2')
   await expect(page.getByText('Removed from Recent Notes — file remains on disk')).toBeVisible()
+  expect(await page.locator('.milkdown .ProseMirror').evaluate((editor) =>
+    editor === (window as typeof window & { __simplemarkEditorBeforeClose?: Element }).__simplemarkEditorBeforeClose,
+  )).toBe(true)
 })
 
 test('Recent Notes disclosure is a centred Tabler chevron and both columns expose resize handles', async ({ page }) => {

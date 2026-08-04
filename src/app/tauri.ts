@@ -118,6 +118,27 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     hiddenStore.save(collections.hiddenHandles())
   }
 
+  const reconcileWorkspace = (): void => {
+    if (activeHandle === undefined) return
+    const catalog = collections.collection(activeCollectionId, workspaceHandle ?? activeHandle)
+    current.reconcileWorkspace(catalogWorkspace(catalog, activeHandle, pins, {
+      select: selectNote,
+      create: createNote,
+      addFolder: addFolder,
+      selectCollection,
+      togglePinned,
+      copyText,
+      copyMarkdown,
+      duplicateNote,
+      exportNote,
+      closeNote,
+      trashNote,
+      folders: collections.folders(),
+      activeCollectionId,
+      recentNotesCount: collections.recentCount(),
+    }))
+  }
+
   const install = async (
     port: TauriFilePort,
     opened: { readonly handle: string; readonly name: string },
@@ -249,49 +270,14 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
       if (handle === activeHandle) await current.save()
       collections.hideFromFolders(handle)
       persistHiddenNotes()
-      if (activeHandle !== undefined) {
-        const port = new TauriFilePort(invoke)
-        const opened = await port.openAt(activeHandle)
-        await install(port, opened, activeCollectionId)
-      }
+      reconcileWorkspace()
       current.setStatus('saved', 'Hidden from this folder — file remains on disk')
       return
     }
     if (handle === activeHandle) await current.save()
     collections.forgetRecent(handle)
     persistRecentNotes()
-
-    const remaining = collections.recentNotes(workspaceHandle ?? '').notes
-    if (handle !== activeHandle && activeHandle !== undefined) {
-      const port = new TauriFilePort(invoke)
-      const opened = await port.openAt(activeHandle)
-      await install(port, opened, 'recent')
-      current.setStatus('saved', 'Removed from Recent Notes — file remains on disk')
-      return
-    }
-
-    const next = remaining[0]
-    if (next !== undefined) {
-      const port = new TauriFilePort(invoke)
-      const opened = await port.openAt(next.handle)
-      await install(port, opened, 'recent')
-      current.setStatus('saved', 'Removed from Recent Notes — file remains on disk')
-      return
-    }
-
-    stopWatching?.()
-    activeHandle = undefined
-    workspaceHandle = undefined
-    await current.destroy()
-    current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
-      filePath: 'Demo workspace · open a file to work with your own Markdown',
-      onOpenFile: openFromPicker,
-      workspace: nativeWorkspace(WELCOME_NAME, {
-        addFolder,
-        selectCollection,
-        folders: collections.folders(),
-      }),
-    })
+    reconcileWorkspace()
     current.setStatus('saved', 'Removed from Recent Notes — file remains on disk')
   })
 

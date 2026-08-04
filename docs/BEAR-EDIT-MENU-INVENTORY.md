@@ -268,10 +268,23 @@ It does **not** need to implement Find/Replace, Copy As, Paste As, transformatio
 speech, or a full custom macOS Edit menu. A visible unfinished web Search affordance must remain
 truthful in the native shell; it may be hidden/disabled until the command actually works.
 
-### Follow-up delivery: EDITOR-5, portable correction commands
+### Follow-up delivery: the real board sequence
 
-Start this immediately after the native one-file proof passes. Its scope is intentionally limited to
-the Bear commands that improve an existing document without needing a note database:
+This inventory was written before the work was broken down, and named a single generic EDITOR-5
+delivery. That reference is obsolete. The scope below is now carried by five board tasks, and each
+row in the tables above belongs to exactly one of them:
+
+| Task | Scope from this inventory |
+|---|---|
+| **EDITOR-8** | This document and its command registry — contract only, no UI behaviour |
+| **EDITOR-9** | Render and edit portable technical blocks: math, footnotes, callouts |
+| **EDITOR-10** | Portable clipboard and technical exports — Copy As / Paste As |
+| **EDITOR-11** | Structural corrections — indent/outdent, move, text transformations |
+| **EDITOR-12** | Temporary reader navigation and document information |
+| **APP-3** | The macOS menubar and native OS services that expose the above |
+
+The scope itself is unchanged and is intentionally limited to the Bear commands that improve an
+existing document without needing a note database:
 
 1. **Find and replace:** Find, Next, Previous, Use Selection for Find, and explicit Replace/Replace
    All in the open document only.
@@ -284,7 +297,7 @@ the Bear commands that improve an existing document without needing a note datab
 6. **Interaction:** commands live in a contextual selection/block menu and keyboard shortcuts, not
    as another permanent toolbar row.
 
-### EDITOR-5 acceptance criteria
+### Acceptance criteria for that sequence
 
 - Find highlights and navigates matches without replacing the rendered document shell or losing the
   reading position.
@@ -297,7 +310,7 @@ the Bear commands that improve an existing document without needing a note datab
 - Existing untouched bytes remain untouched, including around the edited block.
 - The same behavioral tests run against the browser bundle and the Tauri-loaded bundle.
 
-### Explicitly deferred after EDITOR-5
+### Explicitly deferred beyond that sequence
 
 - Typewriter Mode only if dogfooding proves it improves sustained editing.
 - Native spelling, grammar, substitutions, speech, and data-detector menu integration: platform

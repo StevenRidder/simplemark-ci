@@ -24,6 +24,7 @@ import type { UpdateStatus } from './update-status.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
+import { SupersedingOperationQueue } from './superseding-operation-queue.js'
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
 import { WorkspacePins } from './workspace-pins.js'
 import {
@@ -68,10 +69,10 @@ interface NativeController {
 async function startNative(root: HTMLElement): Promise<NativeController> {
   let current: AppComposition
   let stopWatching: UnlistenFn | undefined
-  let transition = Promise.resolve()
   let activeHandle: string | undefined
   let workspaceHandle: string | undefined
   let activeCollectionId = 'recent'
+  let requestedSelection: { readonly path: string; readonly collectionId: string } | undefined
   const collections = new WorkspaceCollections()
   const catalogPort = new TauriWorkspaceCatalogPort(invoke)
   const pins = new WorkspacePins(window.localStorage)
@@ -85,10 +86,8 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     current.setStatus('error', `Could not open file — ${message}`)
   }
 
-  const enqueue = (operation: () => Promise<void>): Promise<void> => {
-    transition = transition.then(operation).catch(showOpenFailure)
-    return transition
-  }
+  const operations = new SupersedingOperationQueue(showOpenFailure)
+  const enqueue = (operation: () => Promise<void>): Promise<void> => operations.enqueue(operation)
 
   const watch = async (port: TauriFilePort, handle: string): Promise<void> => {
     stopWatching?.()
@@ -120,10 +119,13 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     hiddenStore.save(collections.hiddenHandles())
   }
 
-  const reconcileWorkspace = (): void => {
-    if (activeHandle === undefined) return
-    const catalog = collections.collection(activeCollectionId, workspaceHandle ?? activeHandle)
-    current.reconcileWorkspace(catalogWorkspace(catalog, activeHandle, pins, {
+  const reconcileWorkspace = (
+    selectedHandle = activeHandle,
+    collectionId = activeCollectionId,
+  ): void => {
+    if (selectedHandle === undefined) return
+    const catalog = collections.collection(collectionId, workspaceHandle ?? selectedHandle)
+    current.reconcileWorkspace(catalogWorkspace(catalog, selectedHandle, pins, {
       select: selectNote,
       create: createNote,
       addFolder: addFolder,
@@ -136,7 +138,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
       closeNote,
       trashNote,
       folders: collections.folders(),
-      activeCollectionId,
+      activeCollectionId: collectionId,
       recentNotesCount: collections.recentCount(),
     }))
   }
@@ -183,12 +185,27 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
   }
 
   const openInCollection = (path: string, collectionId: string): void => {
-    if (path === activeHandle && collectionId === activeCollectionId) return
-    void enqueue(async () => {
-      await current.save()
-      const port = new TauriFilePort(invoke)
-      const opened = await port.openAt(path)
-      await install(port, opened, collectionId)
+    if (
+      requestedSelection === undefined
+      && path === activeHandle
+      && collectionId === activeCollectionId
+    ) return
+    requestedSelection = { path, collectionId }
+    // A row click has immediate visible acknowledgement even though the
+    // durable transition must save before reading another file.
+    reconcileWorkspace(path, collectionId)
+    current.setStatus('saved', `Opening ${path.split('/').pop() ?? 'note'}…`)
+    void operations.enqueueLatest('note-selection', async (isCurrent) => {
+      try {
+        await current.save()
+        if (!isCurrent()) return
+        const port = new TauriFilePort(invoke)
+        const opened = await port.openAt(path)
+        if (!isCurrent()) return
+        await install(port, opened, collectionId)
+      } finally {
+        if (isCurrent()) requestedSelection = undefined
+      }
     })
   }
 

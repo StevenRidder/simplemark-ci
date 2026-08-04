@@ -135,6 +135,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
         copyMarkdown,
         duplicateNote,
         exportNote,
+        closeNote,
         trashNote,
         folders: collections.folders(),
         activeCollectionId,
@@ -227,6 +228,45 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     if (handle === activeHandle) await current.save()
     const exported = await invoke<boolean>('export_note', { handle })
     if (exported) current.setStatus('saved', 'Exported')
+  })
+
+  const closeNote = (handle: string): Promise<void> => enqueue(async () => {
+    if (activeCollectionId !== 'open') return
+    if (handle === activeHandle) await current.save()
+    collections.forgetOpened(handle)
+
+    const remaining = collections.openNotes(workspaceHandle ?? '').notes
+    if (handle !== activeHandle && activeHandle !== undefined) {
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(activeHandle)
+      await install(port, opened, 'open')
+      current.setStatus('saved', 'Closed from Open Notes — file remains on disk')
+      return
+    }
+
+    const next = remaining[0]
+    if (next !== undefined) {
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(next.handle)
+      await install(port, opened, 'open')
+      current.setStatus('saved', 'Closed from Open Notes — file remains on disk')
+      return
+    }
+
+    stopWatching?.()
+    activeHandle = undefined
+    workspaceHandle = undefined
+    await current.destroy()
+    current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
+      filePath: 'Demo workspace · open a file to work with your own Markdown',
+      onOpenFile: openFromPicker,
+      workspace: nativeWorkspace(WELCOME_NAME, {
+        addFolder,
+        selectCollection,
+        folders: collections.folders(),
+      }),
+    })
+    current.setStatus('saved', 'Closed from Open Notes — file remains on disk')
   })
 
   const trashNote = (handle: string): Promise<void> => enqueue(async () => {
@@ -483,6 +523,7 @@ function catalogWorkspace(
     readonly copyMarkdown: (id: string) => Promise<void>
     readonly duplicateNote: (id: string) => Promise<void>
     readonly exportNote: (id: string) => Promise<void>
+    readonly closeNote: (id: string) => Promise<void>
     readonly trashNote: (id: string) => Promise<void>
     readonly folders: readonly WorkspaceCatalog[]
     readonly activeCollectionId: string
@@ -509,6 +550,7 @@ function catalogWorkspace(
     onCopyMarkdown: actions.copyMarkdown,
     onDuplicateNote: actions.duplicateNote,
     onExportNote: actions.exportNote,
+    ...(actions.activeCollectionId === 'open' ? { onCloseNote: actions.closeNote } : {}),
     onTrashNote: actions.trashNote,
     notes: catalog.notes.map((note) => ({
       id: note.handle,

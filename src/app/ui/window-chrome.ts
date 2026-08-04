@@ -142,6 +142,8 @@ export interface WorkspaceOptions {
   readonly onCopyMarkdown?: (id: string) => Promise<void>
   readonly onDuplicateNote?: (id: string) => Promise<void>
   readonly onExportNote?: (id: string) => Promise<void>
+  /** Removes a note from the transient Open Notes collection without touching its file. */
+  readonly onCloseNote?: (id: string) => Promise<void>
   readonly onTrashNote?: (id: string) => Promise<void>
 }
 
@@ -1483,17 +1485,6 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     folders.setAttribute('aria-label', 'Library')
     const workspaceHeader = document.createElement('div')
     workspaceHeader.className = 'workspace-library-head'
-    const workspaceName = document.createElement('div')
-    workspaceName.className = 'workspace-name'
-    workspaceName.textContent = workspace.name
-    const libraryOptions = document.createElement('button')
-    libraryOptions.type = 'button'
-    libraryOptions.className = 'library-action'
-    libraryOptions.setAttribute('aria-label', 'Sidebar options')
-    libraryOptions.innerHTML = tablerIcon('dots')
-    libraryOptions.disabled = true
-    libraryOptions.title = 'Sidebar options — available when a real folder catalog is connected'
-    workspaceHeader.append(workspaceName, libraryOptions)
 
     let noteFilter: 'all' | 'pinned' = 'all'
 
@@ -1585,10 +1576,53 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     settings.type = 'button'
     settings.setAttribute('aria-label', 'Settings')
     settings.innerHTML = tablerIcon('settings')
-    settings.disabled = true
-    settings.title = 'Settings — not in this build'
+    settings.title = 'Reader settings'
+    settings.addEventListener('click', () => {
+      const open = popover.classList.toggle('open')
+      settings.classList.toggle('active', open)
+    })
     libraryFooter.append(sync, settings)
-    folders.append(workspaceHeader, libraryRows, libraryFooter)
+    if (isMacOS) {
+      popover.classList.add('sidebar-settings-popover')
+      folders.append(workspaceHeader, libraryRows, libraryFooter, popover)
+    } else {
+      folders.append(workspaceHeader, libraryRows, libraryFooter)
+    }
+
+    const installColumnResizer = (
+      column: HTMLElement,
+      property: '--library-column-width' | '--notes-column-width',
+      minimum: number,
+      maximum: number,
+      label: string,
+    ): void => {
+      const handle = document.createElement('button')
+      handle.type = 'button'
+      handle.className = 'column-resizer'
+      handle.setAttribute('aria-label', label)
+      handle.addEventListener('pointerdown', (event) => {
+        event.preventDefault()
+        const startX = event.clientX
+        const startWidth = column.getBoundingClientRect().width
+        handle.classList.add('dragging')
+        handle.setPointerCapture(event.pointerId)
+        const move = (moveEvent: PointerEvent): void => {
+          const width = Math.max(minimum, Math.min(maximum, startWidth + moveEvent.clientX - startX))
+          workspaceBody.style.setProperty(property, `${Math.round(width)}px`)
+        }
+        const finish = (): void => {
+          handle.classList.remove('dragging')
+          handle.removeEventListener('pointermove', move)
+          handle.removeEventListener('pointerup', finish)
+          handle.removeEventListener('pointercancel', finish)
+        }
+        handle.addEventListener('pointermove', move)
+        handle.addEventListener('pointerup', finish)
+        handle.addEventListener('pointercancel', finish)
+      })
+      column.append(handle)
+    }
+    installColumnResizer(folders, '--library-column-width', 160, 360, 'Resize navigation column')
 
     const noteList = document.createElement('aside')
     noteList.className = 'workspace-notes'
@@ -1743,6 +1777,24 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const contextDuplicate = contextRow('Duplicate', async () => {
       if (contextNote !== undefined) await workspace.onDuplicateNote?.(contextNote.id)
     })
+    // Every visible note gets the same close affordance. Open Notes delegates
+    // to the application model; folder browsing and the native welcome row
+    // hide locally because closing a view must never delete or trash a file.
+    const canCloseNote = true
+    const closeWorkspaceNote = async (note: WorkspaceNote): Promise<void> => {
+      if (workspace.onCloseNote !== undefined) {
+        await workspace.onCloseNote(note.id)
+        return
+      }
+      const index = workspaceNotes.findIndex((candidate) => candidate.id === note.id)
+      if (index < 0) return
+      workspaceNotes.splice(index, 1)
+      paintLibrary()
+      paintNotes()
+    }
+    const contextClose = contextRow('Close Note', async () => {
+      if (contextNote !== undefined) await closeWorkspaceNote(contextNote)
+    })
     const contextDivider = (): HTMLHRElement => document.createElement('hr')
     noteContextMenu.append(
       contextPin,
@@ -1752,6 +1804,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       ...(workspace.onCopyText === undefined ? [] : [contextCopyLink, contextCopyIdentifier]),
       ...(workspace.onExportNote === undefined ? [] : [contextDivider(), contextExport]),
       ...(workspace.onDuplicateNote === undefined ? [] : [contextDuplicate]),
+      ...(canCloseNote ? [contextDivider(), contextClose] : []),
       ...(workspace.onTrashNote === undefined ? [] : [contextDivider(), contextDelete]),
     )
 
@@ -1775,8 +1828,16 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     }
 
     const paintMenuState = (): void => {
+      // The title is built rather than interpolated: `collectionLabel` is a
+      // folder name off the disk, and innerHTML would let a folder called
+      // `<img onerror=…>` write markup into the chrome.
       const tick = (on: boolean): string => (on ? '✓  ' : '')
-      notesTitle.innerHTML = `${noteFilter === 'pinned' ? 'Pinned' : (workspace.collectionLabel ?? 'Open Notes')} <span aria-hidden="true">⌄</span>`
+      const label = document.createElement('span')
+      label.textContent = noteFilter === 'pinned' ? 'Pinned' : (workspace.collectionLabel ?? 'Open Notes')
+      const disclosure = document.createElement('span')
+      disclosure.setAttribute('aria-hidden', 'true')
+      disclosure.innerHTML = tablerIcon('chevron-down')
+      notesTitle.replaceChildren(label, disclosure)
       sortModified.textContent = `${tick(notesSort === 'modified')}Sort by modification date`
       sortCreated.textContent = `${tick(notesSort === 'created')}Sort by creation date`
       sortTitle.textContent = `${tick(notesSort === 'title')}Sort by title`
@@ -1838,6 +1899,13 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         if (workspace.onSelectNote !== undefined) {
           select.addEventListener('click', () => workspace.onSelectNote?.(note.id))
         }
+        const close = document.createElement('button')
+        close.type = 'button'
+        close.className = 'note-close'
+        close.setAttribute('aria-label', `Close ${note.title}`)
+        close.title = 'Close note — file remains on disk'
+        close.innerHTML = tablerIcon('x')
+        close.addEventListener('click', () => void closeWorkspaceNote(note))
         const pin = document.createElement('button')
         pin.type = 'button'
         pin.className = 'note-pin'
@@ -1867,7 +1935,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
             first?.focus()
           })
         })
-        item.append(select, pin)
+        item.append(select, ...(canCloseNote ? [close] : []), pin)
         noteItems.append(item)
       }
     }
@@ -1988,6 +2056,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       noteContextMenu.hidden = true
     })
     noteList.append(notesHeader, notesMenu, noteItems, noteContextMenu)
+    installColumnResizer(noteList, '--notes-column-width', 205, 440, 'Resize note list column')
 
     const applyWorkspaceMode = (mode: WorkspaceMode): void => {
       workspaceBody.dataset['layout'] = mode

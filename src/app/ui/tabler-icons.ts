@@ -33,6 +33,7 @@ export type TablerIconName =
   | 'square'
   | 'table'
   | 'trash'
+  | 'x'
 
 const paths: Record<TablerIconName, string> = {
   archive:
@@ -83,6 +84,7 @@ const paths: Record<TablerIconName, string> = {
     '<path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14M3 10h18M10 3v18"/>',
   trash:
     '<path d="M4 7l16 0M10 11l0 6M14 11l0 6"/><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3"/>',
+  x: '<path d="M18 6l-12 12M6 6l12 12"/>',
 }
 
 export function tablerIcon(name: TablerIconName, className?: string): string {

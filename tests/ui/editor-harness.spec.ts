@@ -56,7 +56,6 @@ test('sidebar typography uses Bear-sized macOS system text', async ({ page }) =>
       }
     }
     return {
-      workspace: metrics('.workspace-name'),
       navigation: metrics('.folder-row:not(.selected)'),
       section: metrics('.library-section-label'),
       noteTitle: metrics('.note-select strong'),
@@ -69,7 +68,6 @@ test('sidebar typography uses Bear-sized macOS system text', async ({ page }) =>
     expect(value.family).toMatch(/-apple-system|BlinkMacSystemFont|SF Pro Text/)
   }
   expect(typography).toMatchObject({
-    workspace: { size: '14px', weight: '600' },
     navigation: { size: '15.5px', weight: '450' },
     section: { size: '11px', weight: '600' },
     noteTitle: { size: '14px', weight: '600' },

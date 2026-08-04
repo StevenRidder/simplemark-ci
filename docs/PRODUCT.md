@@ -1,8 +1,10 @@
 # SimpleMark — Product contract
 
-- **Status:** Current product authority
-- **Date:** 2026-08-02
-- **Decision:** Rendered document first; editing is an escape hatch; agent participation and
+* **Status:** Current product authority
+
+* **Date:** 2026-08-02
+
+* **Decision:** Rendered document first; editing is an escape hatch; agent participation and
   collaboration are expansion capabilities
 
 ## The job
@@ -30,7 +32,7 @@ agent workspace.
 
 1. Open any `.md` file directly. Do not import it into a library, create a vault, or choose a
    workspace.
-2. Show the rendered document immediately. The document—not a file picker, editor, chat, session,
+2. Show the rendered ==document== ==immediately==. The document—not a file picker, editor, chat, session,
    or dashboard—is the product surface.
 3. Make prose, typography, spacing, tables, code, Mermaid, SVG, math, and other technical material
    look exceptional in one continuous canvas.
@@ -49,13 +51,18 @@ and multi-client authority do not compensate for it.
 
 The primary user:
 
-- asks AI to create plans, research, specifications, reports, runbooks, notes, and technical
+* asks AI to create plans, research, specifications, reports, runbooks, notes, and technical
   explanations as Markdown;
-- dislikes reading long documents in a terminal, source editor, chat transcript, or IDE preview;
-- wants technical material rendered correctly without setting up plugins;
-- treats documents as living artifacts that an agent may revise over time;
-- wants to make an occasional correction without becoming a Markdown author; and
-- wants the original local file to remain portable, inspectable, and theirs.
+
+* dislikes reading long documents in a terminal, source editor, chat transcript, or IDE preview;
+
+* wants technical material rendered correctly without setting up plugins;
+
+* treats documents as living artifacts that an agent may revise over time;
+
+* wants to make an occasional correction without becoming a Markdown author; and
+
+* wants the original local file to remain portable, inspectable, and theirs.
 
 The first market is not “everyone who writes Markdown.” It is people who increasingly **consume AI
 output as Markdown** and need a better place to read and judge it.
@@ -69,12 +76,12 @@ system.
 
 That explains their product shapes:
 
-| Product | The job it is built around | Why its interface grows |
-|---|---|---|
-| **MerMark** | Put AI chat and file tools inside the editor | Chat, providers, file operations, execution state, and editing all need controls |
-| **NeverWrite** | Build an IDE for supervising AI knowledge work | Sessions, artifacts, attribution, review, navigation, and state become permanent surfaces |
-| **CollabMD** | Build a self-hosted collaborative workspace using Markdown | Rooms, users, presence, comments, history, recovery, and administration become the product |
-| **Mindle** | Let humans annotate and direct documents agents are changing | Anchors, events, instructions, status, and agent activity must remain visible |
+| Product        | The job it is built around                                   | Why its interface grows                                                                    |
+| -------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| **MerMark**    | Put AI chat and file tools inside the editor                 | Chat, providers, file operations, execution state, and editing all need controls           |
+| **NeverWrite** | Build an IDE for supervising AI knowledge work               | Sessions, artifacts, attribution, review, navigation, and state become permanent surfaces  |
+| **CollabMD**   | Build a self-hosted collaborative workspace using Markdown   | Rooms, users, presence, comments, history, recovery, and administration become the product |
+| **Mindle**     | Let humans annotate and direct documents agents are changing | Anchors, events, instructions, status, and agent activity must remain visible              |
 
 Those needs are real. They are not the SimpleMark wedge.
 
@@ -158,15 +165,23 @@ them. Implemented capability does not earn permanent screen space.
 
 The first compelling release is not:
 
-- a Markdown authoring environment;
-- an AI chat client;
-- an agent control plane;
-- a project, folder, vault, or knowledge workspace;
-- a collaboration suite;
-- a review queue or diff dashboard;
-- a model or provider manager;
-- a session-history browser; or
-- a second filesystem.
+* a Markdown authoring environment;
+
+* an AI chat client;
+
+* an agent control plane;
+
+* a project, folder, vault, or knowledge workspace;
+
+* a collaboration suite;
+
+* a review queue or diff dashboard;
+
+* a model or provider manager;
+
+* a session-history browser; or
+
+* a second filesystem.
 
 These are explicit non-goals for the primary experience even if narrow versions later exist behind
 an action.
@@ -213,32 +228,49 @@ presence, comments, activity, history, or settings. Those demonstrate machinery 
 
 Lead with:
 
-- **The beautiful living document for AI work.**
-- **Your agent writes the Markdown. SimpleMark turns it into a document.**
-- **Open Markdown generated by any AI and see a beautiful, living technical document.**
-- **Always rendered. Always your file.**
-- **Read AI output outside the coding environment.**
+* **The beautiful living document for AI work.**
+
+* **Your agent writes the Markdown. SimpleMark turns it into a document.**
+
+* **Open Markdown generated by any AI and see a beautiful, living technical document.**
+
+* **Always rendered. Always your file.**
+
+* **Read AI output outside the coding environment.**
 
 Support with concrete proof:
 
-- Opens local `.md` files directly.
-- Updates while the agent works.
-- Renders technical content inline.
-- Lets you correct the document without living in Markdown source.
-- Preserves untouched source byte for byte.
-- Requires no IDE, vault, account, provider setup, or workspace.
+* Opens local `.md` files directly.
+
+* Updates while the agent works.
+
+* Renders technical content inline.
+
+* Lets you correct the document without living in Markdown source.
+
+* Preserves untouched source byte for byte.
+
+* Requires no IDE, vault, account, provider setup, or workspace.
 
 Avoid leading with:
 
-- Markdown editor;
-- AI workspace;
-- multiplayer notebook;
-- human-agent collaboration;
-- MCP;
-- `DocumentSession`;
-- CRDT or Yjs;
-- model/provider choice; or
-- universal paste.
+* Markdown editor;
+
+* AI workspace;
+
+* multiplayer notebook;
+
+* human-agent collaboration;
+
+* MCP;
+
+* `DocumentSession`;
+
+* CRDT or Yjs;
+
+* model/provider choice; or
+
+* universal paste.
 
 Those phrases either describe implementation, point at the wrong job, or place SimpleMark inside a
 crowded cockpit category.

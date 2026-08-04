@@ -120,6 +120,7 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
           const markdown = DEMO_NOTES.find((candidate) => candidate.id === id)?.markdown
           if (markdown !== undefined) await navigator.clipboard.writeText(markdown)
         },
+        closeDemoNote,
       ),
     })
   }
@@ -148,6 +149,15 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     return note.pinned
   }
 
+  const closeDemoNote = async (id: string): Promise<void> => {
+    const index = DEMO_NOTES.findIndex((candidate) => candidate.id === id)
+    if (index < 0 || DEMO_NOTES.length === 1) return
+    DEMO_NOTES.splice(index, 1)
+    const nextId = id === activeId ? DEMO_NOTES[Math.min(index, DEMO_NOTES.length - 1)]!.id : activeId
+    await openDemoNote(nextId, true)
+    current?.setStatus('saved', 'Closed from Open Notes — file remains on disk')
+  }
+
   await openDemoNote(activeId)
   return current!
 }
@@ -159,6 +169,7 @@ function workspaceOptions(
   onTogglePinned: (id: string) => boolean,
   onCopyText: (text: string) => Promise<void>,
   onCopyMarkdown: (id: string) => Promise<void>,
+  onCloseNote: (id: string) => Promise<void>,
 ): WorkspaceOptions {
   return {
     name: 'SimpleMark',
@@ -168,6 +179,7 @@ function workspaceOptions(
     onTogglePinned,
     onCopyText,
     onCopyMarkdown,
+    onCloseNote,
     notes: DEMO_NOTES.map((note) => ({
       id: note.id,
       identifier: note.name,

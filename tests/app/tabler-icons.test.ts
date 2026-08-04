@@ -26,4 +26,8 @@ describe('local Tabler icon subset', () => {
       expect(tablerIcon(name)).toMatch(/^<svg[^>]*viewBox="0 0 24 24"/)
     }
   })
+
+  it('uses the official quiet x geometry for Close Note', () => {
+    expect(tablerIconPaths('x')).toBe('<path d="M18 6l-12 12M6 6l12 12"/>')
+  })
 })

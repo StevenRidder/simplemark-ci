@@ -58,6 +58,18 @@ describe('WorkspaceCollections', () => {
       '/loose.md',
     ])
   })
+
+  it('forgets an Open Notes entry without removing it from an adopted folder', () => {
+    const collections = new WorkspaceCollections()
+    collections.rememberOpened(note('/project-a/a.md'))
+    collections.rememberOpened(note('/loose.md'))
+    collections.addFolder(folder('/project-a', 'a.md', 'b.md'))
+
+    collections.forgetOpened('/project-a/a.md')
+
+    expect(collections.openNotes('/').notes.map((entry) => entry.handle)).toEqual(['/loose.md'])
+    expect(collections.folder('/project-a')?.notes.map((entry) => entry.handle)).toContain('/project-a/a.md')
+  })
 })
 
 describe('WorkspaceFolderStore', () => {

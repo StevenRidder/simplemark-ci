@@ -139,7 +139,7 @@ test('L2-070 right-click exposes only actions that really work on this client', 
   await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
 })
 
-test('Close Note hides the row in place without remounting the editor or invoking Trash', async ({ page }) => {
+test('closing a background note hides its row without remounting the active editor or invoking Trash', async ({ page }) => {
   const close = page.getByRole('button', { name: 'Close ideas' })
   await page.locator('.milkdown .ProseMirror').evaluate((editor) => {
     ;(window as typeof window & { __simplemarkEditorBeforeClose?: Element }).__simplemarkEditorBeforeClose = editor
@@ -153,10 +153,35 @@ test('Close Note hides the row in place without remounting the editor or invokin
 
   await expect(page.getByRole('button', { name: 'ideas', exact: true })).toHaveCount(0)
   await expect(page.getByLabel('Library')).toContainText('Recent Notes2')
-  await expect(page.getByText('Removed from Recent Notes — file remains on disk')).toBeVisible()
+  await expect(page.getByText('Closed note — file remains on disk')).toBeVisible()
   expect(await page.locator('.milkdown .ProseMirror').evaluate((editor) =>
     editor === (window as typeof window & { __simplemarkEditorBeforeClose?: Element }).__simplemarkEditorBeforeClose,
   )).toBe(true)
+})
+
+test('closing the active note removes it from both the list and reading pane', async ({ page }) => {
+  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('The first useful proof')
+  await page.getByRole('button', { name: 'Close architecture' }).click()
+
+  await expect(page.getByRole('button', { name: 'architecture', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'field-notes', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Field notes')
+  await expect(page.locator('.milkdown .ProseMirror')).not.toContainText('The first useful proof')
+  await expect(page.getByText('Closed note — file remains on disk')).toBeVisible()
+})
+
+test('closing the final visible note leaves a clean no-selection pane', async ({ page }) => {
+  await page.getByRole('button', { name: 'Close architecture' }).click()
+  await page.getByRole('button', { name: 'Close field-notes' }).click()
+  await page.getByRole('button', { name: 'Close ideas' }).click()
+
+  await expect(notes(page).locator('.note-item')).toHaveCount(0)
+  await expect(page.locator('.milkdown .ProseMirror')).toBeEmpty()
+  await expect(page.getByText('No note selected')).toBeVisible()
+  await expect(page.getByText('Closed note — file remains on disk')).toBeVisible()
 })
 
 test('Recent Notes disclosure is a centred Tabler chevron and both columns expose resize handles', async ({ page }) => {

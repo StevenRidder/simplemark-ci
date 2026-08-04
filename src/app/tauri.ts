@@ -265,20 +265,72 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     if (exported) current.setStatus('saved', 'Exported')
   })
 
-  const closeNote = (handle: string): Promise<void> => enqueue(async () => {
+  let closeNote: (handle: string) => Promise<void>
+  closeNote = (handle: string): Promise<void> => enqueue(async () => {
+    const before = collections.collection(activeCollectionId, workspaceHandle ?? handle)
+    const closedIndex = before.notes.findIndex((note) => note.handle === handle)
+    const wasActive = handle === activeHandle
+    if (wasActive) await current.save()
+
     if (activeCollectionId !== 'recent') {
-      if (handle === activeHandle) await current.save()
       collections.hideFromFolders(handle)
       persistHiddenNotes()
+    } else {
+      collections.forgetRecent(handle)
+      persistRecentNotes()
+    }
+
+    const message = activeCollectionId === 'recent'
+      ? 'Closed note — file remains on disk'
+      : 'Closed note and hid it from this folder — file remains on disk'
+
+    // Closing a background row is catalog-only and must preserve the mounted
+    // editor. Closing the active row is a document transition: the right pane
+    // must not keep showing a note the person just closed.
+    if (!wasActive) {
       reconcileWorkspace()
-      current.setStatus('saved', 'Hidden from this folder — file remains on disk')
+      current.setStatus('saved', message)
       return
     }
-    if (handle === activeHandle) await current.save()
-    collections.forgetRecent(handle)
-    persistRecentNotes()
-    reconcileWorkspace()
-    current.setStatus('saved', 'Removed from Recent Notes — file remains on disk')
+
+    const after = collections.collection(activeCollectionId, workspaceHandle ?? handle)
+    const nextIndex = Math.min(Math.max(closedIndex, 0), after.notes.length - 1)
+    const next = after.notes[nextIndex] ?? after.notes[0]
+    if (next !== undefined) {
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(next.handle)
+      await install(port, opened, activeCollectionId)
+      current.setStatus('saved', message)
+      return
+    }
+
+    stopWatching?.()
+    stopWatching = undefined
+    await invoke('stop_watching_note')
+    activeHandle = undefined
+    if (activeCollectionId === 'recent') workspaceHandle = undefined
+    await current.destroy()
+    current = await mount(root, new FixtureFilePort('No note selected.md', ''), {
+      filePath: 'No note selected',
+      onOpenFile: openFromPicker,
+      workspace: catalogWorkspace(after, '', pins, {
+        select: selectNote,
+        create: createNote,
+        addFolder: addFolder,
+        selectCollection,
+        togglePinned,
+        copyText,
+        copyMarkdown,
+        duplicateNote,
+        exportNote,
+        closeNote,
+        trashNote,
+        folders: collections.folders(),
+        activeCollectionId,
+        recentNotesCount: collections.recentCount(),
+      }),
+    })
+    current.setStatus('saved', message)
   })
 
   const trashNote = (handle: string): Promise<void> => enqueue(async () => {

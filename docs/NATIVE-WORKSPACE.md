@@ -57,10 +57,11 @@ Markdown children as a named collection, and several collections can remain in t
 person can switch the middle pane between them. Recent Notes is persistent, most-recent-first
 history: Finder, the file picker, and opening one note while browsing a folder each add exactly that
 note. Reopening moves it to the top without duplication; X removes it from history without touching
-the file or remounting the live editor. In a folder view, X records a persistent local exclusion so
-filesystem refreshes do not bring the row back; the workspace snapshot reconciles in place while
-the editor, selection, and document scroll remain mounted. The file remains on disk and can still
-be opened through Finder. Clicking Recent Notes exits folder mode immediately. New Note writes into the active folder. Untagged, Todo,
+the file. Closing a background row reconciles in place without remounting the live editor. Closing
+the active row also closes it in the reading/editing pane and selects the next visible note; when no
+note remains, the pane shows a clean no-selection state. In a folder view, X records a persistent
+local exclusion so filesystem refreshes do not bring the row back. The file remains on disk and can
+still be opened through Finder. Clicking Recent Notes exits folder mode immediately. New Note writes into the active folder. Untagged, Todo,
 Today, Trash, recursive folder watching, and sync stay visibly disabled until their own acceptance
 slices land. The dark sidebar is a stable visual anchor; it must not compete with the document.
 

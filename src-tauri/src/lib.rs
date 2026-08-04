@@ -131,6 +131,14 @@ fn replace_active_note_watch(
     }
 }
 
+fn stop_active_note_watch(active: &mut Option<ActiveNoteWatch>) -> bool {
+    let Some(watch) = active.take() else {
+        return false;
+    };
+    let _ = watch.stop.send(());
+    true
+}
+
 /// Finder may hand the app a file before the webview has installed listeners.
 /// Keep those paths until the TypeScript composition root explicitly takes
 /// them; the event is only a wake-up signal, never the durable delivery path.
@@ -731,6 +739,21 @@ fn watch_note(
     Ok(())
 }
 
+/// Stops watching when the document pane no longer owns a real file.
+///
+/// Switching directly to another note uses `watch_note`, which replaces the
+/// prior generation atomically. This command is only for the zero-selection
+/// state after the final visible note is closed.
+#[tauri::command]
+fn stop_watching_note(control: State<'_, NoteWatchControl>) -> Result<(), String> {
+    let mut active = control
+        .0
+        .lock()
+        .map_err(|_| "The note watcher registry was poisoned by an earlier panic".to_string())?;
+    stop_active_note_watch(&mut active);
+    Ok(())
+}
+
 /// Watches one explicitly adopted folder for Markdown membership changes.
 ///
 /// The event names the folder only. TypeScript re-lists it through the catalog
@@ -819,6 +842,7 @@ pub fn run() {
             print_note,
             build_provenance,
             watch_note,
+            stop_watching_note,
             watch_workspace_folder
         ])
         .build(tauri::generate_context!())
@@ -925,6 +949,20 @@ mod tests {
         drop(active);
 
         assert!(watcher_was_stopped(&stopped));
+    }
+
+    #[test]
+    fn closing_the_final_note_explicitly_stops_its_watcher() {
+        let (stop, stopped) = channel();
+        let mut active = Some(ActiveNoteWatch {
+            path: PathBuf::from("/tmp/note.md"),
+            stop,
+        });
+
+        assert!(stop_active_note_watch(&mut active));
+        assert!(active.is_none());
+        assert_eq!(stopped.recv_timeout(Duration::from_millis(20)), Ok(()));
+        assert!(!stop_active_note_watch(&mut active));
     }
 
     /// Every menu shortcut, parsed by the parser the menubar really uses.

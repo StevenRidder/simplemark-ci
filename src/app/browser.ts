@@ -140,10 +140,30 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
 
   const closeDemoNote = async (id: string): Promise<void> => {
     const index = DEMO_NOTES.findIndex((candidate) => candidate.id === id)
-    if (index < 0 || DEMO_NOTES.length === 1) return
+    if (index < 0) return
+    const wasActive = id === activeId
     DEMO_NOTES.splice(index, 1)
-    current?.reconcileWorkspace(workspaceSnapshot())
-    current?.setStatus('saved', 'Removed from Recent Notes — file remains on disk')
+    if (!wasActive) {
+      current?.reconcileWorkspace(workspaceSnapshot())
+      current?.setStatus('saved', 'Closed note — file remains on disk')
+      return
+    }
+
+    const next = DEMO_NOTES[Math.min(index, DEMO_NOTES.length - 1)]
+    if (next !== undefined) {
+      await openDemoNote(next.id)
+      current?.setStatus('saved', 'Closed note — file remains on disk')
+      return
+    }
+
+    await current?.save()
+    await current?.destroy()
+    activeId = ''
+    current = await mount(root, new FixtureFilePort('No note selected.md', ''), {
+      filePath: 'No note selected',
+      workspace: workspaceSnapshot(),
+    })
+    current.setStatus('saved', 'Closed note — file remains on disk')
   }
 
   const workspaceSnapshot = (): WorkspaceOptions => workspaceOptions(

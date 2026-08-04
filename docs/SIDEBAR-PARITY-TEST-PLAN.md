@@ -27,10 +27,11 @@ does not prove that the native app can discover, create, pin, trash, or reopen r
 
 Opening a note adds exactly that note to persistent **Recent Notes** history and selects it. This
 includes Finder, the picker, and a note selected while browsing an adopted folder. Reopening moves
-the note to the top without duplication; X removes it from history without deleting the file or
-recreating the editor. In a folder view, X persists a local exclusion so a catalog refresh cannot
-resurrect the row. The open editor DOM, selection, and scroll position must remain stable while the
-workspace catalog reconciles. Folder membership is always
+the note to the top without duplication; X removes it from history without deleting the file.
+Closing a background row preserves the active editor DOM, selection, and scroll position. Closing
+the active row removes it from both the list and reading/editing pane, then selects the next visible
+note or a clean no-selection state. In a folder view, X persists a local exclusion so a catalog
+refresh cannot resurrect the row. Folder membership is always
 explicit: **Add Folder** adopts the direct Markdown children of that folder as a named collection.
 Several adopted folders may remain in the library at once, and selecting one scopes the middle
 pane without opening another window. Adding a folder never bulk-adds its files to Recent Notes;
@@ -94,6 +95,7 @@ Status meanings: **pass** is automated against that surface; **observed** is man
 | L2-020 | List | Select notes repeatedly | Catalog count is stable; only selection/document changes | fixture pass | gap | component + native |
 | L2-030 | Header | Search/open/close | Live, scoped, case-insensitive; clear restores rows | partial | partial | component + native |
 | L2-031 | Header | No-result search | Calm explicit zero state; document remains visible | planned | gap | component |
+| L2-032 | Row | Close active note | Row and reading pane both close; next visible note is selected | pass | partial | component + native |
 | L2-040 | Row | Pin | Moves first, marks row, increments Pinned, persists restart | fixture partial | gap | component + native restart |
 | L2-041 | Row | Unpin in Pinned | Row leaves collection; open document remains visible | planned | gap | component + native |
 | L2-050 | Menu | Sort by modification | Correct order and stable pinned-first rule | pass | partial | component + native metadata |

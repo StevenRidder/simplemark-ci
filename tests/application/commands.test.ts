@@ -151,7 +151,7 @@ describe('the command registry', () => {
       ['Theme', 'Font', 'Reading Width', 'Line Height', 'Paragraph Spacing', 'toggleFirstLineIndent'],
       ['Preview Style', 'Notes Sorting', 'Folders Sorting'],
       ['showEditorOnly', 'showNotesAndEditor', 'showAllPanes'],
-      ['toggleStatistics', 'contents', 'toggleBacklinks'],
+      ['toggleStatistics', 'contents'],
       ['toggleWordCount', 'toggleStylesBar', 'toggleHistoryNavigation'],
     ])
   })
@@ -166,7 +166,6 @@ describe('the command registry', () => {
     expect(COMMANDS.showAllPanes.accelerator).toBe('Control+3')
     expect(COMMANDS.toggleStatistics.accelerator).toBe('CmdOrCtrl+Shift+I')
     expect(COMMANDS.contents.accelerator).toBe('CmdOrCtrl+Shift+A')
-    expect(COMMANDS.toggleBacklinks.accelerator).toBe('CmdOrCtrl+Shift+B')
     expect(COMMANDS.toggleWordCount.accelerator).toBe('CmdOrCtrl+Shift+W')
     expect(COMMANDS.toggleStylesBar.accelerator).toBe('CmdOrCtrl+Shift+Y')
   })
@@ -177,8 +176,8 @@ describe('the command registry', () => {
     expect(panes).toEqual(['showEditorOnly', 'showNotesAndEditor', 'showAllPanes'])
   })
 
-  it('makes the three document-information views one panel rather than three', () => {
-    for (const id of ['toggleStatistics', 'contents', 'toggleBacklinks'] as const) {
+  it('makes the two document-information views one temporary panel', () => {
+    for (const id of ['toggleStatistics', 'contents'] as const) {
       expect(COMMANDS[id].group).toBe('infoPanel')
     }
   })

@@ -1909,7 +1909,7 @@ section.editor::-webkit-scrollbar {
   position: relative;
 }
 
-/* The document-information panel: statistics, contents, backlinks. It floats
+/* The temporary document-information panel: statistics and contents. It floats
    over the page's trailing edge rather than taking a column, so opening it
    never reflows the sentence being read. */
 .info-panel {

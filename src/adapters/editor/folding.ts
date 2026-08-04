@@ -30,6 +30,8 @@ interface FoldMeta {
   readonly toggle?: number
   /** Unfold anything hiding this position (contents navigation). */
   readonly reveal?: number
+  readonly foldAll?: boolean
+  readonly unfoldAll?: boolean
 }
 
 /** The heading's section: every following top-level block until the next
@@ -187,6 +189,8 @@ function applyMeta(
       (pos) => !hiddenRanges(tr.doc, pos).some((range) => target >= range.from && target < range.to),
     )
   }
+  if (meta.foldAll === true) folded = foldableAnchors(tr.doc)
+  if (meta.unfoldAll === true) folded = []
   return folded
 }
 

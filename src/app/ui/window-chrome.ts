@@ -159,14 +159,13 @@ export interface WorkspaceOptions {
 export type WorkspaceMode = 'all' | 'notes' | 'editor'
 
 /**
- * The three views of the one document-information panel.
+ * The two views of the one temporary document-information panel.
  *
- * Bear presents statistics, contents, and backlinks as tabs of a single panel
- * rather than three inspectors, and the reason is the product's: only one of
+ * Statistics and contents are tabs of a single temporary panel because only one of
  * them is ever the question being asked, and stacking them down the edge would
  * cost the document the width it exists to have.
  */
-export type InfoTab = 'statistics' | 'contents' | 'backlinks'
+export type InfoTab = 'statistics' | 'contents'
 
 export type PreviewDensity = 'small' | 'medium' | 'large'
 export type NotesSort = 'modified' | 'created' | 'title'
@@ -328,15 +327,10 @@ const INFO_TABS: ReadonlyArray<{ id: InfoTab; label: string; icon: string }> = [
     label: 'Table of Contents',
     icon: '<path d="M4 6h1M4 12h1M4 18h1M9 6h11M9 12h11M9 18h11"/>',
   },
-  {
-    id: 'backlinks',
-    label: 'Backlinks',
-    icon: '<path d="M11 17H7a5 5 0 0 1 0-10h4"/><path d="m9 12h7"/><path d="m14 8-4 4 4 4"/>',
-  },
 ]
 
 /**
- * The document-information panel: statistics, contents, and backlinks.
+ * The temporary document-information panel: statistics and contents.
  *
  * It floats over the right edge of the page rather than taking a column, so
  * turning it on never reflows the sentence a person is reading. That is the
@@ -437,14 +431,6 @@ function createInfoPanel(options: WindowChromeOptions): InfoPanel {
     body.append(list)
   }
 
-  const paintBacklinks = (): void => {
-    // Backlinks need every note's text. The workspace index carries a title and
-    // a preview, never a body, so this shell genuinely cannot answer the
-    // question — and "No notes link to this one" would be a claim to have
-    // looked. Naming the missing capability is the honest empty state.
-    body.append(emptyState('Backlinks arrive when a folder catalog can be searched'))
-  }
-
   const paint = (): void => {
     body.replaceChildren()
     heading.textContent = INFO_TABS.find((entry) => entry.id === current)?.label ?? ''
@@ -455,7 +441,6 @@ function createInfoPanel(options: WindowChromeOptions): InfoPanel {
     }
     if (current === 'statistics') paintStatistics()
     else if (current === 'contents') paintContents()
-    else if (current === 'backlinks') paintBacklinks()
   }
 
   for (const entry of INFO_TABS) {
@@ -1095,9 +1080,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   left.append(saveButton)
 
   // ---- document information (EDITOR-3, widened for APP-2) ----
-  // The contents view was a popover when it was the only one. Statistics and
-  // backlinks are the same question about the same document, so all three share
-  // one panel rather than each growing a surface of its own.
+  // Contents and statistics share one temporary panel rather than each growing
+  // a permanent surface of its own.
   const infoPanel = createInfoPanel(options)
   const contentsAvailable = options.getOutline !== undefined && options.onNavigate !== undefined
 

@@ -42,6 +42,8 @@ export type DocumentCommandId =
   | 'mathBlock'
   | 'link'
   | 'wikiLink'
+  | 'foldAll'
+  | 'unfoldAll'
   // Lists
   | 'bulletList'
   | 'orderedList'
@@ -132,7 +134,6 @@ export type DocumentCommandId =
   // View — document information
   | 'toggleStatistics'
   | 'contents'
-  | 'toggleBacklinks'
   // View — chrome
   | 'toggleWordCount'
   | 'toggleStylesBar'
@@ -201,6 +202,8 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   mathBlock: { id: 'mathBlock', label: 'Math Block', target: 'editor' },
   link: { id: 'link', label: 'Link…', target: 'editor', accelerator: 'CmdOrCtrl+K' },
   wikiLink: { id: 'wikiLink', label: 'Wiki Link', target: 'editor' },
+  foldAll: { id: 'foldAll', label: 'Fold All', target: 'editor' },
+  unfoldAll: { id: 'unfoldAll', label: 'Unfold All', target: 'editor' },
 
   bulletList: { id: 'bulletList', label: 'Bulleted List', target: 'editor', accelerator: 'CmdOrCtrl+Shift+8' },
   orderedList: { id: 'orderedList', label: 'Numbered List', target: 'editor', accelerator: 'CmdOrCtrl+Shift+9' },
@@ -374,8 +377,8 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
     group: 'workspaceLayout',
   },
 
-  // Three views of one panel, so opening any of them closes the other two
-  // rather than stacking inspectors down the edge of the document.
+  // Two temporary views of one panel, so opening either switches the question
+  // without creating a permanent document sidebar.
   toggleStatistics: {
     id: 'toggleStatistics',
     label: 'Toggle Statistics Panel',
@@ -392,15 +395,6 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
     checkable: true,
     group: 'infoPanel',
   },
-  toggleBacklinks: {
-    id: 'toggleBacklinks',
-    label: 'Toggle Backlinks',
-    target: 'shell',
-    accelerator: 'CmdOrCtrl+Shift+B',
-    checkable: true,
-    group: 'infoPanel',
-  },
-
   toggleWordCount: {
     id: 'toggleWordCount',
     label: 'Toggle Word Count',
@@ -481,6 +475,7 @@ export const MENUS: readonly MenuSpec[] = [
         'inlineMath',
         'link',
         'wikiLink',
+        { label: 'Folding', items: ['foldAll', 'unfoldAll'] },
       ],
       [
         { label: 'List', items: ['bulletList', 'orderedList', 'taskList', 'toggleTask', 'completeTask', 'incompleteTask', 'moveCompletedTasks'] },
@@ -532,7 +527,7 @@ export const MENUS: readonly MenuSpec[] = [
         },
       ],
       ['showEditorOnly', 'showNotesAndEditor', 'showAllPanes'],
-      ['toggleStatistics', 'contents', 'toggleBacklinks'],
+      ['toggleStatistics', 'contents'],
       ['toggleWordCount', 'toggleStylesBar', 'toggleHistoryNavigation'],
     ],
   },

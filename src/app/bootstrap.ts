@@ -204,9 +204,6 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       case 'contents':
         chrome.toggleInfoTab('contents')
         return
-      case 'toggleBacklinks':
-        chrome.toggleInfoTab('backlinks')
-        return
       case 'toggleWordCount':
         chrome.toggleWordCount()
         return
@@ -344,7 +341,6 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     if (id === 'toggleWordCount') return { enabled: true, checked: chrome.wordCountVisible() }
     if (id === 'toggleStatistics') return { enabled: true, checked: chrome.infoTab() === 'statistics' }
     if (id === 'contents') return { enabled: true, checked: chrome.infoTab() === 'contents' }
-    if (id === 'toggleBacklinks') return { enabled: true, checked: chrome.infoTab() === 'backlinks' }
     if (id === 'toggleHistoryNavigation') {
       return { enabled: true, checked: chrome.historyNavigationVisible() }
     }

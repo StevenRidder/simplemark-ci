@@ -117,6 +117,8 @@ export type EditorCommandName =
   | 'divider'
   | 'link'
   | 'wikiLink'
+  | 'foldAll'
+  | 'unfoldAll'
   | 'moveBlockUp'
   | 'moveBlockDown'
   | 'bulletList'
@@ -372,6 +374,12 @@ export class MilkdownEditor {
       case 'wikiLink':
         this.insertWikiLink()
         return
+      case 'foldAll':
+        this.setAllFolds(true)
+        return
+      case 'unfoldAll':
+        this.setAllFolds(false)
+        return
       case 'moveBlockUp':
         this.moveCurrentBlock('up')
         return
@@ -466,6 +474,17 @@ export class MilkdownEditor {
         this.editor.action(callCommand(redoCommand.key))
         return
     }
+  }
+
+  /** Changes only the folding plugin's temporary view state. */
+  private setAllFolds(folded: boolean): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(
+        view.state.tr.setMeta(foldingKey, folded ? { foldAll: true } : { unfoldAll: true }),
+      )
+      view.focus()
+    })
   }
 
   /**

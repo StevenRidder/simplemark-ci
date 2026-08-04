@@ -201,6 +201,21 @@ test.describe('folding', () => {
     await expect(childOne).toBeVisible()
     expect(await markdown(page)).toBe(before)
   })
+
+  test('Fold All and Unfold All change only temporary reader state', async ({ page }) => {
+    const before = await serialized(page)
+    const run = (id: string): Promise<void> =>
+      page.evaluate((command) => window.simplemark!.run(command as never), id)
+    const section = page.getByText('Stop is immediate control', { exact: false })
+
+    await run('foldAll')
+    await expect(section).toBeHidden()
+    expect(await serialized(page)).toBe(before)
+
+    await run('unfoldAll')
+    await expect(section).toBeVisible()
+    expect(await serialized(page)).toBe(before)
+  })
 })
 
 /**
@@ -208,9 +223,8 @@ test.describe('folding', () => {
  *
  * EDITOR-3 shipped it as a popover that closed on navigate, because it was the
  * only view of its kind and a popover was the smallest thing that could work.
- * Statistics and backlinks ask the same question about the same document, and
- * three popovers fighting for the same corner is not a design — so the three
- * share a panel, matching Bear. What EDITOR-3 was protecting survives: the
+ * Statistics and contents ask temporary questions about the same document, so
+ * they share a panel. What EDITOR-3 was protecting survives: the
  * panel floats over the page instead of taking a column, so the document keeps
  * its width and nothing reflows when the panel opens.
  */

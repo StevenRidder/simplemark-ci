@@ -110,6 +110,10 @@ export interface WindowChromeOptions {
   readonly onStylesBarPositionChange: (position: StylesBarPosition | undefined) => void
   /** Optional shared workspace navigation. Native and browser shells supply the same intent. */
   readonly workspace?: WorkspaceOptions | undefined
+  /** Restores the last app-local pane arrangement before the workspace is shown. */
+  readonly initialWorkspaceMode: WorkspaceMode
+  /** Persists pane arrangement without putting presentation state in Markdown. */
+  readonly onWorkspaceModeChange: (mode: WorkspaceMode) => void
 }
 
 /** A compact, derived note index entry. Markdown remains the only durable source. */
@@ -2225,10 +2229,11 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       workspaceBody.dataset['layout'] = mode
       workspaceBody.classList.toggle('navigation-hidden', mode === 'editor')
       documentListButton.classList.toggle('active', mode !== 'all')
+      options.onWorkspaceModeChange(mode)
     }
     setWorkspaceMode = applyWorkspaceMode
     getWorkspaceMode = () => workspaceBody.dataset['layout'] as WorkspaceMode
-    applyWorkspaceMode('all')
+    applyWorkspaceMode(options.initialWorkspaceMode)
     documentListButton.addEventListener('click', () => {
       applyWorkspaceMode(getWorkspaceMode() === 'editor' ? 'all' : 'editor')
     })

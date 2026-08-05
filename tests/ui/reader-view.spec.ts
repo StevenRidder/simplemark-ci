@@ -34,6 +34,81 @@ async function openFormatPopover(page: import('@playwright/test').Page) {
 }
 
 test.describe('reader layout preferences (D6)', () => {
+  test('restores the last workspace view after reopen', async ({ page }) => {
+    const run = (id: string): Promise<void> =>
+      page.evaluate((command) => window.simplemark!.run(command as never), id)
+
+    await run('showEditorOnly')
+    await expect(page.locator('.workspace-body')).toHaveAttribute('data-layout', 'editor')
+    await page.reload()
+    await page.waitForFunction(() => window.simplemark !== undefined)
+    await expect(page.locator('.workspace-body')).toHaveAttribute('data-layout', 'editor')
+
+    await run('showNotesAndEditor')
+    await expect(page.locator('.workspace-body')).toHaveAttribute('data-layout', 'notes')
+    await page.reload()
+    await page.waitForFunction(() => window.simplemark !== undefined)
+    await expect(page.locator('.workspace-body')).toHaveAttribute('data-layout', 'notes')
+  })
+
+  test('Cmd zoom keeps moving from 25% through 500% and Actual Size resets it', async ({ page }) => {
+    const runRepeatedly = (id: string, count: number): Promise<void> =>
+      page.evaluate(({ command, repetitions }) => {
+        for (let index = 0; index < repetitions; index += 1) {
+          window.simplemark!.run(command as never)
+        }
+      }, { command: id, repetitions: count })
+    const scale = () => page.evaluate(() =>
+      Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
+    )
+
+    await runRepeatedly('zoomOut', 40)
+    expect(await scale()).toBe(0.25)
+
+    await runRepeatedly('zoomIn', 80)
+    expect(await scale()).toBe(5)
+
+    await runRepeatedly('actualSize', 1)
+    expect(await scale()).toBe(1)
+  })
+
+  test('trackpad-style pinch zooms the document and persists the result', async ({ page }) => {
+    const before = await markdown(page)
+    const canceled = await page.locator('.window').evaluate((element) =>
+      !element.dispatchEvent(new WheelEvent('wheel', {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        deltaY: -30,
+      })),
+    )
+    expect(canceled).toBe(true)
+
+    const pinchedScale = await page.evaluate(() =>
+      Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
+    )
+    expect(pinchedScale).toBeGreaterThan(1)
+    expect(await markdown(page)).toBe(before)
+
+    await page.reload()
+    await page.waitForFunction(() => window.simplemark !== undefined)
+    expect(await page.evaluate(() =>
+      Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
+    )).toBe(pinchedScale)
+  })
+
+  test('WebKit magnification events use the same document zoom path', async ({ page }) => {
+    const scale = await page.locator('.window').evaluate((element) => {
+      element.dispatchEvent(new Event('gesturestart', { bubbles: true, cancelable: true }))
+      const change = new Event('gesturechange', { bubbles: true, cancelable: true })
+      Object.defineProperty(change, 'scale', { value: 1.5 })
+      element.dispatchEvent(change)
+      element.dispatchEvent(new Event('gestureend', { bubbles: true, cancelable: true }))
+      return Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale'))
+    })
+    expect(scale).toBe(1.5)
+  })
+
   test('reading width steps the column, document-level', async ({ page }) => {
     const width = async () =>
       page.locator('.page').evaluate((el) => parseFloat(getComputedStyle(el).width))

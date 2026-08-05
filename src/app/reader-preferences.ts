@@ -56,9 +56,17 @@ export const FONT_FAMILIES = [
 ] as const
 export type FontFamilyId = (typeof FONT_FAMILIES)[number]['id']
 
-/** Discrete steps, so "bigger" is repeatable and cannot drift to an odd value. */
-export const TEXT_SCALES = [0.85, 0.925, 1, 1.1, 1.25, 1.4] as const
-export type TextScale = (typeof TEXT_SCALES)[number]
+/**
+ * Browser-like document zoom limits.
+ *
+ * Twenty-five to five hundred percent is deliberately much wider than the old
+ * six-step reader palette. It keeps a damaged preference from making the page
+ * disappear while allowing repeated shortcuts and trackpad pinches to keep
+ * moving for as long as a person reasonably expects.
+ */
+export const MIN_TEXT_SCALE = 0.25
+export const MAX_TEXT_SCALE = 5
+export type TextScale = number
 
 /** Reading width. `normal` is the approved wireframe's 680px column. */
 export const READING_WIDTHS = [
@@ -119,18 +127,26 @@ export const DEFAULT_PREFERENCES: ReaderPreferences = {
   indent: 'none',
 }
 
-/** Steps to the next allowed size, clamping at both ends. */
+/** Clamps and rounds one app-provided or persisted scale. */
+export function normaliseScale(value: unknown): TextScale {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_PREFERENCES.scale
+  return Math.round(Math.min(MAX_TEXT_SCALE, Math.max(MIN_TEXT_SCALE, value)) * 1000) / 1000
+}
+
+/**
+ * Steps by ten percent, like a browser zoom control, clamping only at the wide
+ * safety limits above. Multiplication keeps the visual change proportional at
+ * both tiny and very large sizes; rounding makes up followed by down stable.
+ */
 export function nextScale(current: number, direction: 'up' | 'down'): TextScale {
-  // Snap first: a stored or stale value that is not one of the steps still has
-  // to move somewhere sensible rather than sticking.
-  let nearest = 0
-  for (let index = 1; index < TEXT_SCALES.length; index += 1) {
-    if (Math.abs(TEXT_SCALES[index]! - current) < Math.abs(TEXT_SCALES[nearest]! - current)) {
-      nearest = index
-    }
-  }
-  const moved = direction === 'up' ? nearest + 1 : nearest - 1
-  return TEXT_SCALES[Math.min(TEXT_SCALES.length - 1, Math.max(0, moved))]!
+  const safe = normaliseScale(current)
+  return normaliseScale(direction === 'up' ? safe * 1.1 : safe / 1.1)
+}
+
+/** Applies a continuous trackpad magnification ratio through the same limits. */
+export function scaleBy(current: number, factor: number): TextScale {
+  if (!Number.isFinite(factor) || factor <= 0) return normaliseScale(current)
+  return normaliseScale(normaliseScale(current) * factor)
 }
 
 /**
@@ -156,7 +172,7 @@ export function normalisePreferences(value: unknown): ReaderPreferences {
     family:
       FONT_FAMILIES.find((known) => known.id === candidate.family)?.id ??
       DEFAULT_PREFERENCES.family,
-    scale: TEXT_SCALES.find((known) => known === candidate.scale) ?? DEFAULT_PREFERENCES.scale,
+    scale: normaliseScale(candidate.scale),
     width:
       READING_WIDTHS.find((known) => known.id === candidate.width)?.id ??
       DEFAULT_PREFERENCES.width,

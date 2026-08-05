@@ -5,13 +5,16 @@ import {
   FONT_FAMILIES,
   INDENTATIONS,
   LINE_HEIGHTS,
+  MAX_TEXT_SCALE,
+  MIN_TEXT_SCALE,
   PARAGRAPH_SPACINGS,
   READER_THEMES,
   READING_WIDTHS,
-  TEXT_SCALES,
   nextScale,
   normalisePreferences,
+  normaliseScale,
   preferenceVariables,
+  scaleBy,
 } from '../../src/app/reader-preferences.js'
 
 /**
@@ -63,15 +66,32 @@ describe('nextScale', () => {
     expect(nextScale(1, 'down')).toBeLessThan(1)
   })
 
-  test('clamps at both ends rather than running away', () => {
-    const smallest = TEXT_SCALES[0]!
-    const largest = TEXT_SCALES[TEXT_SCALES.length - 1]!
-    expect(nextScale(smallest, 'down')).toBe(smallest)
-    expect(nextScale(largest, 'up')).toBe(largest)
+  test('keeps moving through a browser-like 25%-500% range', () => {
+    let smaller = 1
+    let larger = 1
+    for (let step = 0; step < 40; step += 1) {
+      smaller = nextScale(smaller, 'down')
+      larger = nextScale(larger, 'up')
+    }
+    expect(smaller).toBe(MIN_TEXT_SCALE)
+    expect(larger).toBe(MAX_TEXT_SCALE)
   })
 
-  test('snaps an unrecognised scale onto the nearest allowed step', () => {
-    expect(TEXT_SCALES).toContain(nextScale(1.234, 'up'))
+  test('clamps at both safety limits rather than making the page disappear', () => {
+    expect(nextScale(MIN_TEXT_SCALE, 'down')).toBe(MIN_TEXT_SCALE)
+    expect(nextScale(MAX_TEXT_SCALE, 'up')).toBe(MAX_TEXT_SCALE)
+  })
+
+  test('moves from any valid persisted or pinched scale', () => {
+    expect(nextScale(1.234, 'up')).toBeGreaterThan(1.234)
+    expect(nextScale(1.234, 'down')).toBeLessThan(1.234)
+  })
+
+  test('applies continuous pinch ratios through the same limits', () => {
+    expect(scaleBy(1, 1.35)).toBe(1.35)
+    expect(scaleBy(1, 0.7)).toBe(0.7)
+    expect(scaleBy(4, 2)).toBe(MAX_TEXT_SCALE)
+    expect(normaliseScale(0)).toBe(MIN_TEXT_SCALE)
   })
 })
 
@@ -80,7 +100,7 @@ describe('normalisePreferences', () => {
     const stored = {
       theme: 'night',
       family: 'mono',
-      scale: TEXT_SCALES[0],
+      scale: MIN_TEXT_SCALE,
       width: 'wide',
       leading: 'tight',
       spacing: 'airy',
@@ -97,12 +117,12 @@ describe('normalisePreferences', () => {
 
   test('fills fields a pre-EDITOR-3 record does not have', () => {
     // Adding a preference in a release must never wipe existing choices.
-    const legacy = { theme: 'white', family: 'mono', scale: TEXT_SCALES[0] }
+    const legacy = { theme: 'white', family: 'mono', scale: MIN_TEXT_SCALE }
     expect(normalisePreferences(legacy)).toEqual({
       ...DEFAULT_PREFERENCES,
       theme: 'white',
       family: 'mono',
-      scale: TEXT_SCALES[0],
+      scale: MIN_TEXT_SCALE,
     })
   })
 
@@ -119,7 +139,6 @@ describe('normalisePreferences', () => {
   test.each([
     ['an unknown theme', { theme: 'neon' }],
     ['an unknown family', { family: 'comic' }],
-    ['a scale outside the allowed steps', { scale: 99 }],
     ['an unknown width', { width: 'sprawling' }],
     ['an unknown leading', { leading: 3 }],
     ['an unknown spacing', { spacing: 'huge' }],
@@ -129,6 +148,11 @@ describe('normalisePreferences', () => {
     const repaired = normalisePreferences({ ...rest, ...corrupt })
     const corruptKey = Object.keys(corrupt)[0] as keyof typeof DEFAULT_PREFERENCES
     expect(repaired[corruptKey]).toEqual(DEFAULT_PREFERENCES[corruptKey])
+  })
+
+  test('clamps stored zoom to the browser-like safety range', () => {
+    expect(normalisePreferences({ scale: 99 }).scale).toBe(MAX_TEXT_SCALE)
+    expect(normalisePreferences({ scale: 0 }).scale).toBe(MIN_TEXT_SCALE)
   })
 })
 

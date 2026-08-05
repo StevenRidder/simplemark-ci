@@ -28,6 +28,7 @@ import {
   nextScale,
   normalisePreferences,
   preferenceVariables,
+  scaleBy,
 } from './reader-preferences.js'
 import type { ReaderPreferences } from './reader-preferences.js'
 import type { UpdateStatus } from './update-status.js'
@@ -132,6 +133,7 @@ export interface ComposeOptions {
 
 const STYLES_BAR_KEY = 'simplemark.styles-bar-visible'
 const STYLES_BAR_POSITION_KEY = 'simplemark.styles-bar-position'
+const WORKSPACE_MODE_KEY = 'simplemark.workspace-mode'
 
 export async function composeApp(options: ComposeOptions): Promise<AppComposition> {
   const { ports } = options
@@ -144,6 +146,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const stylesBarKey = `${STYLES_BAR_KEY}.${options.chromeMode ?? 'web'}`
   const stylesBarPositionKey = `${STYLES_BAR_POSITION_KEY}.${options.chromeMode ?? 'web'}`
   let preferences = loadPreferences(storage)
+  let workspaceMode = loadWorkspaceMode(storage)
   let stylesBarVisible = loadStylesBarVisible(storage, stylesBarKey, options.stylesBarDefault ?? true)
   let stylesBarPosition = loadStylesBarPosition(storage, stylesBarPositionKey)
   applyPreferences(preferences)
@@ -445,6 +448,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     onOpenFile: options.onOpenFile,
     openFileUnavailableReason: options.openFileUnavailableReason,
     workspace: options.workspace,
+    initialWorkspaceMode: workspaceMode,
+    onWorkspaceModeChange: (mode) => {
+      workspaceMode = mode
+      saveWorkspaceMode(storage, mode)
+    },
     onSave: () => void save(),
     onInsertAsset: ports.assets === undefined
       ? undefined
@@ -499,6 +507,35 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     getOutline: () => editor?.outline() ?? [],
     onNavigate: (pos) => editor?.navigateToHeading(pos),
     onCommand: (command: EditorCommand) => runCommand(command),
+  })
+
+  // A browser turns a trackpad pinch into magnification. Chromium reports the
+  // gesture as a Ctrl+wheel stream, while WebKit exposes gesture scale events;
+  // SimpleMark accepts both but routes them through one document-level reader
+  // preference. The page therefore pinches exactly where Cmd +/- zooms, and
+  // the resulting scale survives reopen without ever touching Markdown.
+  let gestureStartScale: number | undefined
+  chrome.element.addEventListener('wheel', (event) => {
+    if (!event.ctrlKey || gestureStartScale !== undefined) return
+    event.preventDefault()
+    const factor = Math.exp(-event.deltaY * 0.01)
+    setPreferences({ ...preferences, scale: scaleBy(preferences.scale, factor) })
+  }, { passive: false })
+
+  type WebKitGestureEvent = Event & { readonly scale?: number }
+  chrome.element.addEventListener('gesturestart', (event) => {
+    event.preventDefault()
+    gestureStartScale = preferences.scale
+  })
+  chrome.element.addEventListener('gesturechange', (event) => {
+    event.preventDefault()
+    const scale = (event as WebKitGestureEvent).scale
+    if (gestureStartScale === undefined || scale === undefined) return
+    setPreferences({ ...preferences, scale: scaleBy(gestureStartScale, scale) })
+  })
+  chrome.element.addEventListener('gestureend', (event) => {
+    event.preventDefault()
+    gestureStartScale = undefined
   })
 
   editor = await MilkdownEditor.mount({
@@ -741,6 +778,26 @@ function saveStylesBarPosition(
 }
 
 const PREFERENCES_KEY = 'simplemark.reader-preferences'
+
+function loadWorkspaceMode(storage: Pick<Storage, 'getItem'>): WorkspaceMode {
+  try {
+    const stored = storage.getItem(WORKSPACE_MODE_KEY)
+    return stored === 'all' || stored === 'notes' || stored === 'editor' ? stored : 'all'
+  } catch {
+    return 'all'
+  }
+}
+
+function saveWorkspaceMode(
+  storage: Pick<Storage, 'setItem'>,
+  mode: WorkspaceMode,
+): void {
+  try {
+    storage.setItem(WORKSPACE_MODE_KEY, mode)
+  } catch {
+    // Losing optional shell state must never interfere with editing.
+  }
+}
 
 function readPreferenceStorage(): Pick<Storage, 'getItem' | 'setItem'> {
   // Private-browsing and sandboxed contexts throw on access rather than

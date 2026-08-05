@@ -37,6 +37,16 @@ import type { ReaderPreferences } from '../reader-preferences.js'
 import type { DocumentStatistics } from '../document-statistics.js'
 import { describeUpdate, detailUpdate } from '../update-status.js'
 import type { UpdateStatus } from '../update-status.js'
+import type {
+  FoldersSort,
+  InfoTab,
+  NoteFilter,
+  NotesSort,
+  PreviewDensity,
+  UiPreferences,
+} from '../ui-preferences.js'
+
+export type { FoldersSort, InfoTab, NotesSort, PreviewDensity } from '../ui-preferences.js'
 
 export type SaveState = 'saved' | 'dirty' | 'error'
 
@@ -114,6 +124,10 @@ export interface WindowChromeOptions {
   readonly initialWorkspaceMode: WorkspaceMode
   /** Persists pane arrangement without putting presentation state in Markdown. */
   readonly onWorkspaceModeChange: (mode: WorkspaceMode) => void
+  /** Restores stable shell choices that must survive app restarts. */
+  readonly uiPreferences: UiPreferences
+  /** Persists shell choices without ever writing them into Markdown. */
+  readonly onUiPreferencesChange: (preferences: UiPreferences) => void
 }
 
 /** A compact, derived note index entry. Markdown remains the only durable source. */
@@ -185,12 +199,6 @@ export type WorkspaceMode = 'all' | 'notes' | 'editor'
  * them is ever the question being asked, and stacking them down the edge would
  * cost the document the width it exists to have.
  */
-export type InfoTab = 'statistics' | 'contents'
-
-export type PreviewDensity = 'small' | 'medium' | 'large'
-export type NotesSort = 'modified' | 'created' | 'title'
-export type FoldersSort = 'title' | 'count'
-
 export interface WindowChrome {
   readonly element: HTMLElement
   /** The node the editor mounts into. */
@@ -205,6 +213,7 @@ export interface WindowChrome {
   /** Bear's model: the same tab closes the panel, a different tab switches it. */
   toggleInfoTab(tab: InfoTab): void
   infoTab(): InfoTab | null
+  openInfoTab(tab: InfoTab): void
   openContents(): void
   toggleWordCount(): void
   wordCountVisible(): boolean
@@ -360,7 +369,10 @@ const INFO_TABS: ReadonlyArray<{ id: InfoTab; label: string; icon: string }> = [
  * Every view is rebuilt on open and on tab change, never cached — this panel
  * holds no document state, it only asks for the numbers and the outline.
  */
-function createInfoPanel(options: WindowChromeOptions): InfoPanel {
+function createInfoPanel(
+  options: WindowChromeOptions,
+  onTabChange: (tab: InfoTab | null) => void,
+): InfoPanel {
   const element = document.createElement('aside')
   element.className = 'info-panel'
   element.hidden = true
@@ -480,6 +492,7 @@ function createInfoPanel(options: WindowChromeOptions): InfoPanel {
     current = tab
     element.hidden = false
     paint()
+    onTabChange(tab)
     // Escape dismisses it. Clicking away does not: this is a panel a person
     // reads *while* editing, so stealing it on the next keystroke in the
     // document would make it useless for the job it exists to do.
@@ -490,6 +503,7 @@ function createInfoPanel(options: WindowChromeOptions): InfoPanel {
     current = null
     element.hidden = true
     body.replaceChildren()
+    onTabChange(null)
     document.removeEventListener('keydown', onEscape, true)
   }
 
@@ -1012,6 +1026,11 @@ function installDocumentScrollIndicator(
 
 export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   const isMacOS = options.chromeMode === 'macos'
+  let uiPreferences = options.uiPreferences
+  const rememberUi = (patch: Partial<UiPreferences>): void => {
+    uiPreferences = { ...uiPreferences, ...patch }
+    options.onUiPreferencesChange(uiPreferences)
+  }
   const stage = document.createElement('div')
   stage.className = 'stage'
 
@@ -1053,7 +1072,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // nothing is the fake control this shell refuses to ship.
   const historyNavigation = document.createElement('div')
   historyNavigation.className = 'history-navigation'
-  historyNavigation.hidden = true
+  historyNavigation.hidden = !uiPreferences.historyNavigationVisible
   historyNavigation.append(
     svgButton('tool', 'Back', '<path d="m14 6-6 6 6 6"/>', {
       disabled: true,
@@ -1066,6 +1085,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   )
   const toggleHistoryNavigation = (): void => {
     historyNavigation.hidden = !historyNavigation.hidden
+    rememberUi({ historyNavigationVisible: !historyNavigation.hidden })
   }
 
   // Open a real file (APP-1). Sits with the document controls because it is
@@ -1102,7 +1122,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // ---- document information (EDITOR-3, widened for APP-2) ----
   // Contents and statistics share one temporary panel rather than each growing
   // a permanent surface of its own.
-  const infoPanel = createInfoPanel(options)
+  const infoPanel = createInfoPanel(options, (infoTab) => rememberUi({ infoTab }))
   const contentsAvailable = options.getOutline !== undefined && options.onNavigate !== undefined
 
   const contentsButton = document.createElement('button')
@@ -1421,7 +1441,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // about it. Living in the bar, it simply moves.
   const wordCount = document.createElement('div')
   wordCount.className = 'word-count'
-  wordCount.hidden = true
+  wordCount.hidden = !uiPreferences.wordCountVisible
   wordCount.setAttribute('aria-label', 'Word count')
   stylesBar.append(wordCount)
   const paintWordCount = (): void => {
@@ -1432,6 +1452,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   const toggleWordCount = (): void => {
     wordCount.hidden = !wordCount.hidden
     paintWordCount()
+    rememberUi({ wordCountVisible: !wordCount.hidden })
   }
 
   const stylesBarToggle = document.createElement('button')
@@ -1500,12 +1521,13 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // Note-list view state lives out here so the chrome answers the same
   // questions with or without a workspace. Without one these hold the defaults
   // and nothing reads them — the composition root disables the commands.
-  let previewDensity: PreviewDensity = 'medium'
-  let notesSort: NotesSort = 'modified'
-  let newestOnTop = true
-  let foldersSort: FoldersSort = 'title'
-  let foldersAtoZ = false
+  let previewDensity = uiPreferences.previewDensity
+  let notesSort = uiPreferences.notesSort
+  let newestOnTop = uiPreferences.newestOnTop
+  let foldersSort = uiPreferences.foldersSort
+  let foldersAtoZ = uiPreferences.foldersAtoZ
   let repaintNoteList = (): void => {}
+  let repaintFolderList = (): void => {}
   let reconcileWorkspace = (_workspace: WorkspaceOptions): void => {}
 
   /**
@@ -1567,7 +1589,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const workspaceHeader = document.createElement('div')
     workspaceHeader.className = 'workspace-library-head'
 
-    let noteFilter: 'all' | 'pinned' = 'all'
+    let noteFilter: NoteFilter = uiPreferences.noteFilter
 
     const libraryRows = document.createElement('div')
     libraryRows.className = 'library-rows'
@@ -1677,7 +1699,13 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         row.remove()
         folderRows.delete(id)
       }
-      for (const folder of workspace.folders ?? []) {
+      const orderedFolders = [...(workspace.folders ?? [])].sort((left, right) => {
+        const order = foldersSort === 'count'
+          ? left.count - right.count || left.name.localeCompare(right.name)
+          : left.name.localeCompare(right.name)
+        return foldersAtoZ ? order : -order
+      })
+      for (const folder of orderedFolders) {
         let row = folderRows.get(folder.id)
         if (row === undefined) {
           row = document.createElement('button')
@@ -1701,6 +1729,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         libraryRows.append(row)
       }
     }
+    repaintFolderList = paintFolderRows
     libraryRows.append(allNotes, untagged, todo, today, pinned, trash, folderHead)
     paintFolderRows()
     const libraryFooter = document.createElement('div')
@@ -1743,10 +1772,12 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         event.preventDefault()
         const startX = event.clientX
         const startWidth = column.getBoundingClientRect().width
+        let finalWidth = startWidth
         handle.classList.add('dragging')
         handle.setPointerCapture(event.pointerId)
         const move = (moveEvent: PointerEvent): void => {
           const width = Math.max(minimum, Math.min(maximum, startWidth + moveEvent.clientX - startX))
+          finalWidth = width
           workspaceBody.style.setProperty(property, `${Math.round(width)}px`)
         }
         const finish = (): void => {
@@ -1754,12 +1785,18 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
           handle.removeEventListener('pointermove', move)
           handle.removeEventListener('pointerup', finish)
           handle.removeEventListener('pointercancel', finish)
+          rememberUi(property === '--library-column-width'
+            ? { libraryColumnWidth: Math.round(finalWidth) }
+            : { notesColumnWidth: Math.round(finalWidth) })
         }
         handle.addEventListener('pointermove', move)
         handle.addEventListener('pointerup', finish)
         handle.addEventListener('pointercancel', finish)
       })
       column.append(handle)
+    }
+    if (uiPreferences.libraryColumnWidth !== null) {
+      workspaceBody.style.setProperty('--library-column-width', `${uiPreferences.libraryColumnWidth}px`)
     }
     installColumnResizer(folders, '--library-column-width', 160, 360, 'Resize navigation column')
 
@@ -2142,12 +2179,14 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         return
       }
       noteFilter = 'all'
+      rememberUi({ noteFilter })
       paintMenuState()
       paintNotes()
     }
     allNotes.addEventListener('click', selectRecentNotes)
     pinned.addEventListener('click', () => {
       noteFilter = 'pinned'
+      rememberUi({ noteFilter })
       paintMenuState()
       paintNotes()
     })
@@ -2158,6 +2197,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     ] as const) {
       button.addEventListener('click', () => {
         notesSort = sort
+        rememberUi({ notesSort })
         paintMenuState()
         paintNotes()
         closeNotesMenu()
@@ -2165,6 +2205,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     }
     newestOnTopRow.addEventListener('click', () => {
       newestOnTop = !newestOnTop
+      rememberUi({ newestOnTop })
       paintMenuState()
       paintNotes()
       closeNotesMenu()
@@ -2176,6 +2217,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     ] as const) {
       button.addEventListener('click', () => {
         previewDensity = density
+        rememberUi({ previewDensity })
         paintMenuState()
         closeNotesMenu()
       })
@@ -2186,6 +2228,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     })
     showPinned.addEventListener('click', () => {
       noteFilter = 'pinned'
+      rememberUi({ noteFilter })
       paintMenuState()
       paintNotes()
       closeNotesMenu()
@@ -2223,6 +2266,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       noteContextMenu.hidden = true
     })
     noteList.append(notesHeader, notesMenu, noteItems, noteContextMenu)
+    if (uiPreferences.notesColumnWidth !== null) {
+      workspaceBody.style.setProperty('--notes-column-width', `${uiPreferences.notesColumnWidth}px`)
+    }
     installColumnResizer(noteList, '--notes-column-width', 205, 440, 'Resize note list column')
 
     const applyWorkspaceMode = (mode: WorkspaceMode): void => {
@@ -2383,6 +2429,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     stylesBarVisible: () => !stylesBar.hidden,
     toggleInfoTab: (tab) => infoPanel.toggle(tab),
     infoTab: () => infoPanel.tab(),
+    openInfoTab: (tab) => infoPanel.open(tab),
     openContents: () => infoPanel.open('contents'),
     toggleWordCount,
     wordCountVisible: () => !wordCount.hidden,
@@ -2401,25 +2448,32 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     workspaceMode: () => getWorkspaceMode(),
     setPreviewDensity(density) {
       previewDensity = density
+      rememberUi({ previewDensity })
       repaintNoteList()
     },
     previewDensity: () => previewDensity,
     setNotesSort(sort) {
       notesSort = sort
+      rememberUi({ notesSort })
       repaintNoteList()
     },
     notesSort: () => notesSort,
     toggleNewestOnTop() {
       newestOnTop = !newestOnTop
+      rememberUi({ newestOnTop })
       repaintNoteList()
     },
     newestOnTop: () => newestOnTop,
     setFoldersSort(sort) {
       foldersSort = sort
+      rememberUi({ foldersSort })
+      repaintFolderList()
     },
     foldersSort: () => foldersSort,
     toggleFoldersAtoZ() {
       foldersAtoZ = !foldersAtoZ
+      rememberUi({ foldersAtoZ })
+      repaintFolderList()
     },
     foldersAtoZ: () => foldersAtoZ,
     togglePinned: (id) => toggleWorkspacePin(id),

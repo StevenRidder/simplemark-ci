@@ -51,6 +51,37 @@ test.describe('reader layout preferences (D6)', () => {
     await expect(page.locator('.workspace-body')).toHaveAttribute('data-layout', 'notes')
   })
 
+  test('restores deliberate shell choices instead of hard-resetting the app', async ({ page }) => {
+    const run = (id: string): Promise<void> =>
+      page.evaluate((command) => window.simplemark!.run(command as never), id)
+
+    await run('previewLarge')
+    await run('sortByTitle')
+    await run('toggleNewestOnTop')
+    await run('toggleHistoryNavigation')
+    await run('toggleWordCount')
+    await run('toggleStatistics')
+    await page.getByRole('button', { name: /Pinned\s*1/ }).click()
+
+    await expect(page.locator('.workspace-notes')).toHaveAttribute('data-preview', 'large')
+    await expect(page.locator('.history-navigation')).toBeVisible()
+    await expect(page.locator('.word-count')).toBeVisible()
+    await expect(page.getByRole('complementary', { name: 'Document information' })).toBeVisible()
+
+    await page.reload()
+    await page.waitForFunction(() => window.simplemark !== undefined)
+
+    await expect(page.locator('.workspace-notes')).toHaveAttribute('data-preview', 'large')
+    await expect(page.getByRole('button', { name: 'Note list options' })).toContainText('Pinned')
+    await expect(page.locator('.history-navigation')).toBeVisible()
+    await expect(page.locator('.word-count')).toBeVisible()
+    await expect(page.getByRole('complementary', { name: 'Document information' })).toBeVisible()
+    expect(await page.evaluate(() => ({
+      title: window.simplemark!.commandState('sortByTitle').checked,
+      newest: window.simplemark!.commandState('toggleNewestOnTop').checked,
+    }))).toEqual({ title: true, newest: false })
+  })
+
   test('Cmd zoom keeps moving from 25% through 500% and Actual Size resets it', async ({ page }) => {
     const runRepeatedly = (id: string, count: number): Promise<void> =>
       page.evaluate(({ command, repetitions }) => {
@@ -72,7 +103,7 @@ test.describe('reader layout preferences (D6)', () => {
     expect(await scale()).toBe(1)
   })
 
-  test('trackpad-style pinch zooms the document and persists the result', async ({ page }) => {
+  test('trackpad-style pinch magnifies the whole page without changing reader text size', async ({ page }) => {
     const before = await markdown(page)
     const canceled = await page.locator('.window').evaluate((element) =>
       !element.dispatchEvent(new WheelEvent('wheel', {
@@ -84,29 +115,38 @@ test.describe('reader layout preferences (D6)', () => {
     )
     expect(canceled).toBe(true)
 
-    const pinchedScale = await page.evaluate(() =>
-      Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
-    )
+    const pinchedScale = await page.evaluate(() => Number(document.documentElement.style.zoom))
     expect(pinchedScale).toBeGreaterThan(1)
+    expect(await page.evaluate(() =>
+      Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
+    )).toBe(1)
     expect(await markdown(page)).toBe(before)
 
     await page.reload()
     await page.waitForFunction(() => window.simplemark !== undefined)
-    expect(await page.evaluate(() =>
-      Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
-    )).toBe(pinchedScale)
+    expect(await page.evaluate(() => Number(document.documentElement.style.zoom))).toBe(pinchedScale)
   })
 
-  test('WebKit magnification events use the same document zoom path', async ({ page }) => {
+  test('WebKit magnification events use whole-page zoom and Actual Size resets both scales', async ({ page }) => {
     const scale = await page.locator('.window').evaluate((element) => {
       element.dispatchEvent(new Event('gesturestart', { bubbles: true, cancelable: true }))
       const change = new Event('gesturechange', { bubbles: true, cancelable: true })
       Object.defineProperty(change, 'scale', { value: 1.5 })
       element.dispatchEvent(change)
       element.dispatchEvent(new Event('gestureend', { bubbles: true, cancelable: true }))
-      return Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale'))
+      return Number(document.documentElement.style.zoom)
     })
     expect(scale).toBe(1.5)
+    expect(await page.evaluate(() =>
+      Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
+    )).toBe(1)
+
+    await page.evaluate(() => window.simplemark!.run('zoomIn'))
+    await page.evaluate(() => window.simplemark!.run('actualSize'))
+    expect(await page.evaluate(() => Number(document.documentElement.style.zoom))).toBe(1)
+    expect(await page.evaluate(() =>
+      Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
+    )).toBe(1)
   })
 
   test('reading width steps the column, document-level', async ({ page }) => {

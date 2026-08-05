@@ -5,6 +5,8 @@ const notes = (page: import('@playwright/test').Page) =>
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
+  await page.evaluate(() => window.localStorage.clear())
+  await page.reload()
   await page.waitForFunction(() => window.simplemark !== undefined)
 })
 

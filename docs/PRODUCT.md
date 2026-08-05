@@ -137,6 +137,19 @@ Typography, line length, spacing, hierarchy, contrast, code treatment, diagram f
 behavior, selection, and scroll stability are acceptance criteria. “It renders” is insufficient.
 The goal is a document a person wants to keep open all day.
 
+### 3a. Deliberate app choices survive reopen
+
+SimpleMark remembers stable choices a person makes: pane arrangement, reader typography, whole-page
+magnification, visible reader tools, note and folder sorting, preview density, filters, column widths,
+the active collection, and native window placement. Reopening the app should resume the working
+environment, not reconstruct factory defaults. This state is local presentation state and never
+enters Markdown.
+
+Momentary interaction state still ends normally: open menus and popovers, hover, caret and selection,
+drag-in-progress, unfinished find text, loading indicators, and errors are not preferences. Trackpad
+pinch magnifies the complete app canvas like a browser; Command-plus and Command-minus change reader
+text size; Command-zero restores both to actual size.
+
 ### 4. External change is ordinary
 
 An AI updating the file is the normal workflow, not a conflict edge case. SimpleMark watches the

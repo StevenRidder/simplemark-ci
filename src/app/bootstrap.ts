@@ -28,9 +28,11 @@ import {
   nextScale,
   normalisePreferences,
   preferenceVariables,
-  scaleBy,
 } from './reader-preferences.js'
 import type { ReaderPreferences } from './reader-preferences.js'
+import { loadUiPreferences, saveUiPreferences } from './ui-preferences.js'
+import type { UiPreferences } from './ui-preferences.js'
+import { clampPageZoom } from './page-zoom.js'
 import type { UpdateStatus } from './update-status.js'
 import { documentStatistics } from './document-statistics.js'
 
@@ -97,6 +99,11 @@ export interface ComposeOptions {
   readonly filePath: string
   /** Where reader preferences are read from and written to. Defaults to localStorage. */
   readonly preferenceStorage?: Pick<Storage, 'getItem' | 'setItem'>
+  /** Native whole-webview magnification; separate from document text size. */
+  readonly pageZoom?: {
+    readonly current: () => number
+    readonly set: (zoom: number) => void
+  }
   /** Debounce for save-on-pause. Zero disables the timer so tests drive save directly. */
   readonly autosaveMs?: number
   /** Honest confirmation for platforms that save a downloaded replacement. */
@@ -146,6 +153,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const stylesBarKey = `${STYLES_BAR_KEY}.${options.chromeMode ?? 'web'}`
   const stylesBarPositionKey = `${STYLES_BAR_POSITION_KEY}.${options.chromeMode ?? 'web'}`
   let preferences = loadPreferences(storage)
+  let uiPreferences: UiPreferences = loadUiPreferences(storage)
   let workspaceMode = loadWorkspaceMode(storage)
   let stylesBarVisible = loadStylesBarVisible(storage, stylesBarKey, options.stylesBarDefault ?? true)
   let stylesBarPosition = loadStylesBarPosition(storage, stylesBarPositionKey)
@@ -275,6 +283,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         return
       case 'actualSize':
         setPreferences({ ...preferences, scale: 1 })
+        options.pageZoom?.set(1)
         return
       case 'toggleFirstLineIndent':
         setPreferences({
@@ -389,7 +398,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     if (id === 'zoomOut') {
       return { enabled: nextScale(preferences.scale, 'down') !== preferences.scale, checked: false }
     }
-    if (id === 'actualSize') return { enabled: preferences.scale !== 1, checked: false }
+    if (id === 'actualSize') {
+      return {
+        enabled: preferences.scale !== 1 || (options.pageZoom?.current() ?? 1) !== 1,
+        checked: false,
+      }
+    }
 
     // Note-list view state needs a note list. Without a catalog these describe
     // nothing, so they are visibly unavailable rather than quietly inert.
@@ -453,6 +467,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       workspaceMode = mode
       saveWorkspaceMode(storage, mode)
     },
+    uiPreferences,
+    onUiPreferencesChange: (next) => {
+      uiPreferences = next
+      saveUiPreferences(storage, next)
+    },
     onSave: () => void save(),
     onInsertAsset: ports.assets === undefined
       ? undefined
@@ -509,29 +528,28 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     onCommand: (command: EditorCommand) => runCommand(command),
   })
 
-  // A browser turns a trackpad pinch into magnification. Chromium reports the
-  // gesture as a Ctrl+wheel stream, while WebKit exposes gesture scale events;
-  // SimpleMark accepts both but routes them through one document-level reader
-  // preference. The page therefore pinches exactly where Cmd +/- zooms, and
-  // the resulting scale survives reopen without ever touching Markdown.
+  // Pinch magnifies the entire webview like a browser page. It is intentionally
+  // separate from Cmd +/-: those commands change document text size, while a
+  // pinch scales sidebars, toolbars, and the document together.
   let gestureStartScale: number | undefined
   chrome.element.addEventListener('wheel', (event) => {
-    if (!event.ctrlKey || gestureStartScale !== undefined) return
+    if (!event.ctrlKey || gestureStartScale !== undefined || options.pageZoom === undefined) return
     event.preventDefault()
     const factor = Math.exp(-event.deltaY * 0.01)
-    setPreferences({ ...preferences, scale: scaleBy(preferences.scale, factor) })
+    options.pageZoom.set(clampPageZoom(options.pageZoom.current() * factor))
   }, { passive: false })
 
   type WebKitGestureEvent = Event & { readonly scale?: number }
   chrome.element.addEventListener('gesturestart', (event) => {
     event.preventDefault()
-    gestureStartScale = preferences.scale
+    if (options.pageZoom === undefined) return
+    gestureStartScale = options.pageZoom.current()
   })
   chrome.element.addEventListener('gesturechange', (event) => {
     event.preventDefault()
     const scale = (event as WebKitGestureEvent).scale
     if (gestureStartScale === undefined || scale === undefined) return
-    setPreferences({ ...preferences, scale: scaleBy(gestureStartScale, scale) })
+    options.pageZoom?.set(clampPageZoom(gestureStartScale * scale))
   })
   chrome.element.addEventListener('gestureend', (event) => {
     event.preventDefault()
@@ -577,6 +595,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       }
     },
   })
+
+  chrome.refreshStatistics()
+  if (uiPreferences.infoTab !== null) chrome.openInfoTab(uiPreferences.infoTab)
 
   // In-document find (EDITOR-7): a temporary overlay in the editor section,
   // never a titlebar control. Cmd/Ctrl+F opens it wherever focus is inside the

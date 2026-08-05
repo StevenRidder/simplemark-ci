@@ -2,6 +2,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
+import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 
 import { CompositeRenderer } from '../adapters/renderers/composite-renderer.js'
@@ -27,6 +29,9 @@ import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import { SupersedingOperationQueue } from './superseding-operation-queue.js'
+import { clampPageZoom, loadPageZoom, savePageZoom } from './page-zoom.js'
+import { loadWindowGeometry, saveWindowGeometry } from './window-geometry.js'
+import { loadActiveCollection, saveActiveCollection } from './workspace-selection.js'
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
 import { WorkspacePins } from './workspace-pins.js'
 import {
@@ -56,7 +61,48 @@ import './styles/print.css'
  */
 
 export async function start(root: HTMLElement): Promise<AppComposition> {
-  const controller = await startNative(root)
+  const nativeWindow = getCurrentWindow()
+  const savedGeometry = loadWindowGeometry(window.localStorage)
+  if (savedGeometry !== null) {
+    await nativeWindow.setSize(new PhysicalSize(savedGeometry.width, savedGeometry.height))
+    await nativeWindow.setPosition(new PhysicalPosition(savedGeometry.x, savedGeometry.y))
+    if (savedGeometry.maximized) await nativeWindow.maximize()
+  }
+  let pageZoom = loadPageZoom(window.localStorage)
+  const webview = getCurrentWebview()
+  const setPageZoom = (zoom: number): void => {
+    pageZoom = clampPageZoom(zoom)
+    savePageZoom(window.localStorage, pageZoom)
+    void webview.setZoom(pageZoom).catch((error: unknown) => {
+      console.error('Could not set page magnification', error)
+    })
+  }
+  await webview.setZoom(pageZoom)
+  const controller = await startNative(root, {
+    current: () => pageZoom,
+    set: setPageZoom,
+  })
+  let geometryTimer: ReturnType<typeof setTimeout> | undefined
+  const rememberGeometry = (): void => {
+    clearTimeout(geometryTimer)
+    geometryTimer = setTimeout(() => {
+      void Promise.all([
+        nativeWindow.outerPosition(),
+        nativeWindow.outerSize(),
+        nativeWindow.isMaximized(),
+      ]).then(([position, size, maximized]) => {
+        saveWindowGeometry(window.localStorage, {
+          x: position.x,
+          y: position.y,
+          width: size.width,
+          height: size.height,
+          maximized,
+        })
+      })
+    }, 180)
+  }
+  await nativeWindow.onMoved(rememberGeometry)
+  await nativeWindow.onResized(rememberGeometry)
   await installNativeContextMenuBridge(controller)
   await installOpenRequestBridge(controller)
   await installMarkdownDropBridge(controller)
@@ -77,12 +123,15 @@ interface NativeController {
 }
 
 /** Owns the one active document while every open route shares one transition. */
-async function startNative(root: HTMLElement): Promise<NativeController> {
+async function startNative(
+  root: HTMLElement,
+  pageZoom: { readonly current: () => number; readonly set: (zoom: number) => void },
+): Promise<NativeController> {
   let current: AppComposition
   let stopWatching: UnlistenFn | undefined
   let activeHandle: string | undefined
   let workspaceHandle: string | undefined
-  let activeCollectionId = 'recent'
+  let activeCollectionId = loadActiveCollection(window.localStorage)
   let requestedSelection: { readonly path: string; readonly collectionId: string } | undefined
   const collections = new WorkspaceCollections()
   const catalogPort = new TauriWorkspaceCatalogPort(invoke)
@@ -169,12 +218,14 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     collections.rememberRecent(entry)
     persistRecentNotes()
     activeCollectionId = collectionId
+    saveActiveCollection(window.localStorage, collectionId)
     const catalog = collections.collection(collectionId, inspected.handle)
     await current.destroy()
     activeHandle = opened.handle
     workspaceHandle = collectionId === 'recent' ? inspected.handle : catalog.handle
     current = await mount(root, port, {
       filePath: opened.handle,
+      pageZoom,
       onOpenFile: openFromPicker,
       workspace: catalogWorkspace(catalog, opened.handle, pins, {
         select: selectNote,
@@ -348,6 +399,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     await current.destroy()
     current = await mount(root, new FixtureFilePort('No note selected.md', ''), {
       filePath: 'No note selected',
+      pageZoom,
       onOpenFile: openFromPicker,
       workspace: catalogWorkspace(after, '', pins, {
         select: selectNote,
@@ -402,9 +454,11 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     activeHandle = undefined
     workspaceHandle = undefined
     activeCollectionId = 'recent'
+    saveActiveCollection(window.localStorage, activeCollectionId)
     await current.destroy()
     current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
       filePath: 'Demo workspace · open a file to work with your own Markdown',
+      pageZoom,
       onOpenFile: openFromPicker,
       workspace: nativeWorkspace(WELCOME_NAME, {
         addFolder,
@@ -443,6 +497,10 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
     }
   }
   persistFolders()
+  if (activeCollectionId !== 'recent' && collections.folder(activeCollectionId) === undefined) {
+    activeCollectionId = 'recent'
+    saveActiveCollection(window.localStorage, activeCollectionId)
+  }
 
   for (const handle of hiddenStore.load()) collections.hideFromFolders(handle)
   persistHiddenNotes()
@@ -463,6 +521,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
 
   current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
     filePath: 'Demo workspace · open a file to work with your own Markdown',
+    pageZoom,
     onOpenFile: openFromPicker,
     workspace: nativeWorkspace(WELCOME_NAME, {
       addFolder,
@@ -472,13 +531,19 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
   })
 
   const mostRecent = collections.recentNotes('').notes[0]
-  if (mostRecent !== undefined) {
+  const restoredCatalog = activeCollectionId === 'recent'
+    ? collections.recentNotes('')
+    : collections.folder(activeCollectionId)
+  const restoredNote = restoredCatalog?.notes.find((note) => note.handle === mostRecent?.handle)
+    ?? restoredCatalog?.notes[0]
+    ?? mostRecent
+  if (restoredNote !== undefined) {
     try {
       const port = new TauriFilePort(invoke)
-      const opened = await port.openAt(mostRecent.handle)
-      await install(port, opened, 'recent')
+      const opened = await port.openAt(restoredNote.handle)
+      await install(port, opened, activeCollectionId)
     } catch {
-      collections.forgetRecent(mostRecent.handle)
+      collections.forgetRecent(restoredNote.handle)
       persistRecentNotes()
     }
   }
@@ -503,6 +568,7 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
         await current.destroy()
         current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
           filePath: 'Demo workspace · open a file to work with your own Markdown',
+          pageZoom,
           onOpenFile: openFromPicker,
           workspace: nativeWorkspace(WELCOME_NAME, {
             addFolder,
@@ -540,7 +606,12 @@ async function startNative(root: HTMLElement): Promise<NativeController> {
 async function mount(
   root: HTMLElement,
   file: FilePort,
-  options: { filePath: string; onOpenFile: () => void; workspace: WorkspaceOptions },
+  options: {
+    filePath: string
+    onOpenFile: () => void
+    workspace: WorkspaceOptions
+    pageZoom: { readonly current: () => number; readonly set: (zoom: number) => void }
+  },
 ): Promise<AppComposition> {
   let app: AppComposition
 
@@ -562,6 +633,7 @@ async function mount(
       ]),
     },
     filePath: options.filePath,
+    pageZoom: options.pageZoom,
     workspace: options.workspace,
     chromeMode: 'macos',
     // The native menubar is the complete command surface. The small floating

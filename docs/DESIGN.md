@@ -296,6 +296,13 @@ never draw imitation traffic lights or an imitation macOS menu bar.
 The web starts with its compact formatting strip visible; native starts without it because the macOS
 menus already expose those commands. View can restore the strip when wanted.
 
+Stable shell choices are local preferences and restore across composition reload and app reopen.
+That includes pane layout, reader and whole-page zoom, visible reader tools, note-list presentation,
+column widths, active collection, and native window geometry. Transient interaction state is not
+restored, and none of this presentation state is written into Markdown. Pinch uses platform page
+magnification for the complete canvas; Command-plus/minus remain reader-text controls; Command-zero
+restores both magnifications to 100 percent.
+
 **Formatting bubble** on selection, plus keyboard shortcuts and live input rules (`**bold**` renders as you type):
 
 bold · italic · strikethrough · highlight · inline code · H1–H3 · bullet list · numbered list · checkbox · quote · link · code block · divider

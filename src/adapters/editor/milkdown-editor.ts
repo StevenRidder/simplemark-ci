@@ -73,6 +73,12 @@ import { inlineMathSchema, InlineMathNodeView } from './inline-math.js'
 import { toggleUnderlineCommand, underlineRemark, underlineSchema } from './underline-mark.js'
 import { wikiLinkSchema, wikiRemark } from './wiki-link.js'
 import { pasteSniffers } from './paste-sniffers.js'
+import {
+  DEFERRED_TABLE_LANGUAGE,
+  DeferredTableNodeView,
+  isDeferredTableNode,
+  prepareMarkdownForEditor,
+} from './deferred-tables.js'
 
 /**
  * The candidate editor: Milkdown on ProseMirror and remark.
@@ -168,9 +174,19 @@ export class MilkdownEditor {
   ) {}
 
   static async mount(options: MilkdownEditorOptions): Promise<MilkdownEditor> {
-    const diagramView = $view(codeBlockSchema.node, () => {
+    // Do this before Milkdown sees the Markdown. The unsafe work was building
+    // a giant ProseMirror table tree during initial parse, so a post-parse
+    // NodeView cannot protect the UI thread in time.
+    const preparedMarkdown = prepareMarkdownForEditor(options.initialMarkdown)
+    const codeBlockView = $view(codeBlockSchema.node, () => {
       return (node: ProseNode, view: EditorView, getPos: () => number | undefined) => {
         const language = (node.attrs['language'] as string | undefined) ?? ''
+        if (
+          language === DEFERRED_TABLE_LANGUAGE &&
+          isDeferredTableNode(node, preparedMarkdown.deferredTables)
+        ) {
+          return new DeferredTableNodeView(node, preparedMarkdown.deferredTables)
+        }
         // Only claim fences this renderer actually handles. Every other code
         // block stays an ordinary editable fence.
         if (!options.renderer.languages.includes(language)) {
@@ -197,9 +213,9 @@ export class MilkdownEditor {
     const editor = await Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, options.mount)
-        ctx.set(defaultValueCtx, options.initialMarkdown)
+        ctx.set(defaultValueCtx, preparedMarkdown.editorMarkdown)
         ctx.get(listenerCtx).markdownUpdated((_ctx, markdown, previous) => {
-          if (markdown !== previous) options.onMarkdownChanged(markdown)
+          if (markdown !== previous) options.onMarkdownChanged(preparedMarkdown.restoreMarkdown(markdown))
         })
       })
       .use(commonmark)
@@ -253,7 +269,7 @@ export class MilkdownEditor {
       .use(wikiLinkSchema)
       .use(calloutRemark)
       .use(calloutSchema)
-      .use(diagramView)
+      .use(codeBlockView)
       .use(mathView)
       .use(inlineMathView)
       .use(imageView)

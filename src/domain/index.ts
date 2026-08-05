@@ -19,6 +19,11 @@ export type { ByteDifference } from './source/byte-diff.js'
 export type { SourceBlock, SourceMap } from './source/source-map.js'
 export type { PasteCandidate } from './paste/recognition.js'
 export {
+  DEFAULT_LIVE_TABLE_CELL_BUDGET,
+  planTableDeferral,
+} from './render/table-deferral.js'
+export type { MarkdownTableSpan, TableDeferralPlan } from './render/table-deferral.js'
+export {
   looksLikeAnsi,
   looksLikeDiff,
   looksLikeFileTree,

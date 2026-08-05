@@ -1830,6 +1830,60 @@ section.editor::-webkit-scrollbar {
   line-height: 1.55;
 }
 
+/* A pathological generated report can contain tens of thousands of GFM table
+   cells. Those tables are represented by a small, explicit card rather than
+   blocking the initial ProseMirror mount. The document source remains intact;
+   this is a visible reader-safe state, not a silent truncation. */
+.milkdown .ProseMirror .deferred-table {
+  max-width: 680px;
+  margin: 26px 0;
+  padding: 15px 17px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+  color: var(--ink-2);
+  box-sizing: border-box;
+}
+
+.milkdown .ProseMirror .deferred-table h3 {
+  margin: 0 0 5px;
+  color: var(--ink);
+  font: 700 15px/1.25 var(--sans);
+  letter-spacing: -0.01em;
+}
+
+.milkdown .ProseMirror .deferred-table p {
+  margin: 0;
+  font: 13px/1.45 var(--sans);
+}
+
+.milkdown .ProseMirror .deferred-table-detail {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.milkdown .ProseMirror .deferred-table-explanation {
+  margin-top: 6px;
+  color: var(--ink-3);
+}
+
+.deferred-table-copy {
+  margin-top: 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 9px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  color: var(--ink-2);
+  font: 650 11px/1 var(--sans);
+}
+
+.deferred-table-copy:hover,
+.deferred-table-copy:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  color: var(--ink);
+  outline: none;
+}
+
 .milkdown .ProseMirror hr {
   border: 0;
   height: 1px;

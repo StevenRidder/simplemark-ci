@@ -187,6 +187,23 @@ chunk** — never preloaded, no CDN, so a note that contains no graph pays
 nothing and a note that does still reaches no external host. A UI test asserts
 exactly that.
 
+**The wasm needs the shell's permission.** Compiling a WebAssembly module is a
+script operation under CSP, so the desktop policy in `src-tauri/tauri.conf.json`
+carries `script-src 'self' 'wasm-unsafe-eval'`. Without that source WebKit
+refuses the module outright and every `dot` block in the document reports an
+engine failure — the graph is not degraded, it is absent. `'wasm-unsafe-eval'`
+is the narrow grant on purpose: `'unsafe-eval'` would also unblock Graphviz and
+would hand `eval()` back to the whole document to do it.
+
+Note what "shipped" does and does not buy here. Vitest runs in Node and the
+Playwright suite drives the Vite dev server, so **neither applies the shell
+CSP** — Graphviz can be green across the entire suite, and correct in the
+browser shell, while drawing nothing in the packaged app. That is exactly how
+the missing directive reached a release. `tests/app/native-content-policy.test.ts`
+locks the policy so it cannot be dropped silently, but a lock is not a
+rendering: a change to the policy, the shell, or the wasm loader is only
+verified by opening a `dot` block in a real desktop build.
+
 **KaTeX.** Signature is `$$…$$` or a bare `\begin{env}…\end{env}`. Inline
 `$x$` is deliberately **not** claimed: a paste is a block-level event and a
 single dollar is far more often money than maths (`The licence costs $100` has

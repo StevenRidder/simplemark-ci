@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { GraphvizRenderer } from '../../src/adapters/renderers/graphviz-renderer.js'
+import { GRAPHVIZ_UNAVAILABLE, GraphvizRenderer } from '../../src/adapters/renderers/graphviz-renderer.js'
 import { KatexRenderer } from '../../src/adapters/renderers/katex-renderer.js'
 
 describe('GraphvizRenderer', () => {
@@ -23,11 +23,61 @@ describe('GraphvizRenderer', () => {
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('expected failure')
     expect(result.message.length).toBeGreaterThan(0)
+    // The author's mistake earns the engine's own words, not the build-fault sentence.
+    expect(result.message).not.toBe(GRAPHVIZ_UNAVAILABLE)
   }, 30_000)
 
   it('declines an empty graph and a foreign language', async () => {
     expect((await renderer.render('dot', '   ')).ok).toBe(false)
     expect((await renderer.render('mermaid', 'flowchart LR')).ok).toBe(false)
+  })
+})
+
+describe('GraphvizRenderer when the engine will not start', () => {
+  // Standing in for the real fault: under a CSP without 'wasm-unsafe-eval',
+  // WebKit refuses to compile the module and the loader rejects with a
+  // paragraph of policy text. That paragraph must not reach the document.
+  const refusal = () =>
+    Promise.reject(
+      new Error(
+        "Refused to create a WebAssembly object because 'unsafe-eval' or 'wasm-unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"default-src 'self'\"",
+      ),
+    )
+
+  it('answers with one plain sentence instead of the engine refusal', async () => {
+    const result = await new GraphvizRenderer(refusal).render('dot', 'digraph { a -> b }')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected failure')
+    expect(result.message).toBe(GRAPHVIZ_UNAVAILABLE)
+    expect(result.message).not.toMatch(/Content Security Policy|WebAssembly/)
+  })
+
+  it('does not re-import a dead engine on every repaint', async () => {
+    let attempts = 0
+    const counted = () => {
+      attempts += 1
+      return refusal()
+    }
+    const renderer = new GraphvizRenderer(counted)
+
+    for (let repaint = 0; repaint < 3; repaint += 1) {
+      expect((await renderer.render('dot', 'digraph { a -> b }')).ok).toBe(false)
+    }
+
+    expect(attempts).toBe(1)
+  })
+
+  it('still refuses a foreign language without reaching for the engine', async () => {
+    let attempts = 0
+    const renderer = new GraphvizRenderer(() => {
+      attempts += 1
+      return refusal()
+    })
+
+    expect((await renderer.render('mermaid', 'flowchart LR')).ok).toBe(false)
+    expect((await renderer.render('dot', '  ')).ok).toBe(false)
+    expect(attempts).toBe(0)
   })
 })
 

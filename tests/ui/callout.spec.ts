@@ -37,6 +37,42 @@ test('the marker is stripped from the body, not left visible', async ({ page }) 
   await expect(callout).not.toContainText('[!TIP]')
 })
 
+test('hover keeps the semantic callout label intact while exposing the drag affordance separately', async ({ page }) => {
+  await paste(page, '> [!TIP]\n> The body only.')
+
+  const callout = page.locator(`${EDITOR} .callout-tip`)
+  await callout.hover()
+  await expect.poll(async () => callout.evaluate((element) =>
+    Number.parseFloat(getComputedStyle(element, '::after').opacity),
+  )).toBeGreaterThan(0.5)
+  const styles = await callout.evaluate((element) => {
+    const label = getComputedStyle(element, '::before')
+    const handle = getComputedStyle(element, '::after')
+    return {
+      label: {
+        backgroundImage: label.backgroundImage,
+        display: label.display,
+        opacity: label.opacity,
+        position: label.position,
+        width: label.width,
+      },
+      handle: {
+        opacity: handle.opacity,
+        position: handle.position,
+      },
+    }
+  })
+
+  expect(styles.label).toMatchObject({
+    backgroundImage: 'none',
+    display: 'block',
+    opacity: '1',
+    position: 'static',
+  })
+  expect(Number.parseFloat(styles.label.width)).toBeGreaterThan(100)
+  expect(styles.handle).toEqual({ opacity: '0.58', position: 'absolute' })
+})
+
 test('text on the marker line survives', async ({ page }) => {
   await paste(page, '> [!IMPORTANT] Same line as the marker.\n> And a second line.')
 

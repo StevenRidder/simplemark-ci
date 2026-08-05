@@ -66,29 +66,30 @@ describe('stable app memory', () => {
     expect(loadPageZoom(storage)).toBe(1.75)
     expect(clampPageZoom(99)).toBe(5)
     expect(clampPageZoom(0)).toBe(0.2)
+    expect(clampPageZoom(1.006)).toBe(1.006)
   })
 
-  test('coalesces continuous whole-page magnification into one browser frame', () => {
+  test('restores and remembers browser-style WebKit magnification', () => {
     const storage = new MemoryStorage()
-    const zoomStyles = new Map<string, string>()
-    const target = { style: { setProperty: (name: string, value: string): void => {
-      zoomStyles.set(name, value)
-    } } }
-    const callbacks: FrameRequestCallback[] = []
-    const controller = createPageZoomController(storage, target, (callback) => {
-      callbacks.push(callback)
-      return callbacks.length
+    const requested: number[] = []
+    let enabled = 0
+    savePageZoom(storage, 1.25)
+    const controller = createPageZoomController(storage, {
+      enable: () => { enabled += 1 },
+      setMagnification: (zoom) => { requested.push(zoom) },
     })
 
-    controller.set(1.1)
-    controller.set(1.25)
     controller.set(1.5)
 
-    expect(callbacks).toHaveLength(1)
+    expect(enabled).toBe(1)
+    expect(requested).toEqual([1.25, 1.5])
     expect(controller.current()).toBe(1.5)
-    callbacks[0]?.(0)
-    expect(zoomStyles.get('--page-zoom')).toBe('1.5')
     expect(loadPageZoom(storage)).toBe(1.5)
+
+    controller.remember(1.75)
+    expect(requested).toEqual([1.25, 1.5])
+    expect(controller.current()).toBe(1.75)
+    expect(loadPageZoom(storage)).toBe(1.75)
   })
 
   test('restores safe native window geometry and rejects unusable frames', () => {

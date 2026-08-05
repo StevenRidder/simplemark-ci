@@ -99,14 +99,11 @@
    * Reader affordances that only mean something to a pointer: the block drag
    * gutter, the fold chevron, the diagram's hover label and source editor.
    *
-   * The `:not([data-callout])` is not decoration. A top-level callout is itself
-   * a direct child of .ProseMirror, and its type label — NOTE, WARNING — is
-   * drawn with the same `::before` this rule suppresses. That label is document
-   * meaning, not chrome, so paper must keep it. Excluding callouts by attribute
-   * says so outright instead of leaving the label's survival resting on which
-   * of two selectors happens to be more specific.
+   * The drag affordance lives on `::after`; a callout's type label — NOTE,
+   * WARNING — lives on `::before`. Hiding only the former keeps the label on
+   * paper because it is document meaning, not reader chrome.
    */
-  .milkdown .ProseMirror > *:not([data-callout])::before,
+  .milkdown .ProseMirror > *::after,
   .milkdown .ProseMirror .sm-fold-chevron,
   .diagram-label,
   .diagram-source-sheet,

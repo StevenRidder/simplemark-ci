@@ -29,6 +29,7 @@ import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import { SupersedingOperationQueue } from './superseding-operation-queue.js'
 import { createPageZoomController } from './page-zoom.js'
+import type { PageZoomController } from './page-zoom.js'
 import { loadWindowGeometry, saveWindowGeometry } from './window-geometry.js'
 import { loadActiveCollection, saveActiveCollection } from './workspace-selection.js'
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
@@ -67,7 +68,11 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     await nativeWindow.setPosition(new PhysicalPosition(savedGeometry.x, savedGeometry.y))
     if (savedGeometry.maximized) await nativeWindow.maximize()
   }
-  const pageZoom = createPageZoomController(window.localStorage, root)
+  const pageZoom = createPageZoomController(window.localStorage, {
+    enable: () => invoke('enable_page_magnification'),
+    setMagnification: (magnification) => invoke('set_page_magnification', { magnification }),
+  })
+  await installNativePageMagnificationTracking(pageZoom)
   const controller = await startNative(root, pageZoom)
   let geometryTimer: ReturnType<typeof setTimeout> | undefined
   const rememberGeometry = (): void => {
@@ -96,6 +101,19 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   return controller.current()
 }
 
+/**
+ * AppKit recognizes the physical trackpad pinch. WebKit renders that native
+ * browser-style magnification; this listener only remembers its final scale.
+ */
+async function installNativePageMagnificationTracking(pageZoom: PageZoomController): Promise<void> {
+  await listen<number>('native-page-zoom-delta', (event) => {
+    pageZoom.preview(pageZoom.current() * (1 + event.payload))
+  })
+  await listen('native-page-zoom-end', () => {
+    pageZoom.remember(pageZoom.current())
+  })
+}
+
 async function installNativeContextMenuBridge(controller: NativeController): Promise<void> {
   await listen<string>('native-context-menu-command', (event) => {
     controller.current().runNativeContextCommand(
@@ -112,7 +130,7 @@ interface NativeController {
 /** Owns the one active document while every open route shares one transition. */
 async function startNative(
   root: HTMLElement,
-  pageZoom: { readonly current: () => number; readonly set: (zoom: number) => void },
+  pageZoom: PageZoomController,
 ): Promise<NativeController> {
   let current: AppComposition
   let stopWatching: UnlistenFn | undefined
@@ -597,7 +615,7 @@ async function mount(
     filePath: string
     onOpenFile: () => void
     workspace: WorkspaceOptions
-    pageZoom: { readonly current: () => number; readonly set: (zoom: number) => void }
+    pageZoom: PageZoomController
   },
 ): Promise<AppComposition> {
   let app: AppComposition

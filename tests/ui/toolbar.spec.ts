@@ -93,6 +93,19 @@ test('the table button inserts a real table', async ({ page }) => {
   await expect.poll(() => markdown(page)).toMatch(/\|\s*Take\s*\|/)
 })
 
+test('table headers keep their generous title rhythm while body rows use Reading density', async ({ page }) => {
+  await caretAtEnd(page)
+  await page.keyboard.press('Enter')
+  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+
+  const table = page.locator(`${editor} table`)
+  await expect(table).toBeVisible()
+  await expect(table.locator('th').first()).toHaveCSS('padding-top', '9px')
+  await expect(table.locator('th').first()).toHaveCSS('padding-bottom', '9px')
+  await expect(table.locator('td').first()).toHaveCSS('padding-top', '6px')
+  await expect(table.locator('td').first()).toHaveCSS('padding-bottom', '6px')
+})
+
 test('table-local controls change rows, columns, and alignment as portable Markdown', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')

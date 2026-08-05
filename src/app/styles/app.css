@@ -12,6 +12,13 @@
   box-sizing: border-box;
 }
 
+:root {
+  /* Workspace preferences override these on the grid itself. They must still
+     exist for a first launch, before a user has ever resized either column. */
+  --library-column-width: 190px;
+  --notes-column-width: 285px;
+}
+
 html,
 body {
   height: 100%;
@@ -23,17 +30,12 @@ body {
   color: var(--ink);
   font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
-  /* Whole-page pinch uses compositor magnification. Transformed overflow is
-     scrollable at high zoom so the page remains navigable instead of clipping. */
   overflow: auto;
 }
 
 #root {
   width: 100%;
   height: 100%;
-  transform: scale(var(--page-zoom, 1));
-  transform-origin: top left;
-  will-change: transform;
 }
 
 button,
@@ -843,8 +845,6 @@ section.editor::-webkit-scrollbar {
 /* SHELL-1 — the shared Notes-style workspace. The browser and native shells
    host this same navigation surface; only native window chrome belongs to macOS. */
 .workspace-body {
-  --library-column-width: 190px;
-  --notes-column-width: 285px;
   min-height: 0;
   flex: 1;
   display: grid;
@@ -1639,7 +1639,7 @@ section.editor::-webkit-scrollbar {
 }
 
 .workspace-body[data-layout='notes'] {
-  grid-template-columns: 285px minmax(0, 1fr);
+  grid-template-columns: var(--notes-column-width) minmax(0, 1fr);
 }
 
 .workspace-body[data-layout='notes'] .workspace-folders {
@@ -1742,7 +1742,7 @@ section.editor::-webkit-scrollbar {
   position: relative;
 }
 
-.milkdown .ProseMirror > *::before {
+.milkdown .ProseMirror > *::after {
   position: absolute;
   left: -22px;
   top: 0.35em;
@@ -1751,6 +1751,9 @@ section.editor::-webkit-scrollbar {
   color: var(--ink-3);
   content: '';
   cursor: grab;
+  /* This is visual feedback only. The block owns reordering, and controls
+     nested inside it (such as the fold chevron) must remain clickable. */
+  pointer-events: none;
   background-image: radial-gradient(circle, currentColor 1.1px, transparent 1.5px);
   background-position: 0 0;
   background-repeat: repeat-y;
@@ -1759,12 +1762,12 @@ section.editor::-webkit-scrollbar {
   transition: opacity 120ms ease;
 }
 
-.milkdown .ProseMirror > *:hover::before,
-.milkdown .ProseMirror > *:focus-within::before {
+.milkdown .ProseMirror > *:hover::after,
+.milkdown .ProseMirror > *:focus-within::after {
   opacity: 0.58;
 }
 
-.milkdown .ProseMirror > *:active::before {
+.milkdown .ProseMirror > *:active::after {
   cursor: grabbing;
 }
 
@@ -2201,10 +2204,12 @@ section.editor::-webkit-scrollbar {
 .milkdown .ProseMirror th,
 .milkdown .ProseMirror td {
   border: 1px solid var(--line);
-  padding: 9px 12px;
   text-align: left;
   vertical-align: top;
 }
+
+.milkdown .ProseMirror th { padding: 9px 12px; }
+.milkdown .ProseMirror td { padding: 6px 12px; }
 
 /* A deliberate row/column selection stays visible long enough to apply one
    ordinary Markdown mark. It is not a spreadsheet range editor. */
@@ -2976,6 +2981,21 @@ section.editor::-webkit-scrollbar {
 
 :root[data-shell='native'] .workspace-body.navigation-hidden .native-editor-head {
   padding-left: 78px;
+}
+
+/* Reader Only has no neighbouring panes competing for titlebar space, so the
+   filename belongs at the true centre. Two- and three-pane arrangements retain
+   their native left-aligned filename. */
+:root[data-shell='native'] .workspace-body.navigation-hidden .native-editor-head .filename {
+  position: absolute;
+  left: 50%;
+  max-width: calc(100% - 220px);
+  margin: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 /*

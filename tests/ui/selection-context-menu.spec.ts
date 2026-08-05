@@ -83,24 +83,26 @@ async function openMenuAt(
   await expect(page.locator(MENU)).toBeVisible()
 }
 
-/** As above, but with the element's text actually selected first. */
+/**
+ * Selects text and opens the menu in one document turn.
+ *
+ * Milkdown may reconcile a just-focused block on the next render tick. Keeping
+ * selection and the synthetic right-click together faithfully models the
+ * native interaction and prevents the test from asserting against a selection
+ * that the editor has already reconciled away.
+ */
 async function selectThenOpenMenu(
   page: import('@playwright/test').Page,
   selector: string,
 ): Promise<void> {
   const target = page.locator(selector).first()
-  await target.click()
+  await expect(target).toContainText(/\S+/)
   await target.evaluate((el) => {
     const range = document.createRange()
     range.selectNodeContents(el)
     const selection = window.getSelection()
     selection?.removeAllRanges()
     selection?.addRange(range)
-  })
-  await expect
-    .poll(async () => page.evaluate(() => window.getSelection()?.toString().length ?? 0))
-    .toBeGreaterThan(0)
-  await target.evaluate((el) => {
     const box = el.getBoundingClientRect()
     el.dispatchEvent(
       new MouseEvent('contextmenu', {
@@ -126,13 +128,12 @@ test('the menu Copy performs a real platform copy of the selection', async ({ pa
   // harness after a file open, so such a baseline measures Playwright, not the
   // product. The structural guarantee — that nothing intercepts the ordinary
   // copy path at all — is enforced in tests/app/copy-path-untouched.test.ts.
-  await page.evaluate(() => navigator.clipboard.writeText('before-copy'))
   await selectThenOpenMenu(page, `${EDITOR} p`)
   await page.locator(MENU).getByRole('menuitem', { name: 'Copy', exact: true }).click()
 
-  await expect.poll(async () => clipboardText(page)).not.toBe('before-copy')
+  await expect.poll(async () => clipboardText(page)).toContain('Prose with')
   const copied = await clipboardText(page)
-  // A double-click selects one word, so this is that word — not the sentence.
+  // The explicit native-range selection above must reach the platform clipboard.
   expect(copied.trim().length).toBeGreaterThan(0)
   expect(copied).toContain('Prose with')
 })
@@ -155,6 +156,7 @@ test('right-click Copy as Markdown matches the Edit-menu command', async ({ page
   await openMenuAt(page, `${EDITOR} p`)
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.simplemark!.run('copyAsMarkdown' as never))
+  await expect.poll(async () => clipboardText(page)).toContain('**bold**')
   const viaCommand = await clipboardText(page)
   expect(viaCommand.length).toBeGreaterThan(0)
 
@@ -194,7 +196,7 @@ test('Copy Table as CSV from the menu gives spreadsheet bytes', async ({ page })
   await openMenuAt(page, `${EDITOR} table td`)
   await page.locator(MENU).getByRole('menuitem', { name: 'Copy Table as CSV' }).click()
 
-  expect(await clipboardText(page)).toBe('Region,Revenue\nWest,"1,200"\nEast,900')
+  await expect.poll(async () => clipboardText(page)).toBe('Region,Revenue\nWest,"1,200"\nEast,900')
 })
 
 test('the native snapshot follows the pointed block before WebKit changes selection', async ({ page }) => {

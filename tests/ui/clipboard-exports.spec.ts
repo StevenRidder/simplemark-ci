@@ -48,6 +48,18 @@ const clipboardText = (page: import('@playwright/test').Page): Promise<string> =
   page.evaluate(() => navigator.clipboard.readText())
 
 /**
+ * Shell clipboard commands intentionally start an asynchronous platform write.
+ * Assert the bytes only after that write has settled; reading immediately can
+ * observe the previous system clipboard contents on a loaded CI runner.
+ */
+async function expectClipboard(
+  page: import('@playwright/test').Page,
+  expected: string,
+): Promise<void> {
+  await expect.poll(async () => clipboardText(page)).toBe(expected)
+}
+
+/**
  * Puts the caret inside the element, waits for ProseMirror to actually own that
  * selection, then runs a registry command.
  *
@@ -78,14 +90,14 @@ test('Copy Table as CSV gives a spreadsheet exactly what it expects', async ({ p
   await openNote(page)
   await caretInThenRun(page, `${EDITOR} table td`, 'copyTableAsCsv')
 
-  const csv = await clipboardText(page)
-  expect(csv).toBe('Region,Revenue\nWest,"1,200"\nEast,900')
+  await expectClipboard(page, 'Region,Revenue\nWest,"1,200"\nEast,900')
 })
 
 test('Copy Table as Markdown keeps the portable pipe table', async ({ page }) => {
   await openNote(page)
   await caretInThenRun(page, `${EDITOR} table td`, 'copyTableAsMarkdown')
 
+  await expect.poll(async () => clipboardText(page)).toContain('| Region')
   const md = await clipboardText(page)
   expect(md).toContain('| Region')
   expect(md).toContain('| West')
@@ -95,13 +107,14 @@ test('Copy Code gives the fence body without the backticks', async ({ page }) =>
   await openNote(page)
   await caretInThenRun(page, `${EDITOR} pre`, 'copyCode')
 
-  expect(await clipboardText(page)).toBe('const total = 2100')
+  await expectClipboard(page, 'const total = 2100')
 })
 
 test('Copy as Plain Text strips Markdown punctuation but keeps the words', async ({ page }) => {
   await openNote(page)
   await caretInThenRun(page, `${EDITOR} p`, 'copyAsPlainText')
 
+  await expect.poll(async () => clipboardText(page)).toContain('Prose with bold and a link')
   const text = await clipboardText(page)
   expect(text).toContain('Prose with bold and a link')
   expect(text).not.toContain('**')
@@ -112,6 +125,7 @@ test('Copy as Markdown keeps the source form', async ({ page }) => {
   await openNote(page)
   await caretInThenRun(page, `${EDITOR} p`, 'copyAsMarkdown')
 
+  await expect.poll(async () => clipboardText(page)).toContain('**bold**')
   const md = await clipboardText(page)
   expect(md).toContain('**bold**')
   expect(md).toContain('[link](https://example.com)')

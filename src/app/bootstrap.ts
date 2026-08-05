@@ -32,7 +32,6 @@ import {
 import type { ReaderPreferences } from './reader-preferences.js'
 import { loadUiPreferences, saveUiPreferences } from './ui-preferences.js'
 import type { UiPreferences } from './ui-preferences.js'
-import { clampPageZoom } from './page-zoom.js'
 import type { UpdateStatus } from './update-status.js'
 import { documentStatistics } from './document-statistics.js'
 
@@ -103,6 +102,8 @@ export interface ComposeOptions {
   readonly pageZoom?: {
     readonly current: () => number
     readonly set: (zoom: number) => void
+    readonly preview: (zoom: number) => void
+    readonly remember: (zoom: number) => void
   }
   /** Debounce for save-on-pause. Zero disables the timer so tests drive save directly. */
   readonly autosaveMs?: number
@@ -526,34 +527,6 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     getOutline: () => editor?.outline() ?? [],
     onNavigate: (pos) => editor?.navigateToHeading(pos),
     onCommand: (command: EditorCommand) => runCommand(command),
-  })
-
-  // Pinch magnifies the entire webview like a browser page. It is intentionally
-  // separate from Cmd +/-: those commands change document text size, while a
-  // pinch scales sidebars, toolbars, and the document together.
-  let gestureStartScale: number | undefined
-  chrome.element.addEventListener('wheel', (event) => {
-    if (!event.ctrlKey || gestureStartScale !== undefined || options.pageZoom === undefined) return
-    event.preventDefault()
-    const factor = Math.exp(-event.deltaY * 0.01)
-    options.pageZoom.set(clampPageZoom(options.pageZoom.current() * factor))
-  }, { passive: false })
-
-  type WebKitGestureEvent = Event & { readonly scale?: number }
-  chrome.element.addEventListener('gesturestart', (event) => {
-    event.preventDefault()
-    if (options.pageZoom === undefined) return
-    gestureStartScale = options.pageZoom.current()
-  })
-  chrome.element.addEventListener('gesturechange', (event) => {
-    event.preventDefault()
-    const scale = (event as WebKitGestureEvent).scale
-    if (gestureStartScale === undefined || scale === undefined) return
-    options.pageZoom?.set(clampPageZoom(gestureStartScale * scale))
-  })
-  chrome.element.addEventListener('gestureend', (event) => {
-    event.preventDefault()
-    gestureStartScale = undefined
   })
 
   editor = await MilkdownEditor.mount({

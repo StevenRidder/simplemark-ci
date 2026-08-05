@@ -14,7 +14,6 @@ import type { FilePort } from '../application/index.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
-import { createPageZoomController } from './page-zoom.js'
 
 import './styles/tokens.css'
 import './styles/app.css'
@@ -238,8 +237,6 @@ async function mount(
 ): Promise<AppComposition> {
   const canWriteOriginal = BrowserFilePort.isSupported()
   let app: AppComposition
-  const pageZoom = createPageZoomController(window.localStorage, root)
-
   app = await composeApp({
     ports: {
       file,
@@ -256,7 +253,6 @@ async function mount(
       ]),
     },
     filePath: options.filePath,
-    pageZoom,
     ...(options.workspace === undefined ? {} : { workspace: options.workspace }),
     ...(options.autosaveMs === undefined ? {} : { autosaveMs: options.autosaveMs }),
     ...(options.saveSuccessMessage === undefined ? {} : { saveSuccessMessage: options.saveSuccessMessage }),

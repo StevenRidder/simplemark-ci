@@ -17,11 +17,6 @@ const markdown = (page: import('@playwright/test').Page) =>
   page.evaluate(() => window.simplemark!.session.snapshot().markdown)
 const serialized = (page: import('@playwright/test').Page) =>
   page.evaluate(() => window.simplemark!.editor.serialize())
-const pageZoom = (page: import('@playwright/test').Page) =>
-  page.locator('#root').evaluate((element) =>
-    Number((element as HTMLElement).style.getPropertyValue('--page-zoom')),
-  )
-
 test.beforeEach(async ({ page }) => {
   // Clear once, before the first navigation — addInitScript would also wipe
   // the preferences the persistence tests exist to check.
@@ -53,6 +48,30 @@ test.describe('reader layout preferences (D6)', () => {
     await page.reload()
     await page.waitForFunction(() => window.simplemark !== undefined)
     await expect(page.locator('.workspace-body')).toHaveAttribute('data-layout', 'notes')
+  })
+
+  test('Reader Only centers the native filename without moving it in other pane layouts', async ({ page }) => {
+    await page.evaluate(() => {
+      document.documentElement.dataset.shell = 'native'
+      const titlebar = document.querySelector('.titlebar')
+      const surface = document.querySelector('.document-surface')
+      if (titlebar === null || surface === null) throw new Error('Expected the document titlebar')
+      titlebar.classList.add('native-editor-head')
+      surface.prepend(titlebar)
+    })
+    await page.evaluate(() => window.simplemark!.run('showEditorOnly'))
+
+    const centered = await page.locator('.native-editor-head').evaluate((titlebar) => {
+      const name = titlebar.querySelector('.filename')
+      if (name === null) throw new Error('Expected filename')
+      const titlebarBox = titlebar.getBoundingClientRect()
+      const nameBox = name.getBoundingClientRect()
+      return Math.abs((nameBox.left + nameBox.width / 2) - (titlebarBox.left + titlebarBox.width / 2))
+    })
+    expect(centered).toBeLessThan(1)
+
+    await page.evaluate(() => window.simplemark!.run('showNotesAndEditor'))
+    await expect(page.locator('.native-editor-head .filename')).toHaveCSS('position', 'static')
   })
 
   test('restores deliberate shell choices instead of hard-resetting the app', async ({ page }) => {
@@ -107,11 +126,8 @@ test.describe('reader layout preferences (D6)', () => {
     expect(await scale()).toBe(1)
   })
 
-  test('trackpad-style pinch magnifies the whole page without changing reader text size', async ({ page }) => {
+  test('the browser shell leaves whole-page pinch to the browser engine', async ({ page }) => {
     const before = await markdown(page)
-    const diagram = page.locator('.diagram .diagram-render svg').first()
-    await expect(diagram).toBeVisible()
-    const diagramWidthBefore = await diagram.evaluate((element) => element.getBoundingClientRect().width)
     const canceled = await page.locator('.window').evaluate((element) =>
       !element.dispatchEvent(new WheelEvent('wheel', {
         bubbles: true,
@@ -120,42 +136,28 @@ test.describe('reader layout preferences (D6)', () => {
         deltaY: -30,
       })),
     )
-    expect(canceled).toBe(true)
-
-    await expect.poll(() => pageZoom(page)).toBeGreaterThan(1)
-    const pinchedScale = await pageZoom(page)
-    expect(pinchedScale).toBeGreaterThan(1)
-    await expect.poll(() => diagram.evaluate((element) => element.getBoundingClientRect().width))
-      .toBeGreaterThan(diagramWidthBefore)
+    expect(canceled).toBe(false)
+    expect(await page.locator('#root').evaluate((element) => getComputedStyle(element).transform)).toBe('none')
     expect(await page.evaluate(() =>
       Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
     )).toBe(1)
     expect(await markdown(page)).toBe(before)
-
-    await page.reload()
-    await page.waitForFunction(() => window.simplemark !== undefined)
-    expect(await pageZoom(page)).toBe(pinchedScale)
   })
 
-  test('WebKit magnification events use whole-page zoom and Actual Size resets both scales', async ({ page }) => {
-    await page.locator('.window').evaluate((element) => {
-      element.dispatchEvent(new Event('gesturestart', { bubbles: true, cancelable: true }))
-      const change = new Event('gesturechange', { bubbles: true, cancelable: true })
-      Object.defineProperty(change, 'scale', { value: 1.5 })
-      element.dispatchEvent(change)
-      element.dispatchEvent(new Event('gestureend', { bubbles: true, cancelable: true }))
-    })
-    await expect.poll(() => pageZoom(page)).toBe(1.5)
-    expect(await page.evaluate(() =>
-      Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
-    )).toBe(1)
-
+  test('Actual Size remains the reset command while the browser owns page magnification', async ({ page }) => {
     await page.evaluate(() => window.simplemark!.run('zoomIn'))
     await page.evaluate(() => window.simplemark!.run('actualSize'))
-    await expect.poll(() => pageZoom(page)).toBe(1)
     expect(await page.evaluate(() =>
       Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
     )).toBe(1)
+    expect(await page.locator('#root').evaluate((element) => getComputedStyle(element).transform)).toBe('none')
+  })
+
+  test('browser-style magnification has no app-specific reflow or counter-scale', async ({ page }) => {
+    await expect(page.locator('.workspace-body')).toHaveCSS('grid-template-columns', /190px 285px/)
+    await expect(page.locator('.page')).toHaveCSS('zoom', '1')
+    await expect(page.locator('.workspace-folders')).toHaveCSS('transform', 'none')
+    await expect(page.locator('.workspace-notes')).toHaveCSS('transform', 'none')
   })
 
   test('Editor Only keeps the document usable at a narrow or highly magnified viewport', async ({ page }) => {

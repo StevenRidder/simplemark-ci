@@ -5,15 +5,26 @@ export const MAX_PAGE_ZOOM = 5
 export interface PageZoomController {
   readonly current: () => number
   readonly set: (zoom: number) => void
+  /** Tracks a live native-gesture sample without writing local storage. */
+  readonly preview: (zoom: number) => void
+  /** Records the final native-gesture scale for the next launch. */
+  readonly remember: (zoom: number) => void
 }
 
-interface ZoomStyleTarget {
-  readonly style: Pick<CSSStyleDeclaration, 'setProperty'>
+export interface NativeMagnificationPort {
+  /**
+   * Turns on WKWebView's browser-style magnification. The document, app
+   * controls, and navigation live inside this web view and scale together;
+   * macOS's own window chrome remains outside it, just as in a browser.
+   */
+  readonly enable: () => void | Promise<void>
+  /** Restores a saved scale or returns to Actual Size through WebKit. */
+  readonly setMagnification: (zoom: number) => void | Promise<void>
 }
 
 export function clampPageZoom(value: number): number {
   if (!Number.isFinite(value)) return 1
-  return Math.round(Math.max(MIN_PAGE_ZOOM, Math.min(MAX_PAGE_ZOOM, value)) * 100) / 100
+  return Math.max(MIN_PAGE_ZOOM, Math.min(MAX_PAGE_ZOOM, value))
 }
 
 export function loadPageZoom(storage: Pick<Storage, 'getItem'>): number {
@@ -23,41 +34,48 @@ export function loadPageZoom(storage: Pick<Storage, 'getItem'>): number {
 
 export function savePageZoom(storage: Pick<Storage, 'setItem'>, zoom: number): void {
   try {
-    storage.setItem(PAGE_ZOOM_KEY, String(clampPageZoom(zoom)))
+    // Gesture samples are much finer than a percent. Retain enough precision
+    // to reopen at the same scale, while avoiding a long floating-point string
+    // in a human-inspectable local preference.
+    storage.setItem(PAGE_ZOOM_KEY, String(Math.round(clampPageZoom(zoom) * 1000) / 1000))
   } catch {
     // The current zoom still works when embedded storage is unavailable.
   }
 }
 
 /**
- * Browser-style whole-page magnification shared by the web and Tauri shells.
+ * Browser-style whole-page magnification used by the macOS shell.
  *
- * Keep this inside the webview compositor instead of sending every trackpad
- * sample over Tauri IPC or asking CSS to reflow a newly narrowed viewport. The
- * latest sample is painted once per animation frame, so images, diagrams,
- * chrome, and text magnify together without a staircase of native calls.
+ * WebKit owns drawing, layout, scrolling, focus, and hit-testing, exactly as
+ * it does in a browser. AppKit gesture samples only update the persisted
+ * preference; they never make a competing DOM transform or layout zoom.
  */
 export function createPageZoomController(
   storage: Pick<Storage, 'getItem' | 'setItem'>,
-  target: ZoomStyleTarget,
-  schedule: (callback: FrameRequestCallback) => number = requestAnimationFrame,
+  native: NativeMagnificationPort,
 ): PageZoomController {
   let current = loadPageZoom(storage)
-  let frame: number | undefined
+  void native.enable()
+  void native.setMagnification(current)
 
-  const paint = (): void => {
-    frame = undefined
-    target.style.setProperty('--page-zoom', String(current))
+  const preview = (zoom: number): void => {
+    current = clampPageZoom(zoom)
   }
 
-  target.style.setProperty('--page-zoom', String(current))
+  const remember = (zoom: number): void => {
+    preview(zoom)
+    savePageZoom(storage, current)
+  }
+
+  preview(current)
 
   return {
     current: () => current,
     set: (zoom) => {
-      current = clampPageZoom(zoom)
-      savePageZoom(storage, current)
-      if (frame === undefined) frame = schedule(paint)
+      remember(zoom)
+      void native.setMagnification(current)
     },
+    preview,
+    remember,
   }
 }

@@ -30,16 +30,20 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State, Url};
+use tauri::{AppHandle, Emitter, Manager, State, Url};
 use tauri_plugin_dialog::DialogExt;
 
 #[cfg(target_os = "macos")]
 mod macos_context_menu;
+#[cfg(target_os = "macos")]
+mod macos_zoom;
 
 #[cfg(target_os = "macos")]
 use objc2::{sel, MainThreadMarker};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSApplication;
+#[cfg(target_os = "macos")]
+use tauri::RunEvent;
 
 /// Which commit produced this bundle, captured at compile time by `build.rs`.
 ///
@@ -917,6 +921,41 @@ fn set_native_context_menu_shape(shape: macos_context_menu::NativeContextMenuSha
 #[cfg(not(target_os = "macos"))]
 fn set_native_context_menu_shape(_shape: serde_json::Value) {}
 
+/// Turns on the native macOS browser-style pinch recognizer. The command
+/// crosses no document data; it emits only transient gesture deltas.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn enable_page_magnification(window: tauri::WebviewWindow) -> Result<(), String> {
+    macos_zoom::enable(&window)
+}
+
+/// Other desktop shells load the same TypeScript entrypoint, but do not claim
+/// macOS pinch support. Keeping this transport present lets the shared command
+/// registration compile on every native target without creating a second zoom
+/// implementation outside macOS.
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn enable_page_magnification(_window: tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+/// Restores one persisted native page magnification or returns Actual Size to
+/// the engine default. Values are constrained by the shared UI preference.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn set_page_magnification(window: tauri::WebviewWindow, magnification: f64) -> Result<(), String> {
+    macos_zoom::set_magnification(&window, magnification)
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn set_page_magnification(
+    _window: tauri::WebviewWindow,
+    _magnification: f64,
+) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -950,6 +989,8 @@ pub fn run() {
             perform_macos_text_service,
             set_native_context_menu_shape,
             build_provenance,
+            enable_page_magnification,
+            set_page_magnification,
             watch_note,
             stop_watching_note,
             watch_workspace_folder

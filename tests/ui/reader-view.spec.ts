@@ -17,6 +17,10 @@ const markdown = (page: import('@playwright/test').Page) =>
   page.evaluate(() => window.simplemark!.session.snapshot().markdown)
 const serialized = (page: import('@playwright/test').Page) =>
   page.evaluate(() => window.simplemark!.editor.serialize())
+const pageZoom = (page: import('@playwright/test').Page) =>
+  page.locator('#root').evaluate((element) =>
+    Number((element as HTMLElement).style.getPropertyValue('--page-zoom')),
+  )
 
 test.beforeEach(async ({ page }) => {
   // Clear once, before the first navigation — addInitScript would also wipe
@@ -105,6 +109,9 @@ test.describe('reader layout preferences (D6)', () => {
 
   test('trackpad-style pinch magnifies the whole page without changing reader text size', async ({ page }) => {
     const before = await markdown(page)
+    const diagram = page.locator('.diagram .diagram-render svg').first()
+    await expect(diagram).toBeVisible()
+    const diagramWidthBefore = await diagram.evaluate((element) => element.getBoundingClientRect().width)
     const canceled = await page.locator('.window').evaluate((element) =>
       !element.dispatchEvent(new WheelEvent('wheel', {
         bubbles: true,
@@ -115,8 +122,11 @@ test.describe('reader layout preferences (D6)', () => {
     )
     expect(canceled).toBe(true)
 
-    const pinchedScale = await page.evaluate(() => Number(document.documentElement.style.zoom))
+    await expect.poll(() => pageZoom(page)).toBeGreaterThan(1)
+    const pinchedScale = await pageZoom(page)
     expect(pinchedScale).toBeGreaterThan(1)
+    await expect.poll(() => diagram.evaluate((element) => element.getBoundingClientRect().width))
+      .toBeGreaterThan(diagramWidthBefore)
     expect(await page.evaluate(() =>
       Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
     )).toBe(1)
@@ -124,29 +134,37 @@ test.describe('reader layout preferences (D6)', () => {
 
     await page.reload()
     await page.waitForFunction(() => window.simplemark !== undefined)
-    expect(await page.evaluate(() => Number(document.documentElement.style.zoom))).toBe(pinchedScale)
+    expect(await pageZoom(page)).toBe(pinchedScale)
   })
 
   test('WebKit magnification events use whole-page zoom and Actual Size resets both scales', async ({ page }) => {
-    const scale = await page.locator('.window').evaluate((element) => {
+    await page.locator('.window').evaluate((element) => {
       element.dispatchEvent(new Event('gesturestart', { bubbles: true, cancelable: true }))
       const change = new Event('gesturechange', { bubbles: true, cancelable: true })
       Object.defineProperty(change, 'scale', { value: 1.5 })
       element.dispatchEvent(change)
       element.dispatchEvent(new Event('gestureend', { bubbles: true, cancelable: true }))
-      return Number(document.documentElement.style.zoom)
     })
-    expect(scale).toBe(1.5)
+    await expect.poll(() => pageZoom(page)).toBe(1.5)
     expect(await page.evaluate(() =>
       Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
     )).toBe(1)
 
     await page.evaluate(() => window.simplemark!.run('zoomIn'))
     await page.evaluate(() => window.simplemark!.run('actualSize'))
-    expect(await page.evaluate(() => Number(document.documentElement.style.zoom))).toBe(1)
+    await expect.poll(() => pageZoom(page)).toBe(1)
     expect(await page.evaluate(() =>
       Number(getComputedStyle(document.documentElement).getPropertyValue('--reader-scale')),
     )).toBe(1)
+  })
+
+  test('Editor Only keeps the document usable at a narrow or highly magnified viewport', async ({ page }) => {
+    await page.evaluate(() => window.simplemark!.run('showEditorOnly'))
+    await page.setViewportSize({ width: 500, height: 760 })
+
+    await expect(page.locator('.workspace-body')).toHaveClass(/navigation-hidden/)
+    await expect(page.locator('.document-surface')).toBeVisible()
+    await expect(page.locator(editor)).toBeVisible()
   })
 
   test('reading width steps the column, document-level', async ({ page }) => {

@@ -23,7 +23,7 @@ describe('native window capabilities', () => {
     expect(capability.windows).toContain('main')
     expect(capability.permissions).toContain('core:window:allow-start-dragging')
     expect(capability.permissions).toContain('core:window:allow-toggle-maximize')
-    expect(capability.permissions).toContain('core:webview:allow-set-webview-zoom')
+    expect(capability.permissions).not.toContain('core:webview:allow-set-webview-zoom')
     expect(capability.permissions).toContain('core:window:allow-set-position')
     expect(capability.permissions).toContain('core:window:allow-set-size')
     expect(capability.permissions).toContain('dialog:allow-save')

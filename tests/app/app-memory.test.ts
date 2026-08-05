@@ -6,7 +6,12 @@ import {
   normaliseUiPreferences,
   saveUiPreferences,
 } from '../../src/app/ui-preferences.js'
-import { clampPageZoom, loadPageZoom, savePageZoom } from '../../src/app/page-zoom.js'
+import {
+  clampPageZoom,
+  createPageZoomController,
+  loadPageZoom,
+  savePageZoom,
+} from '../../src/app/page-zoom.js'
 import {
   loadWindowGeometry,
   normaliseWindowGeometry,
@@ -61,6 +66,29 @@ describe('stable app memory', () => {
     expect(loadPageZoom(storage)).toBe(1.75)
     expect(clampPageZoom(99)).toBe(5)
     expect(clampPageZoom(0)).toBe(0.2)
+  })
+
+  test('coalesces continuous whole-page magnification into one browser frame', () => {
+    const storage = new MemoryStorage()
+    const zoomStyles = new Map<string, string>()
+    const target = { style: { setProperty: (name: string, value: string): void => {
+      zoomStyles.set(name, value)
+    } } }
+    const callbacks: FrameRequestCallback[] = []
+    const controller = createPageZoomController(storage, target, (callback) => {
+      callbacks.push(callback)
+      return callbacks.length
+    })
+
+    controller.set(1.1)
+    controller.set(1.25)
+    controller.set(1.5)
+
+    expect(callbacks).toHaveLength(1)
+    expect(controller.current()).toBe(1.5)
+    callbacks[0]?.(0)
+    expect(zoomStyles.get('--page-zoom')).toBe('1.5')
+    expect(loadPageZoom(storage)).toBe(1.5)
   })
 
   test('restores safe native window geometry and rejects unusable frames', () => {

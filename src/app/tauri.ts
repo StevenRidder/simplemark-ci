@@ -2,7 +2,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 
@@ -29,7 +28,7 @@ import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import { SupersedingOperationQueue } from './superseding-operation-queue.js'
-import { clampPageZoom, loadPageZoom, savePageZoom } from './page-zoom.js'
+import { createPageZoomController } from './page-zoom.js'
 import { loadWindowGeometry, saveWindowGeometry } from './window-geometry.js'
 import { loadActiveCollection, saveActiveCollection } from './workspace-selection.js'
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
@@ -68,20 +67,8 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     await nativeWindow.setPosition(new PhysicalPosition(savedGeometry.x, savedGeometry.y))
     if (savedGeometry.maximized) await nativeWindow.maximize()
   }
-  let pageZoom = loadPageZoom(window.localStorage)
-  const webview = getCurrentWebview()
-  const setPageZoom = (zoom: number): void => {
-    pageZoom = clampPageZoom(zoom)
-    savePageZoom(window.localStorage, pageZoom)
-    void webview.setZoom(pageZoom).catch((error: unknown) => {
-      console.error('Could not set page magnification', error)
-    })
-  }
-  await webview.setZoom(pageZoom)
-  const controller = await startNative(root, {
-    current: () => pageZoom,
-    set: setPageZoom,
-  })
+  const pageZoom = createPageZoomController(window.localStorage, root)
+  const controller = await startNative(root, pageZoom)
   let geometryTimer: ReturnType<typeof setTimeout> | undefined
   const rememberGeometry = (): void => {
     clearTimeout(geometryTimer)

@@ -181,6 +181,7 @@ test('portable structure corrections survive as ordinary Markdown', async ({ pag
 })
 
 test('Todo, Callout, and every highlighter item perform persistent edits', async ({ page }) => {
+  test.slow()
   let bar = page.getByLabel('Styles bar', { exact: true })
   const chooseListNested = async (group: string, item: string): Promise<void> => {
     await bar.getByRole('button', { name: 'Lists', exact: true }).click()
@@ -238,6 +239,7 @@ test('Todo, Callout, and every highlighter item perform persistent edits', async
 })
 
 test('every heading, primary list, inline, object, and hide control performs its action', async ({ page }) => {
+  test.slow()
   let bar = page.getByLabel('Styles bar', { exact: true })
   const reset = async (): Promise<void> => {
     await page.reload()

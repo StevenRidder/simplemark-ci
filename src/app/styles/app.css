@@ -23,7 +23,17 @@ body {
   color: var(--ink);
   font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
-  overflow: hidden;
+  /* Whole-page pinch uses compositor magnification. Transformed overflow is
+     scrollable at high zoom so the page remains navigable instead of clipping. */
+  overflow: auto;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  transform: scale(var(--page-zoom, 1));
+  transform-origin: top left;
+  will-change: transform;
 }
 
 button,
@@ -1654,6 +1664,10 @@ section.editor::-webkit-scrollbar {
     grid-template-columns: minmax(0, 1fr);
   }
   .document-surface { display: none; }
+  /* Editor Only is the escape hatch at every effective viewport size. Browser
+     magnification, a narrow window, or accessibility scaling must never make
+     the open document disappear with no way to zoom it back. */
+  .workspace-body.navigation-hidden .document-surface { display: flex; }
 }
 
 .page {

@@ -187,7 +187,7 @@ test('closing the final visible note leaves a clean no-selection pane', async ({
 
   await expect(notes(page).locator('.note-item')).toHaveCount(0)
   await expect(page.locator('.milkdown .ProseMirror')).toBeEmpty()
-  await expect(page.getByText('No note selected')).toBeVisible()
+  await expect(page.locator('.filename small')).toHaveText('No note selected')
   await expect(page.getByText('Closed note — file remains on disk')).toBeVisible()
 })
 

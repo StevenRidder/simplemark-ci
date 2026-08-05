@@ -148,7 +148,7 @@ test('a file that already contains $$ math opens rendered, and stays $$ on save'
   await page.goto('/')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.getByRole('button', { name: 'Open file' }).click()
-  await expect(page.locator('.filename')).toContainText('math-note.md')
+  await expect(page.locator('.filename-title')).toHaveText('math-note')
 
   // The parse direction: math arriving from a file, not from a paste.
   await expect(page.locator('.math-block .katex')).toBeVisible()

@@ -8,6 +8,7 @@
  */
 export { firstByteDifference } from './source/byte-diff.js'
 export { buildSourceMap, emitDocument } from './source/source-map.js'
+export { suggestedMarkdownFileName } from './document-title.js'
 export {
   MERMAID_SIGNATURE,
   isStandaloneBlockPaste,

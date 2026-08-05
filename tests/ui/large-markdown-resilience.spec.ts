@@ -47,7 +47,7 @@ test('opens a table-heavy Markdown file promptly without losing its source', asy
 
   const startedAt = Date.now()
   await page.getByRole('button', { name: 'Open file' }).click()
-  await expect(page.locator('.filename')).toContainText('generated-financial-report.md')
+  await expect(page.locator('.filename-title')).toHaveText('generated-financial-report')
   await expect(page.locator(`${EDITOR} h1`)).toContainText('Generated financial report')
   await expect(page.locator('[data-deferred-table]')).toHaveCount(98)
   const firstVirtualTable = page.locator('[data-deferred-table]').first()

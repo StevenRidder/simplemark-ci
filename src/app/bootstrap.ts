@@ -64,8 +64,8 @@ export interface AppComposition {
   readonly editor: MilkdownEditor
   /** Tears down the editor and presentation observers before remounting. */
   destroy(): Promise<void>
-  /** Flushes any pending debounced save. */
-  save(): Promise<void>
+  /** Flushes any pending debounced save. `false` leaves the current document in place. */
+  save(): Promise<boolean>
   /** Shows a truthful platform or file-reference limitation in the shell. */
   setStatus(state: SaveState, message: string): void
   /**
@@ -109,6 +109,18 @@ export interface ComposeOptions {
   readonly autosaveMs?: number
   /** Honest confirmation for platforms that save a downloaded replacement. */
   readonly saveSuccessMessage?: string
+  /**
+   * Persists an otherwise in-memory new document after an explicit Save. A
+   * cancelled destination picker returns false, so callers never throw the
+   * draft away while switching notes or closing the window.
+   */
+  readonly onSaveDraft?: (markdown: string) => Promise<boolean>
+  /**
+   * Renames the current durable document. The platform owns the filesystem
+   * operation; the shared composition only flushes the current transaction
+   * before asking it to do so.
+   */
+  readonly onRenameDocument?: (name: string) => Promise<boolean>
   /**
    * Whether the optional styles bar starts visible when nothing is stored yet.
    * The native shell passes `false`: its menubar already carries every command,
@@ -452,14 +464,43 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   const autosaveMs = options.autosaveMs ?? 900
-  const save = async (): Promise<void> => {
+  const save = async (): Promise<boolean> => {
     clearTimeout(saveTimer)
+
+    if (options.onSaveDraft !== undefined) {
+      try {
+        const saved = await options.onSaveDraft(session.snapshot().markdown)
+        if (!saved) chrome.setStatus('dirty', 'Not saved')
+        return saved
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        chrome.setStatus('error', `Not saved — ${message}`)
+        return false
+      }
+    }
+
     const result = await session.save()
     if (result.ok) {
       chrome.setStatus('saved', options.saveSuccessMessage)
-      return
+      return true
     }
     chrome.setStatus('error', `Not saved — ${result.reason}`)
+    return false
+  }
+
+  const renameDocument = async (name: string): Promise<boolean> => {
+    const result = await session.save()
+    if (!result.ok) {
+      chrome.setStatus('error', `Not renamed — ${result.reason}`)
+      return false
+    }
+    try {
+      return await options.onRenameDocument?.(name) ?? false
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      chrome.setStatus('error', `Not renamed — ${message}`)
+      return false
+    }
   }
 
   chrome = createWindowChrome({
@@ -480,6 +521,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       saveUiPreferences(storage, next)
     },
     onSave: () => void save(),
+    ...(options.onRenameDocument === undefined ? {} : { onRenameDocument: renameDocument }),
     onInsertAsset: ports.assets === undefined
       ? undefined
       : () => void insertAsset(),
@@ -575,7 +617,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 
       chrome.setStatus('dirty')
       chrome.refreshStatistics()
-      if (autosaveMs > 0) {
+      if (autosaveMs > 0 && options.onSaveDraft === undefined) {
         // Debounced save on pause, never per keystroke (DESIGN.md §8).
         clearTimeout(saveTimer)
         saveTimer = setTimeout(() => void save(), autosaveMs)

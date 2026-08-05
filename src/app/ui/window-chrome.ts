@@ -75,6 +75,8 @@ export interface WindowChromeOptions {
   readonly openFileUnavailableReason?: string | undefined
   /** Saves the current document without moving focus away from the canvas. */
   readonly onSave: () => void
+  /** Renames the current file after the shell has flushed its document state. */
+  readonly onRenameDocument?: (name: string) => Promise<boolean>
   /**
    * The document's headings, read fresh each time the temporary contents
    * popover opens (EDITOR-3). The chrome never touches the editor itself.
@@ -1024,6 +1026,11 @@ function installDocumentScrollIndicator(
   }
 }
 
+/** A document name is a filename in the title surfaces, not a Markdown suffix. */
+function documentTitle(name: string): string {
+  return name.replace(/\.(md|markdown)$/iu, '') || 'Untitled'
+}
+
 export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   const isMacOS = options.chromeMode === 'macos'
   let uiPreferences = options.uiPreferences
@@ -1142,10 +1149,69 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   const filename = document.createElement('div')
   filename.className = 'filename'
-  filename.append(options.fileName)
+  const filenameButton = document.createElement('button')
+  filenameButton.type = 'button'
+  filenameButton.className = 'filename-title'
+  filenameButton.textContent = documentTitle(options.fileName)
+  filenameButton.setAttribute('aria-label', `Document name: ${documentTitle(options.fileName)}`)
+  filenameButton.disabled = options.onRenameDocument === undefined
+  filenameButton.title = options.onRenameDocument === undefined
+    ? documentTitle(options.fileName)
+    : 'Double-click to rename'
+  filename.append(filenameButton)
   const path = document.createElement('small')
   path.textContent = options.filePath
   filename.append(path)
+
+  const beginTitleRename = (): void => {
+    if (options.onRenameDocument === undefined || filenameButton.disabled) return
+    if (filename.querySelector('.filename-input') !== null) return
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'filename-input'
+    input.value = documentTitle(options.fileName)
+    input.setAttribute('aria-label', 'Rename document')
+    filenameButton.replaceWith(input)
+    input.focus()
+    input.select()
+
+    let committing = false
+    const cancel = (): void => {
+      if (input.isConnected) input.replaceWith(filenameButton)
+      filenameButton.focus()
+    }
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        cancel()
+        return
+      }
+      if (event.key !== 'Enter') return
+      event.preventDefault()
+      if (input.value.trim() === '') {
+        cancel()
+        return
+      }
+      committing = true
+      input.disabled = true
+      void options.onRenameDocument!(input.value).then((renamed) => {
+        if (!renamed) cancel()
+      })
+    })
+    input.addEventListener('blur', () => {
+      if (!committing) cancel()
+    })
+  }
+  filenameButton.addEventListener('dblclick', (event) => {
+    event.preventDefault()
+    beginTitleRename()
+  })
+  filenameButton.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    beginTitleRename()
+  })
 
   // ---- editing tools ----
   const editTools = document.createElement('div')
@@ -2084,6 +2150,51 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         select.setAttribute('aria-current', note.id === workspace.activeNoteId ? 'page' : 'false')
         const title = document.createElement('strong')
         title.textContent = note.title
+        if (options.onRenameDocument !== undefined && note.id === workspace.activeNoteId) {
+          title.classList.add('renameable')
+          title.title = 'Double-click to rename'
+          title.addEventListener('dblclick', (event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            if (item.querySelector('.note-rename') !== null) return
+
+            const input = document.createElement('input')
+            input.type = 'text'
+            input.className = 'note-rename'
+            input.value = note.title
+            input.setAttribute('aria-label', `Rename ${note.title}`)
+            item.append(input)
+            input.focus()
+            input.select()
+
+            let committing = false
+            const cancel = (): void => {
+              input.remove()
+              select.focus()
+            }
+            input.addEventListener('keydown', (renameEvent) => {
+              if (renameEvent.key === 'Escape') {
+                renameEvent.preventDefault()
+                cancel()
+                return
+              }
+              if (renameEvent.key !== 'Enter') return
+              renameEvent.preventDefault()
+              if (input.value.trim() === '') {
+                cancel()
+                return
+              }
+              committing = true
+              input.disabled = true
+              void options.onRenameDocument!(input.value).then((renamed) => {
+                if (!renamed) cancel()
+              })
+            })
+            input.addEventListener('blur', () => {
+              if (!committing) cancel()
+            })
+          })
+        }
         const preview = document.createElement('span')
         preview.textContent = note.preview
         const updated = document.createElement('time')

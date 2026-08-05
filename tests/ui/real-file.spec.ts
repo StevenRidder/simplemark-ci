@@ -65,7 +65,7 @@ async function openTheFile(page: import('@playwright/test').Page): Promise<void>
   await page.goto('/')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.getByRole('button', { name: 'Open file' }).click()
-  await expect(page.locator('.filename')).toContainText('renderers-copy.md')
+  await expect(page.locator('.filename-title')).toHaveText('renderers-copy')
 }
 
 test.beforeEach(async ({ page }) => {
@@ -197,7 +197,7 @@ test('cancelling the picker leaves the current document untouched', async ({ pag
   await page.waitForFunction(() => window.simplemark !== undefined)
 
   await page.getByRole('button', { name: 'Open file' }).click()
-  await expect(page.locator('.filename')).toContainText('architecture.md')
+  await expect(page.locator('.filename-title')).toHaveText('architecture')
   await expect(page.locator(`${EDITOR} h1`)).toContainText('The first useful proof')
 })
 
@@ -227,7 +227,7 @@ test('the Safari fallback opens a file and saves an explicitly downloaded replac
     mimeType: 'text/markdown',
     buffer: Buffer.from('# Safari document\n\nOpened without a native file handle.\n'),
   })
-  await expect(page.locator('.filename')).toContainText('safari-note.md')
+  await expect(page.locator('.filename-title')).toHaveText('safari-note')
   await expect(page.locator('.filename')).toContainText('Save downloads a replacement')
   await expect(page.locator(`${EDITOR} h1`)).toContainText('Safari document')
 
@@ -252,6 +252,6 @@ test('the middle-panel Open Note control uses the real file-open path', async ({
     buffer: Buffer.from('# Opened from the middle panel\n\nThe same portable file path is reused.\n'),
   })
 
-  await expect(page.locator('.filename')).toContainText('middle-panel-open.md')
+  await expect(page.locator('.filename-title')).toHaveText('middle-panel-open')
   await expect(page.locator(`${EDITOR} h1`)).toContainText('Opened from the middle panel')
 })

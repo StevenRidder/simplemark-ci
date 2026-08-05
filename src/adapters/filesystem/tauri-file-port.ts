@@ -76,6 +76,25 @@ export class TauriFilePort implements FilePort {
     await this.invoke<void>('save_note', { handle, bytes: encodeBase64(bytes) })
   }
 
+  /**
+   * Lets the native Save panel choose the first durable location for an
+   * in-memory new document. Cancelling is an ordinary result: the draft stays
+   * in the shared document session and no file has been created.
+   */
+  async saveNew(suggestedName: string, bytes: Uint8Array): Promise<OpenedDocument | null> {
+    const note = await this.invoke<NativeNote | null>('save_new_note', {
+      suggestedName,
+      bytes: encodeBase64(bytes),
+    })
+    return note === null ? null : this.#adopt(note)
+  }
+
+  /** Renames one open Markdown file without ever replacing an existing note. */
+  async rename(handle: string, name: string): Promise<OpenedDocument> {
+    const note = await this.invoke<NativeNote>('rename_note', { handle, name })
+    return this.#adopt(note)
+  }
+
   /** Asks the native side to report when somebody else writes this note. */
   async watch(handle: string): Promise<void> {
     await this.invoke<void>('watch_note', { handle })

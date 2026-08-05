@@ -41,7 +41,7 @@ async function openNote(page: import('@playwright/test').Page): Promise<void> {
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.getByRole('button', { name: 'Open file' }).click()
-  await expect(page.locator('.filename')).toContainText('quarterly.md')
+  await expect(page.locator('.filename-title')).toHaveText('quarterly')
 }
 
 const clipboardText = (page: import('@playwright/test').Page): Promise<string> =>

@@ -150,6 +150,49 @@ button[disabled] {
   min-width: 135px;
 }
 
+.filename-title {
+  overflow: hidden;
+  max-width: 260px;
+  border: 0;
+  border-radius: 4px;
+  padding: 1px 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filename-title:not(:disabled) {
+  cursor: text;
+}
+
+.filename-title:not(:disabled):hover,
+.filename-title:not(:disabled):focus-visible {
+  background: color-mix(in srgb, var(--soft) 82%, transparent);
+  outline: none;
+}
+
+.filename-input,
+.note-rename {
+  border: 1px solid color-mix(in srgb, var(--accent) 62%, var(--line));
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.filename-input {
+  box-sizing: border-box;
+  width: min(260px, 100%);
+  padding: 1px 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 .filename small {
   display: block;
   font-size: 9px;
@@ -1425,6 +1468,24 @@ section.editor::-webkit-scrollbar {
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.note-select strong.renameable {
+  cursor: text;
+}
+
+.note-rename {
+  position: absolute;
+  z-index: 2;
+  top: 9px;
+  right: 42px;
+  left: 11px;
+  box-sizing: border-box;
+  width: calc(100% - 53px);
+  padding: 1px 3px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .note-select span {

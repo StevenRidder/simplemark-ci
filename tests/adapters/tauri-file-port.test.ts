@@ -99,6 +99,43 @@ describe('TauriFilePort', () => {
     expect(calls[0]?.args).toEqual({ handle: '/notes/a.md', bytes: encode(AWKWARD) })
   })
 
+  it('asks native Save As to persist a new draft and adopts its selected path', async () => {
+    const saved = { handle: '/notes/Project plan.md', name: 'Project plan.md', bytes: encode(AWKWARD) }
+    const { invoke, calls } = fakeInvoke({ save_new_note: saved })
+    const port = new TauriFilePort(invoke)
+
+    await expect(port.saveNew('Project plan.md', AWKWARD)).resolves.toEqual({
+      handle: saved.handle,
+      name: saved.name,
+      bytes: AWKWARD,
+    })
+    expect(calls).toEqual([{
+      command: 'save_new_note',
+      args: { suggestedName: 'Project plan.md', bytes: encode(AWKWARD) },
+    }])
+  })
+
+  it('keeps a new draft in memory when the Save As panel is cancelled', async () => {
+    const { invoke } = fakeInvoke({ save_new_note: null })
+    await expect(new TauriFilePort(invoke).saveNew('Untitled.md', AWKWARD)).resolves.toBeNull()
+  })
+
+  it('renames through native code and adopts the new opaque handle', async () => {
+    const renamed = { handle: '/notes/Renamed.md', name: 'Renamed.md', bytes: encode(AWKWARD) }
+    const { invoke, calls } = fakeInvoke({ rename_note: renamed })
+    const port = new TauriFilePort(invoke)
+
+    await expect(port.rename('/notes/original.md', 'Renamed')).resolves.toEqual({
+      handle: renamed.handle,
+      name: renamed.name,
+      bytes: AWKWARD,
+    })
+    expect(calls).toEqual([{
+      command: 'rename_note',
+      args: { handle: '/notes/original.md', name: 'Renamed' },
+    }])
+  })
+
   it('round-trips a note larger than one encoding chunk', async () => {
     // The encoder walks the array in 0x8000 blocks; a note bigger than one
     // block is where a naive fromCharCode(...bytes) would throw.

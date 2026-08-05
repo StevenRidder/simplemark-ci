@@ -35,7 +35,8 @@ test.beforeEach(async ({ page }) => {
 test('renders the approved wireframe chrome', async ({ page }) => {
   await expect(page.locator('.window')).toBeVisible()
   await expect(page.locator('.titlebar .lights')).toHaveCount(0)
-  await expect(page.locator('.filename')).toContainText('architecture.md')
+  await expect(page.locator('.filename-title')).toHaveText('architecture')
+  await expect(page.locator('.filename-title')).not.toContainText('.md')
   await expect(page.locator('.status')).toHaveAttribute('data-state', 'saved')
   await expect(page.getByRole('button', { name: 'Save file' })).toBeEnabled()
 
@@ -122,7 +123,7 @@ test('workspace controls are real while collaboration controls stay disabled', a
 test('switches notes, filters the local index, creates a note, and can focus the page', async ({ page }) => {
   await expect(page.getByLabel('Library')).toContainText('Recent Notes3')
   await page.getByRole('button', { name: 'field-notes', exact: true }).click()
-  await expect(page.locator('.filename')).toContainText('field-notes.md')
+  await expect(page.locator('.filename-title')).toHaveText('field-notes')
   await expect(page.locator(`${editor} h1`)).toContainText('Field notes')
 
   await page.getByRole('button', { name: 'Search' }).click()
@@ -140,7 +141,7 @@ test('switches notes, filters the local index, creates a note, and can focus the
   await expect(page.locator('.workspace-body')).toHaveClass(/navigation-hidden/)
   await page.getByRole('button', { name: 'Document list' }).click()
   await page.getByRole('button', { name: 'New note' }).click()
-  await expect(page.locator('.filename')).toContainText('new-note-4.md')
+  await expect(page.locator('.filename-title')).toHaveText('new-note-4')
   await expect(page.locator(`${editor} h1`)).toContainText('New note')
 })
 

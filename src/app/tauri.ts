@@ -20,6 +20,7 @@ import { TauriDocumentLinkPort } from '../adapters/filesystem/tauri-document-lin
 import { TauriChartDataReader } from '../adapters/filesystem/tauri-chart-data-reader.js'
 import { VegaLiteRenderer } from '../adapters/renderers/vega-lite-renderer.js'
 import type { FilePort, WorkspaceCatalog } from '../application/index.js'
+import { suggestedMarkdownFileName } from '../domain/index.js'
 import { installNativeMenu } from './ui/native-menu.js'
 import type { MacosTextServiceId } from './ui/native-menu.js'
 import { isCommit, isRepository, readProvenance } from './build-provenance.js'
@@ -234,6 +235,7 @@ async function startNative(
       filePath: opened.handle,
       pageZoom,
       onOpenFile: openFromPicker,
+      onRenameDocument: renameActiveDocument,
       workspace: catalogWorkspace(catalog, opened.handle, pins, {
         select: selectNote,
         create: createNote,
@@ -268,7 +270,7 @@ async function startNative(
     current.setStatus('saved', `Opening ${path.split('/').pop() ?? 'note'}…`)
     void operations.enqueueLatest('note-selection', async (isCurrent) => {
       try {
-        await current.save()
+        if (!(await current.save())) return
         if (!isCurrent()) return
         const port = new TauriFilePort(invoke)
         const opened = await port.openAt(path)
@@ -303,7 +305,7 @@ async function startNative(
       collections.addFolder(catalog)
       persistFolders()
       await watchFolder(catalog.handle)
-      await current.save()
+      if (!(await current.save())) return
       const next = catalog.notes.find((note) => note.handle === activeHandle) ?? catalog.notes[0]!
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(next.handle)
@@ -311,17 +313,59 @@ async function startNative(
     })
   }
 
-  const createNote = (): void => {
-    if (workspaceHandle === undefined) return
-    void enqueue(async () => {
-      await current.save()
-      const created = await catalogPort.create(workspaceHandle!)
-      if (activeCollectionId !== 'recent') {
-        collections.addFolder(await catalogPort.listAround(created.handle))
+  const saveDraft = async (markdown: string): Promise<boolean> => {
+    const port = new TauriFilePort(invoke)
+    const opened = await port.saveNew(
+      suggestedMarkdownFileName(markdown),
+      new TextEncoder().encode(markdown),
+    )
+    if (opened === null) return false
+    await install(port, opened, 'recent')
+    current.setStatus('saved', `Saved ${opened.name.replace(/\.(md|markdown)$/iu, '')}`)
+    return true
+  }
+
+  const renameActiveDocument = async (name: string): Promise<boolean> => {
+    const previousHandle = activeHandle
+    if (previousHandle === undefined) return false
+    const port = new TauriFilePort(invoke)
+    const opened = await port.rename(previousHandle, name)
+    collections.forgetRecent(previousHandle)
+    persistRecentNotes()
+    for (const folder of collections.folders()) {
+      if (folder.notes.some((note) => note.handle === previousHandle)) {
+        collections.addFolder(await catalogPort.listFolder(folder.handle))
       }
-      const port = new TauriFilePort(invoke)
-      const opened = await port.openAt(created.handle)
-      await install(port, opened, activeCollectionId)
+    }
+    await install(port, opened, activeCollectionId)
+    current.setStatus('saved', `Renamed to ${opened.name.replace(/\.(md|markdown)$/iu, '')}`)
+    return true
+  }
+
+  const createNote = (): void => {
+    void enqueue(async () => {
+      if (!(await current.save())) return
+      stopWatching?.()
+      stopWatching = undefined
+      await invoke('stop_watching_note')
+      activeHandle = undefined
+      workspaceHandle = undefined
+      activeCollectionId = 'recent'
+      saveActiveCollection(window.localStorage, activeCollectionId)
+      await current.destroy()
+      current = await mount(root, new FixtureFilePort('Untitled.md', '# \n'), {
+        filePath: 'Not saved',
+        pageZoom,
+        onOpenFile: openFromPicker,
+        onSaveDraft: saveDraft,
+        workspace: nativeWorkspace('Untitled.md', {
+          create: createNote,
+          addFolder,
+          selectCollection,
+          folders: collections.folders(),
+        }),
+      })
+      current.setStatus('dirty', 'Not saved')
     })
   }
 
@@ -339,7 +383,7 @@ async function startNative(
   }
 
   const duplicateNote = (handle: string): Promise<void> => enqueue(async () => {
-    await current.save()
+    if (!(await current.save())) return
     const duplicate = await invoke<{ readonly handle: string }>('duplicate_note', { handle })
     if (activeCollectionId !== 'recent') {
       collections.addFolder(await catalogPort.listFolder(activeCollectionId))
@@ -350,7 +394,7 @@ async function startNative(
   })
 
   const exportNote = (handle: string): Promise<void> => enqueue(async () => {
-    if (handle === activeHandle) await current.save()
+    if (handle === activeHandle && !(await current.save())) return
     const exported = await invoke<boolean>('export_note', { handle })
     if (exported) current.setStatus('saved', 'Exported')
   })
@@ -364,7 +408,7 @@ async function startNative(
     const before = collections.collection(activeCollectionId, workspaceHandle ?? handle)
     const closedIndex = before.notes.findIndex((note) => note.handle === handle)
     const wasActive = handle === activeHandle
-    if (wasActive) await current.save()
+    if (wasActive && !(await current.save())) return
 
     if (activeCollectionId !== 'recent') {
       collections.hideFromFolders(handle)
@@ -430,7 +474,7 @@ async function startNative(
   })
 
   const trashNote = (handle: string): Promise<void> => enqueue(async () => {
-    if (handle === activeHandle) await current.save()
+    if (handle === activeHandle && !(await current.save())) return
     current.setStatus('saved', 'Moving to Trash…')
     await invoke('trash_note', { handle })
     collections.forgetRecent(handle)
@@ -468,6 +512,7 @@ async function startNative(
       pageZoom,
       onOpenFile: openFromPicker,
       workspace: nativeWorkspace(WELCOME_NAME, {
+        create: createNote,
         addFolder,
         selectCollection,
         folders: collections.folders(),
@@ -488,7 +533,7 @@ async function startNative(
         throw error
       }
 
-      await current.save()
+      if (!(await current.save())) return
       await install(port, opened, 'recent')
     })
   }
@@ -531,6 +576,7 @@ async function startNative(
     pageZoom,
     onOpenFile: openFromPicker,
     workspace: nativeWorkspace(WELCOME_NAME, {
+      create: createNote,
       addFolder,
       selectCollection,
       folders: collections.folders(),
@@ -578,6 +624,7 @@ async function startNative(
           pageZoom,
           onOpenFile: openFromPicker,
           workspace: nativeWorkspace(WELCOME_NAME, {
+            create: createNote,
             addFolder,
             selectCollection,
             folders: collections.folders(),
@@ -586,7 +633,7 @@ async function startNative(
         return
       }
 
-      await current.save()
+      if (!(await current.save())) return
       const activeCatalog = collections.collection(activeCollectionId, activeHandle)
       const next = activeCatalog.notes.find((note) => note.handle === activeHandle)
         ?? activeCatalog.notes[0]
@@ -602,7 +649,7 @@ async function startNative(
     openPath: (path) => enqueue(async () => {
       // Finder has already chosen the destination, so flush first. This also
       // makes reopening the same file read the bytes we just committed.
-      await current.save()
+      if (!(await current.save())) return
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(path)
       await install(port, opened, 'recent')
@@ -616,6 +663,8 @@ async function mount(
   options: {
     filePath: string
     onOpenFile: () => void
+    onSaveDraft?: (markdown: string) => Promise<boolean>
+    onRenameDocument?: (name: string) => Promise<boolean>
     workspace: WorkspaceOptions
     pageZoom: PageZoomController
   },
@@ -652,6 +701,8 @@ async function mount(
     // interactive wireframe; it is not a second menu row.
     stylesBarDefault: true,
     onOpenFile: options.onOpenFile,
+    ...(options.onSaveDraft === undefined ? {} : { onSaveDraft: options.onSaveDraft }),
+    ...(options.onRenameDocument === undefined ? {} : { onRenameDocument: options.onRenameDocument }),
     // A huge virtual table goes through Tauri's native pasteboard bridge.
     // WKWebView's navigator.clipboard can synchronously stall while it
     // marshals a large payload, defeating the renderer's safety guarantee.
@@ -766,6 +817,7 @@ async function checkForUpdate(provenance: BuildProvenance | undefined): Promise<
 function nativeWorkspace(
   fileName: string,
   actions?: {
+    readonly create: () => void
     readonly addFolder: () => void
     readonly selectCollection: (id: string) => void
     readonly folders: readonly WorkspaceCatalog[]
@@ -778,6 +830,7 @@ function nativeWorkspace(
     activeNoteId: fileName,
     recentNotesCount: 0,
     ...(actions === undefined ? {} : {
+      onCreateNote: actions.create,
       onAddFolder: actions.addFolder,
       onSelectCollection: actions.selectCollection,
       folders: actions.folders.map((folder) => ({

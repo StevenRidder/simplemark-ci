@@ -20,7 +20,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
@@ -357,6 +357,76 @@ fn is_markdown(path: &Path) -> bool {
         })
 }
 
+/// Validates a person-supplied filename and supplies the Markdown suffix when
+/// it is omitted. Paths are deliberately not accepted here: Save and Rename
+/// must never turn a filename field into authority to write somewhere else.
+fn markdown_file_name(name: &str) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("A note needs a name".to_string());
+    }
+    if name.contains('/') || name.contains('\\') || name.contains(':') {
+        return Err("A note name cannot contain a path separator".to_string());
+    }
+    let mut components = Path::new(name).components();
+    let component = components
+        .next()
+        .ok_or_else(|| "A note needs a name".to_string())?;
+    if components.next().is_some() || !matches!(component, Component::Normal(_)) {
+        return Err("A note name must be a filename, not a path".to_string());
+    }
+    let extension = Path::new(name).extension().and_then(|value| value.to_str());
+    match extension {
+        None => Ok(format!("{name}.md")),
+        Some(extension)
+            if extension.eq_ignore_ascii_case("md") || extension.eq_ignore_ascii_case("markdown") =>
+        {
+            Ok(name.to_string())
+        }
+        Some(_) => Err("Notes must use a .md or .markdown filename".to_string()),
+    }
+}
+
+/// Uses the native Save panel's directory choice but keeps the name a
+/// Markdown filename. A filter alone is only a convenience in Finder, not a
+/// file-safety guarantee.
+fn markdown_destination(path: PathBuf) -> Result<PathBuf, String> {
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| format!("{} is not a file destination", path.display()))?
+        .to_string_lossy();
+    let name = markdown_file_name(&file_name)?;
+    Ok(path.with_file_name(name))
+}
+
+/// Creates a new file with bytes exactly once. `create_new` is the overwrite
+/// guard — no preflight `exists()` check can make a collision safe.
+fn write_new_note(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                format!(
+                    "A note named {} already exists — choose another name",
+                    path.file_name()
+                        .map(|name| name.to_string_lossy())
+                        .unwrap_or_else(|| path.display().to_string().into())
+                )
+            } else {
+                format!("Could not create {}: {error}", path.display())
+            }
+        })?;
+
+    if let Err(error) = file.write_all(bytes).and_then(|()| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(path);
+        return Err(format!("Could not finish {}: {error}", path.display()));
+    }
+    Ok(())
+}
+
 fn millis(time: Result<SystemTime, std::io::Error>) -> u64 {
     time.ok()
         .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
@@ -465,6 +535,78 @@ fn create_note(workspace_handle: String) -> Result<OpenedNote, String> {
         }
     }
     Err("Could not choose a unique Untitled note name".to_string())
+}
+
+/// First save for an in-memory note. The operating system, not a remembered
+/// folder, owns the destination choice; cancelling leaves the draft untouched.
+#[tauri::command]
+async fn save_new_note(
+    app: AppHandle,
+    suggested_name: String,
+    bytes: String,
+) -> Result<Option<OpenedNote>, String> {
+    let suggested_name = markdown_file_name(&suggested_name)?;
+    let decoded = BASE64
+        .decode(bytes.as_bytes())
+        .map_err(|error| format!("Rejected a malformed new-note payload: {error}"))?;
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter("Markdown", &["md", "markdown"])
+        .set_file_name(suggested_name)
+        .blocking_save_file();
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let destination = markdown_destination(
+        picked
+            .into_path()
+            .map_err(|error| format!("That save destination has no writable path: {error}"))?,
+    )?;
+    write_new_note(&destination, &decoded)?;
+    read_note(&destination).map(Some)
+}
+
+/// Renames one note without relying on `rename`'s platform-specific overwrite
+/// behaviour. Linking the old file to the requested new name first makes a
+/// collision fail safely before the source is removed.
+#[tauri::command]
+fn rename_note(handle: String, name: String) -> Result<OpenedNote, String> {
+    let source = PathBuf::from(&handle);
+    let directory = source
+        .parent()
+        .ok_or_else(|| format!("{handle} has no parent folder"))?;
+    let destination = directory.join(markdown_file_name(&name)?);
+    if source == destination {
+        return read_note(&source);
+    }
+
+    fs::hard_link(&source, &destination).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            format!(
+                "A note named {} already exists — choose another name",
+                destination
+                    .file_name()
+                    .map(|value| value.to_string_lossy())
+                    .unwrap_or_else(|| destination.display().to_string().into())
+            )
+        } else {
+            format!(
+                "Could not rename {} to {}: {error}",
+                source.display(),
+                destination.display()
+            )
+        }
+    })?;
+    if let Err(error) = fs::remove_file(&source) {
+        let _ = fs::remove_file(&destination);
+        return Err(format!(
+            "Could not finish renaming {} to {}: {error}",
+            source.display(),
+            destination.display()
+        ));
+    }
+    read_note(&destination)
 }
 
 #[tauri::command]
@@ -1008,6 +1150,8 @@ pub fn run() {
             list_workspace,
             list_workspace_folder,
             create_note,
+            save_new_note,
+            rename_note,
             duplicate_note,
             export_note,
             trash_note,
@@ -1371,6 +1515,48 @@ mod tests {
             fs::read(directory.path().join("Untitled 2.md")).unwrap(),
             b"# New note\n\n"
         );
+    }
+
+    #[test]
+    fn new_note_names_are_markdown_filenames_not_paths() {
+        assert_eq!(markdown_file_name("Project plan").unwrap(), "Project plan.md");
+        assert_eq!(markdown_file_name("Project.markdown").unwrap(), "Project.markdown");
+        assert!(markdown_file_name("../outside.md").is_err());
+        assert!(markdown_file_name("Project.txt").is_err());
+    }
+
+    #[test]
+    fn first_save_uses_create_new_and_never_replaces_an_existing_note() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("Plan.md");
+        fs::write(&destination, b"keep me").unwrap();
+
+        let error = write_new_note(&destination, b"# replacement\n").unwrap_err();
+
+        assert!(error.contains("already exists"));
+        assert_eq!(fs::read(&destination).unwrap(), b"keep me");
+    }
+
+    #[test]
+    fn rename_preserves_bytes_and_refuses_to_replace_an_existing_note() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("draft.md");
+        let occupied = directory.path().join("taken.md");
+        fs::write(&source, b"# Exact\r\n\r\nbytes").unwrap();
+        fs::write(&occupied, b"do not replace").unwrap();
+
+        let collision = match rename_note(source.display().to_string(), "taken".to_string()) {
+            Ok(_) => panic!("renaming onto an existing note must fail"),
+            Err(error) => error,
+        };
+        assert!(collision.contains("already exists"));
+        assert_eq!(fs::read(&source).unwrap(), b"# Exact\r\n\r\nbytes");
+        assert_eq!(fs::read(&occupied).unwrap(), b"do not replace");
+
+        let renamed = rename_note(source.display().to_string(), "renamed".to_string()).unwrap();
+        assert_eq!(renamed.name, "renamed.md");
+        assert!(!source.exists());
+        assert_eq!(fs::read(directory.path().join("renamed.md")).unwrap(), b"# Exact\r\n\r\nbytes");
     }
 
     #[test]

@@ -45,7 +45,7 @@ mini-applications or exposing a renderer cockpit.
 | **Graphs** ✅ | [`@hpcc-js/wasm-graphviz`](https://github.com/hpcc-systems/hpcc-js-wasm) | ` ```dot ` source | 801 KB lazy chunk | verified | ✓✓ |
 | **Math** ✅ | [KaTeX](https://katex.org/) | `$$…$$` (display) | ~255 KB + fonts | core | ✓✓ |
 | **Code** | [Shiki](https://shiki.style/) | fenced code + lang | ~400 KB lazy | core | ✓ |
-| **Charts** | [Vega-Lite](https://vega.github.io/vega-lite/) | ` ```vega-lite ` JSON spec | ~1.1 MB | verified | ✓✓ |
+| **Charts** ✅ | [Vega-Lite](https://vega.github.io/vega-lite/) | ` ```vega-lite ` JSON spec | 797 KB lazy chunk | verified | ✓✓ |
 | **Mind maps** | [Markmap](https://markmap.js.org/) | the note's own headings | ~180 KB | verified | ✓ (implicit) |
 
 Everything in this table stores **human- and agent-editable source in the note**, renders live, and degrades to legible text in any other Markdown reader.
@@ -74,7 +74,7 @@ An agent writes forty lines of declarative JSON with the data inline. You get an
 
 Compare that with an agent producing a PNG: you cannot diff it, cannot amend it, cannot see what data it claims. The spec is the artifact.
 
-**Constraint:** inline data only, capped at 256 KB. `"data": {"url": …}` is stripped — a note must never fetch from the network (`TECH-SPEC.md` §5). Larger datasets reference a CSV attachment, loaded by the host and injected as values.
+**Constraint:** the note never fetches from the network (`TECH-SPEC.md` §5). Inline `data.values` is the primary path. A `"data": {"url": …}` naming a *local* file resolves against the note exactly as a Markdown link does and is loaded by the host; a remote one is refused with a message rather than stripped, because silently removing the data would leave a chart that renders empty and looks correct. See §4.65 for what shipped.
 
 ### 2.2 Why Markmap is unusual and worth it
 
@@ -232,6 +232,73 @@ math, and a double-click returns to the formula source. Footnotes use ordinary
 `[^n]` references and definitions; underline uses portable inline `<u>` HTML;
 wiki links stay readable as `[[Note]]` and resolve to a relative `Note.md`.
 
+## 4.65 Vega-Lite charts (shipped)
+
+Magic-paste, through the same `DiagramRenderer` port and NodeView as everything
+else: rendered block, editable source, visible failure.
+
+**There are two codegen paths, and the second one is the trap.**
+
+*Expressions.*
+Vega compiles spec expressions with the `Function` constructor. The packaged CSP
+is `default-src 'self'` with no `'unsafe-eval'`, so that path fails in the
+installed app — *and passes in dev, vitest and Playwright*, none of which
+enforce the packaged policy. Vega's answer is to parse to an AST and evaluate
+with `vega-interpreter`. Both paths were measured against the packaged policy in
+`spike/vega-csp` **before** the renderer was written: codegen refused with
+"Evaluating a string as JavaScript violates the following Content Security
+Policy directive"; the interpreter drew the chart. Keep the spike — it is the
+regression guard for the day someone simplifies the parse call.
+
+*Data ingestion.* `vega-interpreter` covers expressions and **nothing else**.
+Vega reads a `data.url` through d3-dsv's `parse()`, which compiles a row
+constructor with `new Function` — refused by the same policy. Vega answers a
+refused ingestion by *logging* "Data ingestion failed" and rendering axes with
+no marks: a chart that looks like a chart with no data in it. This shipped
+past every gate, including a packaged-build check of inline data, because
+ingestion never runs for inline `values`.
+
+So the renderer reads and parses data files itself (`chart-data.ts`, using
+d3-dsv's `parseRows`, which has no codegen) and inlines the values before Vega
+sees the spec. Vega never ingests.
+
+**Do not try to prove this in vitest.** Blocking `new Function` there — global
+binding and `Function.prototype.constructor` both — does not reproduce the
+failure; the suite passes with the fix reverted. The only honest check is a
+chart reading a real file in an installed build.
+
+**Data comes from the note, or from a file the note names.** Inline
+`data.values` is the primary path and the one an agent writes. A `url` resolves
+through the *same* resolver as a Markdown link (`resolve_document_link`), so
+relative paths resolve against the note's folder and may traverse upward, while
+absolute paths and `file:` URLs are refused as machine-specific. No containment
+rule was invented here that links do not already have.
+
+`http`/`https` is refused with a message the reader can act on. A link hands a
+remote URL to the system browser; a chart has nowhere to hand it, and this crate
+holds no network permission. Consent-gated remote data — Allow / Ask / Block,
+fetched by the Rust side, the way an email client handles remote images — is a
+separate task and the app's first network permission.
+
+**Vega swallows a failed load** into its own logger and renders an empty chart
+rather than rejecting. Left alone, a chart pointing at a missing file would draw
+empty axes and look like a chart with no data in it — a silent wrong answer
+(§4.4). So the loader captures the first refusal and `render` reports it.
+
+**One house look, applied as Vega-Lite `config`** — the layer a spec overrides
+rather than replaces, so a chart that names its own colour keeps it. Eight
+categorical hues in fixed order, validated rather than chosen by eye against all
+three grounds: worst adjacent colourblind separation ΔE 9.1 light and 8.4 dark
+against a target of 8. The dark column is the same hues re-stepped, so a chart
+keeps its identity in night rather than becoming a different chart. A
+single-series chart needs `config.mark.color` explicitly — Vega only reaches for
+the categorical range when something is encoded by colour.
+
+**Paste requires `$schema`.** Chart specs are ordinary JSON objects with keys
+like `data` and `mark`; sniffing for shape would claim any config file using
+those words. Priority 8, directly above generic `json` (7), so something that is
+both renders as a chart rather than an object dump.
+
 ## 4.7 Borrowed from livemark
 
 [livemark](https://github.com/datisthq/livemark) (MIT © 2025 Evgeny Karev) is a
@@ -318,7 +385,7 @@ Note what it does *not* get: it is not a precedent. The next canvas has to make 
 |---|---|---|
 | Core (remark, ProseMirror, Mermaid, KaTeX, Shiki) | ~2.4 MB | — |
 | Graphviz wasm | — | 1.5 MB |
-| Vega-Lite + Vega | — | 1.1 MB |
+| Vega-Lite + Vega ✅ | — | 797 KB |
 | Markmap | — | 180 KB |
 | Excalidraw (later) | — | ~1.8 MB |
 
@@ -333,7 +400,7 @@ App binary target: **under 40 MB** including the Tauri shell. Everything past co
 | **1** | Markdown + Mermaid (the vertical slice) |
 | **2** | Shiki, KaTeX, images, CSV → table, JSON/YAML tree — all core, all offline |
 | **3** | Catalog + sandbox proven with Graphviz as the first verified renderer |
-| **4** | Vega-Lite, Markmap |
+| **4** | Vega-Lite ✅, Markmap |
 | **5** | Converters: pptx, docx, pdf → raster |
 | **7+** | Excalidraw, then spreadsheets or maps if the need is real |
 

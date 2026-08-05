@@ -115,7 +115,14 @@ module.exports = {
         'orphaned one is still a real finding.',
       from: {
         orphan: true,
-        pathNot: ['\\.d\\.ts$', '^tests/ui/.+\\.spec\\.ts$'],
+        pathNot: [
+          '\\.d\\.ts$',
+          '^tests/ui/.+\\.spec\\.ts$',
+          // The CSP spike is a page a human opens in a browser to watch Vega
+          // refuse and then succeed under the packaged policy (RENDERERS.md
+          // §4.65). Nothing can import it — enforcement is what it tests.
+          '^spike/vega-csp/',
+        ],
       },
       to: {},
     },
@@ -140,7 +147,9 @@ module.exports = {
 
   options: {
     doNotFollow: { path: 'node_modules' },
-    exclude: { path: 'node_modules' },
+    // Built output is regenerated, not authored — cruising it reports the
+    // bundle as an orphan every time someone runs the spike build.
+    exclude: { path: 'node_modules|^spike/[^/]+/dist/' },
     tsConfig: { fileName: 'tsconfig.json' },
 
     // Follow type-only imports. Off by default, which would make every

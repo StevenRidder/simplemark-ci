@@ -13,6 +13,7 @@ import {
   looksLikeFileTree,
   looksLikeJson,
   looksLikeDot,
+  looksLikeVegaLite,
   looksLikeMath,
   looksLikeMermaid,
   looksLikeStackTrace,
@@ -115,14 +116,36 @@ const SNIFFERS: readonly Sniffer[] = [
     claim: (text: string) =>
       looksLikeStackTrace(text) ? { language: 'stacktrace', source: text } : null,
   },
-  // Below Mermaid: anything both parseable as JSON and claimed by a more
-  // specific sniffer should never reach here.
+  // A chart spec is JSON that says so. It has to outrank the generic JSON
+  // sniffer, or every pasted chart would land as a collapsible object dump.
+  {
+    id: 'vega-lite',
+    priority: 8,
+    claim: (text: string) =>
+      looksLikeVegaLite(text) ? { language: 'vega-lite', source: text.trim() } : null,
+  },
+  // Last: anything both parseable as JSON and claimed by a more specific
+  // sniffer should never reach here.
   {
     id: 'json',
-    priority: 8,
+    priority: 7,
     claim: (text: string) => (looksLikeJson(text) ? { language: 'json', source: text.trim() } : null),
   },
 ].sort((a, b) => b.priority - a.priority)
+
+/**
+ * §4.2 step 2: the first sniffer to claim the paste, in priority order.
+ *
+ * Exported so the ordering is testable on its own. The chain is the part that
+ * decides between two sniffers that both match — which is where the wrong
+ * answer would be silent rather than visible.
+ */
+export function claimPaste(
+  text: string,
+  html: string,
+): { language: string; source: string } | null {
+  return SNIFFERS.map((sniffer) => sniffer.claim(text, html)).find((result) => result !== null) ?? null
+}
 
 export interface PasteSnifferOptions {
   readonly renderer: DiagramRenderer
@@ -200,9 +223,7 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
           const standalone = isStandaloneBlockPaste({ text, atBlockBoundary })
 
           const claimed = standalone
-            ? (SNIFFERS.map((sniffer) => sniffer.claim(text, html)).find(
-                (result) => result !== null,
-              ) ?? null)
+            ? claimPaste(text, html)
             : null
 
           if (claimed === null) {

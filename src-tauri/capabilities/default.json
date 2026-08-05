@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window may open a file picker, move or resize its native window, and call SimpleMark's audited note and workspace commands. No general filesystem, shell, or network permission is granted: every file touch goes through this crate's narrow commands.",
+  "description": "The main window may open a file picker, move or resize its native window, and call SimpleMark's audited note and workspace commands — including reading a data file a chart names, resolved against the open note by the same rules a Markdown link obeys. No general filesystem, shell, or network permission is granted: every file touch goes through this crate's narrow commands, and no command reaches the network.",
   "windows": ["main"],
   "permissions": [
     "core:default",

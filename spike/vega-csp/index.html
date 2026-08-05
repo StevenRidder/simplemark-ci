@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vega under the packaged CSP</title>
+    <!--
+      Byte-for-byte the packaged policy from src-tauri/tauri.conf.json.
+      No 'unsafe-eval', which is the whole point: Vega compiles spec
+      expressions with the Function constructor unless told otherwise.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+    />
+  </head>
+  <body>
+    <h1>Vega under the packaged CSP</h1>
+    <div id="verdict">running…</div>
+    <div id="chart"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

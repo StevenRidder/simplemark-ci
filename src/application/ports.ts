@@ -140,6 +140,22 @@ export interface DiagramRenderer {
   render(language: string, source: string): Promise<RenderedDiagram>
 }
 
+/**
+ * Reads a data file a chart names, resolved against the open note (EDITOR-17).
+ *
+ * A port rather than a constructor detail of the chart renderer because the two
+ * halves live in different adapters — the renderer compiles the chart, the
+ * native side resolves and reads the file — and adapters do not import one
+ * another (ADR-0001 §Enforcement 3). The composition root injects it.
+ *
+ * Absent in hosts that cannot read files. A chart naming one then says so
+ * rather than rendering empty axes.
+ */
+export interface ChartDataReader {
+  /** Resolve `href` against the open note and return its contents as text. */
+  read(href: string): Promise<string>
+}
+
 /** What a copy places on the clipboard, keyed by MIME type. */
 export interface ClipboardPayload {
   readonly 'text/plain': string

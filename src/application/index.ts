@@ -16,6 +16,7 @@ export type {
   AssetReference,
   AssetReferencePort,
   DocumentLinkPort,
+  ChartDataReader,
   DiagramRenderer,
   RenderedDiagram,
   ClipboardPayload,

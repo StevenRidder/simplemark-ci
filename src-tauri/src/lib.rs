@@ -285,6 +285,34 @@ fn resolve_document_link(
     Ok(ResolvedDocumentLink::Local(target))
 }
 
+const REMOTE_DATA_MESSAGE: &str =
+    "Remote data is not loaded. Put the values in the chart, or link a file next to your note.";
+
+/// Reads a data file named by a chart, resolved exactly as a document link is.
+///
+/// Deliberately the same resolver as `open_document_link`, because a chart
+/// naming a file and a link naming a file are the same act: relative paths
+/// resolve against the note's folder and may traverse upward, while absolute
+/// paths and `file:` URLs are refused as machine-specific. No containment rule
+/// is added here that links do not already have.
+///
+/// The one divergence is the remote case. A link hands `http(s)` to the system
+/// browser; a chart has nowhere to hand it and this crate holds no network
+/// permission, so it is refused with the message the reader can act on.
+/// Consent-gated remote data is a separate task.
+fn read_data_at(document_handle: &str, href: &str) -> Result<String, String> {
+    match resolve_document_link(document_handle, href)? {
+        ResolvedDocumentLink::External(_) => Err(REMOTE_DATA_MESSAGE.to_string()),
+        ResolvedDocumentLink::Local(path) => std::fs::read_to_string(&path)
+            .map_err(|error| format!("Linked file is unavailable: {error}")),
+    }
+}
+
+#[tauri::command]
+fn read_note_data(document_handle: String, href: String) -> Result<String, String> {
+    read_data_at(&document_handle, &href)
+}
+
 fn open_with_system(target: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut command = Command::new("open");
@@ -974,6 +1002,7 @@ pub fn run() {
             open_note,
             open_workspace_folder,
             read_note_at,
+            read_note_data,
             open_document_link,
             inspect_workspace_note,
             list_workspace,
@@ -1047,6 +1076,65 @@ mod tests {
     fn identical_content_hashes_identically() {
         assert_eq!(content_hash(b"# note\n"), content_hash(b"# note\n"));
         assert_ne!(content_hash(b"# note\n"), content_hash(b"# note"));
+    }
+
+    /// Chart data resolves exactly the way a Markdown link does — same
+    /// resolver, same refusals — because a chart naming a file and a link
+    /// naming a file are the same act (EDITOR-17).
+    #[test]
+    fn chart_data_reads_a_file_beside_the_note() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let note = dir.path().join("note.md");
+        std::fs::write(&note, "# note\n").expect("write note");
+        std::fs::write(dir.path().join("sales.csv"), "slot,hit\n1,0.94\n").expect("write data");
+
+        let read = read_data_at(note.to_str().expect("note path"), "sales.csv").expect("read data");
+
+        assert_eq!(read, "slot,hit\n1,0.94\n");
+    }
+
+    #[test]
+    fn chart_data_follows_a_relative_path_out_of_the_notes_folder() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let notes = dir.path().join("notes");
+        let shared = dir.path().join("shared");
+        std::fs::create_dir_all(&notes).expect("notes dir");
+        std::fs::create_dir_all(&shared).expect("shared dir");
+        let note = notes.join("note.md");
+        std::fs::write(&note, "# note\n").expect("write note");
+        std::fs::write(shared.join("sales.csv"), "a,b\n1,2\n").expect("write data");
+
+        let read = read_data_at(note.to_str().expect("note path"), "../shared/sales.csv")
+            .expect("read data");
+
+        assert_eq!(read, "a,b\n1,2\n");
+    }
+
+    #[test]
+    fn chart_data_refuses_an_absolute_path_and_a_remote_url() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let note = dir.path().join("note.md");
+        std::fs::write(&note, "# note\n").expect("write note");
+        let handle = note.to_str().expect("note path");
+
+        let absolute = read_data_at(handle, "/etc/hosts").expect_err("absolute must be refused");
+        assert!(absolute.contains("tied to one machine"), "{absolute}");
+
+        let remote = read_data_at(handle, "https://vega.github.io/data/cars.json")
+            .expect_err("remote must be refused");
+        assert!(remote.contains("Remote data"), "{remote}");
+    }
+
+    #[test]
+    fn chart_data_reports_a_missing_file_rather_than_an_empty_string() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let note = dir.path().join("note.md");
+        std::fs::write(&note, "# note\n").expect("write note");
+
+        let error = read_data_at(note.to_str().expect("note path"), "missing.csv")
+            .expect_err("missing file must be refused");
+
+        assert!(error.contains("unavailable"), "{error}");
     }
 
     #[test]

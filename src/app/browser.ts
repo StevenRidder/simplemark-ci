@@ -4,6 +4,7 @@ import { SvgRenderer } from '../adapters/renderers/svg-renderer.js'
 import { TextCardRenderer } from '../adapters/renderers/text-card-renderer.js'
 import { GraphvizRenderer } from '../adapters/renderers/graphviz-renderer.js'
 import { KatexRenderer } from '../adapters/renderers/katex-renderer.js'
+import { VegaLiteRenderer } from '../adapters/renderers/vega-lite-renderer.js'
 import { BrowserFilePort } from '../adapters/filesystem/browser-file-port.js'
 import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
 import { BrowserDocumentLinkPort } from '../adapters/filesystem/browser-document-link-port.js'
@@ -242,13 +243,16 @@ async function mount(
       file,
       assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
       links: new BrowserDocumentLinkPort(window),
-      // One port, several renderers. DOT, KaTeX, Vega-Lite and Markmap join here.
+      // One port, several renderers. Markmap joins here.
       clipboard: new BrowserClipboardPort(),
       diagrams: new CompositeRenderer([
         new MermaidRenderer(),
         new SvgRenderer(),
         new GraphvizRenderer(),
         new KatexRenderer(),
+        // No data reader in the browser build: a chart that names a file says
+        // so rather than reaching for one. Inline data renders either way.
+        new VegaLiteRenderer(),
         new TextCardRenderer(),
       ]),
     },

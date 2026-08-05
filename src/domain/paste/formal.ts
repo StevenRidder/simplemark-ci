@@ -38,6 +38,39 @@ export function looksLikeMath(text: string): boolean {
   return LATEX_ENVIRONMENT.test(trimmed)
 }
 
+/**
+ * Vega-Lite: valid JSON whose `$schema` names a Vega-Lite version.
+ *
+ * The schema declaration is the whole signature, and requiring it is
+ * deliberate. Chart specs are ordinary JSON objects with keys like `data` and
+ * `mark`, so sniffing for shape would claim any config file that happened to
+ * use those words — and the cost of a wrong guess is an error card sitting in
+ * the document where a code block belonged (§4.4). A spec without `$schema`
+ * pastes as JSON, which is what it is.
+ *
+ * The version is not pinned: the library moves and the note does not, so a v5
+ * spec written last year and a v6 spec written today are both charts.
+ * `vega/v5` is excluded — that is a Vega spec, which this renderer does not
+ * compile.
+ */
+const VEGA_LITE_SCHEMA = /\/vega-lite\/v\d+/
+
+export function looksLikeVegaLite(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('{')) return false
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    return false
+  }
+  if (typeof parsed !== 'object' || parsed === null) return false
+
+  const schema = (parsed as { $schema?: unknown }).$schema
+  return typeof schema === 'string' && VEGA_LITE_SCHEMA.test(schema)
+}
+
 /** Removes `$$` fencing so the stored source is the expression itself. */
 export function stripMathDelimiters(text: string): string {
   const trimmed = text.trim()

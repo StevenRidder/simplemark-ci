@@ -17,6 +17,8 @@ import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import { OpenCancelled, TauriFilePort } from '../adapters/filesystem/tauri-file-port.js'
 import { TauriWorkspaceCatalogPort } from '../adapters/filesystem/tauri-workspace-catalog-port.js'
 import { TauriDocumentLinkPort } from '../adapters/filesystem/tauri-document-link-port.js'
+import { TauriChartDataReader } from '../adapters/filesystem/tauri-chart-data-reader.js'
+import { VegaLiteRenderer } from '../adapters/renderers/vega-lite-renderer.js'
 import type { FilePort, WorkspaceCatalog } from '../application/index.js'
 import { installNativeMenu } from './ui/native-menu.js'
 import type { MacosTextServiceId } from './ui/native-menu.js'
@@ -634,6 +636,10 @@ async function mount(
         new SvgRenderer(),
         new GraphvizRenderer(),
         new KatexRenderer(),
+        // A chart may name a data file, resolved against this note by the same
+        // rules a Markdown link obeys. `mount` runs per opened note, so the
+        // handle this closes over is the note the chart sits in.
+        new VegaLiteRenderer(new TauriChartDataReader(invoke, () => options.filePath)),
         new TextCardRenderer(),
       ]),
     },

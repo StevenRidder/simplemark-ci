@@ -174,6 +174,18 @@ The rule that keeps this honest is unchanged (§4.4): a signature hit converts
 only when validation passes, one ⌘Z restores the raw pasted text, and prose is
 never claimed.
 
+**A document that quotes an artifact is not that artifact (BUG-5).** Every
+signature above was originally tested for *presence*, so two box-drawing lines
+anywhere claimed the whole payload — a long Markdown note whose ASCII
+architecture diagram held four of them became one `tree` card, headings and
+tables included. The tier now declines anything carrying Markdown block
+structure: an ATX heading, a table row, or a fence. The file-tree signature
+additionally requires the branches to be a quarter of the non-empty lines, so a
+couple of stragglers cannot claim a wall of prose.
+
+Prose deliberately does *not* mark a document. Terminal output is regularly
+pasted with a sentence above it, and that still converts.
+
 ## 4.6 Graphviz and KaTeX (shipped)
 
 Both magic-paste, both through the existing `DiagramRenderer` port and the

@@ -10,6 +10,34 @@
  */
 
 /** A rectangular tab-separated grid — what Excel and Sheets put on the clipboard. */
+/**
+ * Markdown block structure — the mark of a document rather than exhaust.
+ *
+ * BUG-5: the tier below claims a paste that **is** a terminal artifact. A
+ * document that merely quotes one is not that, and claiming it destroys the
+ * whole paste — a long Markdown note whose ASCII diagram held four
+ * box-drawing lines became a single `tree` card, headings and tables included.
+ *
+ * Deliberately narrow: a heading, a table row, or a fence. Prose is not on the
+ * list, because terminal output regularly carries a sentence above it and that
+ * paste should still convert (§4.4 — the cost of a wrong guess is a broken
+ * block in the document).
+ */
+const MARKDOWN_BLOCK: readonly RegExp[] = [
+  /^#{1,6}[ \t]\S/m,
+  /^[ \t]*\|.*\|[ \t]*$/m,
+  /^[ \t]*```/m,
+]
+
+export function looksLikeDocument(text: string): boolean {
+  return MARKDOWN_BLOCK.some((pattern) => pattern.test(text))
+}
+
+/** Non-empty lines, the denominator for "is this mostly the artifact?". */
+function significantLines(text: string): number {
+  return text.split('\n').filter((line) => line.trim() !== '').length
+}
+
 export function looksLikeTsv(text: string): boolean {
   const lines = text.replace(/\n$/, '').split('\n')
   if (lines.length < 2) return false
@@ -35,6 +63,7 @@ export function tsvToMarkdownTable(text: string): string {
 
 /** Unified diff: a git header, or at least one @@ hunk header. */
 export function looksLikeDiff(text: string): boolean {
+  if (looksLikeDocument(text)) return false
   return /^diff --git /m.test(text) || /^@@ -\d+(,\d+)? \+\d+(,\d+)? @@/m.test(text)
 }
 
@@ -43,6 +72,7 @@ export function looksLikeDiff(text: string): boolean {
 const ANSI_SGR = /\[[0-9;]*m/
 
 export function looksLikeAnsi(text: string): boolean {
+  if (looksLikeDocument(text)) return false
   return ANSI_SGR.test(text)
 }
 
@@ -59,13 +89,24 @@ export function looksLikeJson(text: string): boolean {
 }
 
 /** Box-drawing tree listings, as `tree` and coding agents emit them. */
+/**
+ * A quarter of the content, so a couple of stray glyphs cannot claim a wall of
+ * prose. A real tree is nearly all branches: the shallowest genuine paste in
+ * the tests sits at 67%, the reported false positive at 19%.
+ */
+const TREE_DENSITY = 0.25
+
 export function looksLikeFileTree(text: string): boolean {
+  if (looksLikeDocument(text)) return false
   const decorated = text.split('\n').filter((line) => /[├└]──/.test(line))
-  return decorated.length >= 2
+  if (decorated.length < 2) return false
+  const lines = significantLines(text)
+  return lines > 0 && decorated.length / lines >= TREE_DENSITY
 }
 
 /** A JS `at fn (file:line:col)` stack or a Python traceback. */
 export function looksLikeStackTrace(text: string): boolean {
+  if (looksLikeDocument(text)) return false
   return (
     /^\s+at .+ \(?.+:\d+:\d+\)?$/m.test(text) ||
     /^Traceback \(most recent call last\):/m.test(text)

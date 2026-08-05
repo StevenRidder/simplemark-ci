@@ -18,6 +18,10 @@ use std::process::Command;
 /// and `rerun-if-env-changed` means a different commit forces a real rebuild
 /// rather than reusing an artifact stamped with the previous one.
 ///
+/// A local build has no such caller, so it depends entirely on `watch_paths`
+/// noticing that HEAD moved. See that function for why the old watch list was
+/// silently empty in a worktree, and what it cost.
+///
 /// `unknown` is an expected value, not a failure being papered over. A build
 /// from a source archive has no git metadata at all, and a bundle that names a
 /// commit it could not read would be worse than one that admits it has none.
@@ -31,17 +35,51 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=SIMPLEMARK_BUILD_SHA");
     println!("cargo:rerun-if-env-changed=SIMPLEMARK_BUILD_REPOSITORY");
-    // Best effort only: a plain checkout moves HEAD, but a commit on the branch
-    // you are already on moves a ref file this cannot name in advance. The
-    // installer's explicit env var is what actually guarantees freshness; these
-    // only spare an ordinary local rebuild from going stale.
-    for path in ["../.git/HEAD", "../.git/ORIG_HEAD"] {
-        if Path::new(path).exists() {
-            println!("cargo:rerun-if-changed={path}");
-        }
+    for path in watch_paths() {
+        println!("cargo:rerun-if-changed={path}");
     }
 
     tauri_build::build()
+}
+
+/// Files whose change must force this script to run again.
+///
+/// This list used to be the literal `../.git/HEAD`, which did nothing at all in
+/// a linked worktree: there `.git` is a *file* naming the real gitdir, so the
+/// path never exists, no watch is registered, and cargo serves the cached build
+/// script output forever — stamping every later build with whichever commit
+/// happened to be checked out for the first one. This machine carries a worktree
+/// per task, so that was the ordinary case rather than the exotic one, and it
+/// produced a bundle that reported a commit it did not contain.
+///
+/// `git rev-parse --git-path` answers correctly for both layouts and routes
+/// per-worktree files (`HEAD`) apart from shared ones (`refs/`) on its own,
+/// which is the part that is easy to get wrong by hand.
+///
+/// The branch tip is watched too. HEAD on a branch is a symref, so committing on
+/// the branch you are already on moves the ref while HEAD's own bytes stay put —
+/// the case the previous comment called out as unreachable. It is reachable; it
+/// just needed asking git for the name first. A packed ref has no file to watch,
+/// and `exists` drops it rather than registering a path that will never change.
+fn watch_paths() -> Vec<String> {
+    let mut paths: Vec<String> = ["HEAD", "ORIG_HEAD"]
+        .iter()
+        .filter_map(|name| git_path(name))
+        .collect();
+
+    if let Some(reference) = git(&["symbolic-ref", "--quiet", "HEAD"]) {
+        if let Some(tip) = git_path(&reference) {
+            paths.push(tip);
+        }
+    }
+
+    paths
+}
+
+/// Where git keeps `name` for *this* working tree, if it is a file on disk.
+fn git_path(name: &str) -> Option<String> {
+    let path = git(&["rev-parse", "--git-path", name])?;
+    Path::new(&path).exists().then_some(path)
 }
 
 fn resolve_sha() -> String {

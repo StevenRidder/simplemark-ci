@@ -4,6 +4,49 @@ import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 
 import type { DiagramRenderer } from '../../application/index.js'
 
+/** CSS absolute lengths, in px. The relative ones cannot be resolved here. */
+const CSS_UNITS: Record<string, number> = {
+  px: 1,
+  pt: 96 / 72,
+  pc: 16,
+  in: 96,
+  cm: 96 / 2.54,
+  mm: 96 / 25.4,
+  q: 96 / 101.6,
+}
+
+/**
+ * The drawing's natural width **in CSS pixels**.
+ *
+ * The unit is the whole point: this gets compared against a container's
+ * `clientWidth` and written back as a pixel length, so anything else silently
+ * scales the answer. Graphviz reports `width="445pt"` — 593px, not 445 — so
+ * reading the viewBox alone made its diagrams cross the "too wide" line a third
+ * too early and then draw at three-quarters of their intended size. Mermaid and
+ * Vega happen to speak px, which is what made that easy to miss.
+ *
+ * The `width` attribute wins when it carries an absolute length. A percentage
+ * (Mermaid writes `width="100%"`) describes the container rather than the
+ * drawing, so the viewBox answers instead — its user units are px by
+ * construction once no other scaling applies.
+ */
+export function naturalWidth(svg: SVGElement): number | undefined {
+  const attribute = svg.getAttribute('width')?.trim() ?? ''
+  const match = /^([\d.]+)\s*([a-z]*)$/i.exec(attribute)
+  if (match !== null) {
+    const value = Number(match[1])
+    const scale = CSS_UNITS[(match[2] ?? '').toLowerCase() || 'px']
+    if (Number.isFinite(value) && value > 0 && scale !== undefined) return value * scale
+  }
+
+  const viewBox = svg.getAttribute('viewBox')
+  if (viewBox !== null) {
+    const width = Number(viewBox.split(/[\s,]+/)[2])
+    if (Number.isFinite(width) && width > 0) return width
+  }
+  return undefined
+}
+
 /**
  * NodeView for a fenced code block whose language this renderer claims.
  *
@@ -33,6 +76,7 @@ export class DiagramNodeView implements NodeView {
   readonly #textarea: HTMLTextAreaElement
   readonly #error: HTMLElement
   readonly #toggle: HTMLButtonElement
+  readonly #close: HTMLButtonElement
 
   constructor(
     node: ProseNode,
@@ -68,19 +112,32 @@ export class DiagramNodeView implements NodeView {
 
     this.#sheetHeader = document.createElement('header')
     this.#sheetHeader.className = 'diagram-source-header'
-    this.#sheetHeader.textContent = 'Mermaid source'
+
+    const sheetTitle = document.createElement('span')
+    sheetTitle.className = 'diagram-source-title'
+    sheetTitle.textContent = `${label.textContent} source`
+
+    // The sheet is `position: fixed` on <body>, so once it is dragged — or the
+    // block scrolls away — the figure's own Done button is no longer anywhere
+    // near it. Without this the sheet has no visible way out at all.
+    this.#close = document.createElement('button')
+    this.#close.className = 'diagram-source-close'
+    this.#close.type = 'button'
+    this.#close.textContent = '✕'
+    this.#close.title = 'Close (Esc)'
+    this.#close.setAttribute('aria-label', 'Close source editor')
+    this.#close.addEventListener('click', (event) => {
+      event.preventDefault()
+      this.#setShowingSource(false)
+    })
+
+    this.#sheetHeader.append(sheetTitle, this.#close)
 
     this.#textarea = document.createElement('textarea')
     this.#textarea.className = 'diagram-source'
     this.#textarea.spellcheck = false
     this.#textarea.value = node.textContent
     this.#textarea.addEventListener('input', () => this.#commitSource())
-    this.#textarea.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        this.#setShowingSource(false)
-      }
-    })
 
     this.#error = document.createElement('div')
     this.#error.className = 'diagram-error'
@@ -98,26 +155,52 @@ export class DiagramNodeView implements NodeView {
     this.#onSchemeChange = () => void this.#paint()
     this.#scheme?.addEventListener('change', this.#onSchemeChange)
 
+    // Fit-or-scroll is a question about the column, not the diagram, so it has
+    // to be answered again whenever the column changes: opening the sidebar,
+    // resizing the window, changing text size. It also answers the first one —
+    // the initial paint runs before layout, when there is no width to measure.
+    this.#resize = new ResizeObserver(() => this.#fitDiagram())
+    this.#resize.observe(this.#render)
+
     void this.#paint()
   }
 
   readonly #scheme: MediaQueryList | undefined
   readonly #onSchemeChange: () => void
+  readonly #resize: ResizeObserver
+
+  /**
+   * Document-scoped, and only while the sheet is open.
+   *
+   * This was bound to the textarea, so dragging the header moved focus off it
+   * and Escape stopped working from that moment on — precisely when it matters
+   * most, since a dragged sheet has left its figure's Done button behind.
+   */
+  readonly #onEscape = (event: KeyboardEvent): void => {
+    if (!this.#showingSource || event.key !== 'Escape') return
+    event.preventDefault()
+    this.#setShowingSource(false)
+  }
 
   #setShowingSource(showing: boolean): void {
     this.#showingSource = showing
     this.#sheet.hidden = !showing
     this.#toggle.textContent = showing ? 'Done' : 'Edit source'
     if (showing) {
+      document.addEventListener('keydown', this.#onEscape)
       this.#placeSheet()
       this.#textarea.focus()
       return
     }
+    document.removeEventListener('keydown', this.#onEscape)
     this.#focusAfterBlock()
   }
 
   readonly #beginDrag = (event: PointerEvent): void => {
     if (event.button !== 0) return
+    // The close button lives in the drag handle; a press on it must close the
+    // sheet, not start dragging it out from under the pointer.
+    if (this.#close.contains(event.target as Node)) return
     event.preventDefault()
     const rect = this.#sheet.getBoundingClientRect()
     const offsetX = event.clientX - rect.left
@@ -184,6 +267,59 @@ export class DiagramNodeView implements NodeView {
     void this.#paint()
   }
 
+  /**
+   * How much narrower than its natural width a diagram may be squeezed before
+   * scrolling beats shrinking.
+   *
+   * Both engines size their text in absolute units, so scaling the SVG scales
+   * the labels with it. A dense graph forced into the measure ends up with
+   * unreadable type — the diagram is still "visible" and no longer says
+   * anything. Past this ratio the figure keeps the diagram legible and scrolls
+   * inside itself instead. The page must never scroll sideways to read a note.
+   */
+  static readonly #WIDEST_SQUEEZE = 1.6
+
+  /**
+   * Decides between filling the column and keeping natural size.
+   *
+   * Graphviz and Vega both emit a `viewBox`, which is what makes stretching
+   * safe: the drawing scales rather than being cropped or letterboxed. The
+   * default without this was `max-width: 100%`, which can only ever shrink — so
+   * a small graph sat at its natural 445pt in a 660px column, surrounded by
+   * air, and looked like a rendering bug rather than a diagram.
+   */
+  #fitDiagram(): void {
+    const svg = this.#render.querySelector('svg')
+    if (svg === null) return
+
+    // Mermaid writes `style="max-width: 567px"` onto its own root, which is an
+    // inline declaration and therefore beats the stylesheet outright. That cap
+    // is the whole reason a Mermaid diagram never grew to meet its column, and
+    // no amount of CSS below can answer it. Sizing belongs to one place, so the
+    // renderer's opinion is removed rather than fought.
+    svg.style.removeProperty('max-width')
+
+    const available = this.#render.clientWidth
+    const natural = naturalWidth(svg)
+    // Before layout there is nothing to compare against. The ResizeObserver
+    // below calls back the moment a width exists, so this returns rather than
+    // guessing — the first paint almost always lands here.
+    if (available === 0 || natural === undefined) return
+
+    const wide = natural > available * DiagramNodeView.#WIDEST_SQUEEZE
+    this.#render.classList.toggle('is-wide', wide)
+
+    // `width: auto` is not enough to restore natural size. Mermaid writes
+    // `width="100%"` as an *attribute*, which an `auto` computed width defers
+    // to — so the diagram obediently shrank back into the column and the
+    // scrolling had nothing to scroll. Only an explicit length overrides it.
+    if (wide) {
+      svg.style.width = `${natural}px`
+    } else {
+      svg.style.removeProperty('width')
+    }
+  }
+
   async #paint(): Promise<void> {
     const token = (this.#renderToken += 1)
     const language = (this.#node.attrs['language'] as string | undefined) ?? 'mermaid'
@@ -193,6 +329,7 @@ export class DiagramNodeView implements NodeView {
     if (result.ok) {
       this.#render.innerHTML = result.markup
       this.#error.hidden = true
+      this.#fitDiagram()
       return
     }
 
@@ -228,6 +365,10 @@ export class DiagramNodeView implements NodeView {
     this.#renderToken += 1
     this.#scheme?.removeEventListener('change', this.#onSchemeChange)
     this.#sheetHeader.removeEventListener('pointerdown', this.#beginDrag)
+    // The sheet lives on <body>, so this listener would outlive the block that
+    // owns it if the node is destroyed while the sheet is open.
+    document.removeEventListener('keydown', this.#onEscape)
+    this.#resize.disconnect()
     this.#sheet.remove()
   }
 }

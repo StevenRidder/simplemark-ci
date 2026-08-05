@@ -2554,9 +2554,37 @@ section.editor::-webkit-scrollbar {
   min-height: 76px;
 }
 
+/*
+ * Fill the measure rather than merely refusing to exceed it.
+ *
+ * `max-width: 100%` alone can only shrink, so a small graph rendered at its
+ * natural 445pt and sat marooned in a 660px column. Both engines emit a
+ * `viewBox`, so widening scales the drawing cleanly.
+ *
+ * The ceiling is the other half. A three-node graph stretched across a wide
+ * window inflates its labels to headline size and reads as a mistake, so the
+ * diagram stops growing well before the column does.
+ */
 .diagram-render svg {
-  max-width: 100%;
+  width: 100%;
+  max-width: min(100%, 720px);
   height: auto;
+}
+
+/*
+ * Past `#WIDEST_SQUEEZE`, legibility beats fitting: the diagram keeps its own
+ * size and the figure scrolls. Only this box scrolls — the document never
+ * scrolls sideways, which is the rule a wide table has to follow too.
+ */
+.diagram-render.is-wide {
+  display: block;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.diagram-render.is-wide svg {
+  width: auto;
+  max-width: none;
 }
 
 .diagram-source-sheet {
@@ -2583,14 +2611,55 @@ section.editor::-webkit-scrollbar {
 }
 
 .diagram-source-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 0 0 34px;
-  padding: 10px 12px;
+  padding: 0 6px 0 12px;
   border-bottom: 1px solid var(--line);
   background: var(--chrome);
   color: var(--ink-2);
   cursor: grab;
   font: 600 11px/1.2 var(--sans);
   user-select: none;
+}
+
+.diagram-source-title {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/*
+ * The sheet's own way out. It is `position: fixed` on <body>, so once it has
+ * been dragged — or its block has scrolled away — the figure's Done button is
+ * nowhere near it, and the sheet had no visible exit at all.
+ */
+.diagram-source-close {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  font: 12px/1 var(--sans);
+  cursor: pointer;
+}
+
+.diagram-source-close:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.diagram-source-close:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 1px;
 }
 
 .diagram-source-header:active {
@@ -2908,9 +2977,14 @@ section.editor::-webkit-scrollbar {
 
 /* ---- formal notation: Graphviz and KaTeX (RENDERERS.md §2) ---- */
 
-/* Graphviz emits its own fixed-size SVG; keep it inside the reading column. */
+/*
+ * Graphviz emits its own fixed-size SVG. This once said `max-width: 100%`, but
+ * it is the more specific selector, so it silently overrode the sizing above
+ * and reinstated the behaviour that leaves a small graph marooned. Sizing now
+ * lives in one place; this rule only stops the fixed `height` attribute from
+ * fighting the width.
+ */
 .diagram-render svg[width] {
-  max-width: 100%;
   height: auto;
 }
 

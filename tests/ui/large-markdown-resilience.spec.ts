@@ -32,6 +32,14 @@ test('opens a table-heavy Markdown file promptly without losing its source', asy
       createWritable: async () => ({ write: async () => undefined, close: async () => undefined }),
     }
     window.showOpenFilePicker = async () => [handle as unknown as FileSystemFileHandle]
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          document.documentElement.dataset.largeTableCopy = text
+        },
+      },
+    })
   }, REPORT)
 
   await page.goto('/')
@@ -42,15 +50,48 @@ test('opens a table-heavy Markdown file promptly without losing its source', asy
   await expect(page.locator('.filename')).toContainText('generated-financial-report.md')
   await expect(page.locator(`${EDITOR} h1`)).toContainText('Generated financial report')
   await expect(page.locator('[data-deferred-table]')).toHaveCount(98)
-  await expect(page.locator('[data-deferred-table]').first()).toContainText('Large table held safely')
+  const firstVirtualTable = page.locator('[data-deferred-table]').first()
+  await firstVirtualTable.scrollIntoViewIfNeeded()
+  await expect(firstVirtualTable.locator('.virtual-markdown-table')).toHaveCount(1)
   expect(Date.now() - startedAt).toBeLessThan(8_000)
 
-  // Two normal tables remain interactive (1,608 cells); the remaining source
-  // is not inflated into a 80,000-cell DOM before a person can read the note.
-  await expect(page.locator(`${EDITOR} td, ${EDITOR} th`)).toHaveCount(1_608)
+  // Two normal tables remain interactive; each virtual table owns only a
+  // viewport-sized row window, never the full 80,000-cell document at once.
+  const renderedCells = await page.locator(`${EDITOR} td, ${EDITOR} th`).count()
+  expect(renderedCells).toBeGreaterThan(1_608)
+  expect(renderedCells).toBeLessThan(2_100)
+
+  // The full first deferred table is present to read, not replaced by a card:
+  // scrolling its own viewport reveals its final source row without inflating
+  // the other ninety-seven tables into the DOM.
+  const firstViewport = firstVirtualTable.locator('.virtual-table-scroll')
+  await firstViewport.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+    element.dispatchEvent(new Event('scroll'))
+  })
+  await expect(firstVirtualTable).toContainText('report-2-199-0')
+
+  await firstVirtualTable.getByRole('button', { name: 'Copy table Markdown' }).click()
+  await expect(firstVirtualTable.getByRole('button')).toHaveText('Copied table Markdown')
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.largeTableCopy)).toContain(
+    'report-2-199-0',
+  )
   await expect
     .poll(() => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
     .toBe(REPORT)
+
+  // Scrolling through the report must not leave a row window mounted for
+  // every table previously visited.  Only the reader's nearby tables may
+  // own DOM cells at once.
+  const lastVirtualTable = page.locator('[data-deferred-table]').last()
+  await lastVirtualTable.evaluate((element) => element.scrollIntoView({ block: 'center' }))
+  await expect(lastVirtualTable.locator('.virtual-markdown-table')).toHaveCount(1)
+  await expect
+    .poll(() => page.locator('.virtual-markdown-table').count())
+    .toBeLessThan(8)
+  await expect
+    .poll(() => page.locator(`${EDITOR} td, ${EDITOR} th`).count())
+    .toBeLessThan(2_200)
 
   await page.evaluate(() => window.simplemark!.editor.focusEnd())
   await page.keyboard.press('Enter')

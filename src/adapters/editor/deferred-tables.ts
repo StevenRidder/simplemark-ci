@@ -105,16 +105,103 @@ export function isDeferredTableNode(
   return tableForNode(node, tables) !== undefined
 }
 
+/** The largest number of body rows one virtual table keeps in the DOM. */
+const VIRTUAL_ROW_WINDOW = 32
+const VIRTUAL_ROW_OVERSCAN = 8
+const VIRTUAL_ROW_HEIGHT = 32
+
+interface VirtualTableModel {
+  readonly header: readonly string[]
+  readonly rows: readonly (readonly string[])[]
+}
+
+export type DeferredTableCopy = (source: string) => Promise<boolean>
+
+function cellsInTableLine(line: string): string[] {
+  let value = line.trim()
+  if (value.startsWith('|')) value = value.slice(1)
+  if (value.endsWith('|') && !value.endsWith('\\|')) value = value.slice(0, -1)
+
+  const cells: string[] = []
+  let cell = ''
+  let escaped = false
+  for (const character of value) {
+    if (escaped) {
+      cell += character
+      escaped = false
+      continue
+    }
+    if (character === '\\') {
+      cell += character
+      escaped = true
+      continue
+    }
+    if (character === '|') {
+      cells.push(cell.trim().replaceAll('\\|', '|'))
+      cell = ''
+      continue
+    }
+    cell += character
+  }
+  cells.push(cell.trim().replaceAll('\\|', '|'))
+  return cells
+}
+
 /**
- * Small, non-editable presentation for a table that would otherwise make the
- * initial ProseMirror mount unresponsive. The source never enters this view's
- * DOM; the explicit copy action is the escape hatch for a large-table edit.
+ * The source has already passed the safety scanner in the domain layer. This
+ * small presentation parser deliberately has one job: turn that one table
+ * into display rows without asking ProseMirror to make each cell editable.
+ */
+function virtualTableModel(source: string): VirtualTableModel {
+  const lines = source.split(/\r?\n/).filter((line) => line.length > 0)
+  const header = cellsInTableLine(lines[0] ?? '')
+  return {
+    header,
+    // The second source line is GFM's alignment delimiter, not a data row.
+    rows: lines.slice(2).map(cellsInTableLine),
+  }
+}
+
+async function copyWithWebClipboard(source: string): Promise<boolean> {
+  if (!navigator.clipboard?.writeText) return false
+  try {
+    await navigator.clipboard.writeText(source)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+}
+
+/**
+ * A table stays fully readable, but it is not expanded into a live
+ * ProseMirror cell node for every source cell. This is the same basic shape a
+ * serious document viewer uses: the source is complete, and the viewport owns
+ * only the rows a person can presently see.
  */
 export class DeferredTableNodeView implements NodeView {
   readonly dom: HTMLElement
   #table: DeferredTable | undefined
   readonly #tables: ReadonlyMap<string, DeferredTable>
   readonly #copyButton: HTMLButtonElement
+  readonly #copyTable: DeferredTableCopy
+  readonly #content: HTMLElement
+  #observer: IntersectionObserver | undefined
+  #viewport: HTMLElement | undefined
+  #body: HTMLTableSectionElement | undefined
+  #model: VirtualTableModel | undefined
+  #renderedStart = -1
+  #renderedEnd = -1
+  #renderFrame: number | undefined
+
+  #viewportHeight(): number {
+    // rowCount includes the header and GFM delimiter rows.
+    const bodyRows = Math.max(0, (this.#table?.rowCount ?? 2) - 2)
+    return Math.min(460, Math.max(152, bodyRows * VIRTUAL_ROW_HEIGHT))
+  }
 
   #detailText(): string {
     if (this.#table === undefined) return 'This table is held in safe rendering mode.'
@@ -124,23 +211,156 @@ export class DeferredTableNodeView implements NodeView {
     return `${rows} rows × ${columns} columns (${cells} cells)`
   }
 
-  async #copySource(): Promise<void> {
-    if (this.#table === undefined || !navigator.clipboard?.writeText) {
-      this.#copyButton.textContent = 'Copy unavailable'
+  #cell(row: readonly string[], index: number): string {
+    return row[index] ?? ''
+  }
+
+  #spacer(height: number, columnCount: number): HTMLTableRowElement {
+    const row = document.createElement('tr')
+    row.className = 'virtual-table-spacer'
+    const cell = document.createElement('td')
+    cell.colSpan = Math.max(1, columnCount)
+    cell.style.height = `${height}px`
+    cell.style.padding = '0'
+    cell.style.border = '0'
+    row.append(cell)
+    return row
+  }
+
+  #renderRows(): void {
+    const model = this.#model
+    const body = this.#body
+    const viewport = this.#viewport
+    if (model === undefined || body === undefined || viewport === undefined) return
+
+    const firstVisible = Math.floor(viewport.scrollTop / VIRTUAL_ROW_HEIGHT)
+    const viewportRows = Math.max(
+      VIRTUAL_ROW_WINDOW,
+      Math.ceil(viewport.clientHeight / VIRTUAL_ROW_HEIGHT),
+    )
+    const start = Math.max(0, firstVisible - VIRTUAL_ROW_OVERSCAN)
+    const end = Math.min(model.rows.length, start + viewportRows + VIRTUAL_ROW_OVERSCAN * 2)
+    if (start === this.#renderedStart && end === this.#renderedEnd) return
+    this.#renderedStart = start
+    this.#renderedEnd = end
+
+    const rows: HTMLTableRowElement[] = []
+    if (start > 0) rows.push(this.#spacer(start * VIRTUAL_ROW_HEIGHT, model.header.length))
+    for (let index = start; index < end; index += 1) {
+      const sourceRow = model.rows[index] ?? []
+      const row = document.createElement('tr')
+      for (let column = 0; column < model.header.length; column += 1) {
+        const cell = document.createElement('td')
+        cell.textContent = this.#cell(sourceRow, column)
+        row.append(cell)
+      }
+      rows.push(row)
+    }
+    if (end < model.rows.length) {
+      rows.push(this.#spacer((model.rows.length - end) * VIRTUAL_ROW_HEIGHT, model.header.length))
+    }
+    body.replaceChildren(...rows)
+  }
+
+  #scheduleRows(): void {
+    if (this.#renderFrame !== undefined) return
+    this.#renderFrame = requestAnimationFrame(() => {
+      this.#renderFrame = undefined
+      this.#renderRows()
+    })
+  }
+
+  /**
+   * Release the row DOM—and its parsed presentation model—once this table is
+   * well outside the reader viewport.  Virtualizing rows inside every table
+   * is not sufficient on its own: a long report can contain hundreds of
+   * tables, and retaining one window for each one simply recreates the same
+   * DOM cliff more gradually.
+   *
+   * The original Markdown remains in the application-owned table map, so the
+   * next viewport entry can rebuild this small display model without loss.
+   */
+  #unrenderTable(): void {
+    if (this.#renderFrame !== undefined) {
+      cancelAnimationFrame(this.#renderFrame)
+      this.#renderFrame = undefined
+    }
+    this.#viewport = undefined
+    this.#body = undefined
+    this.#model = undefined
+    this.#renderedStart = -1
+    this.#renderedEnd = -1
+    this.#content.replaceChildren()
+  }
+
+  #renderTable(): void {
+    if (this.#model !== undefined || this.#table === undefined) return
+    const model = virtualTableModel(this.#table.source)
+    if (model.header.length === 0) return
+    this.#model = model
+
+    const viewport = document.createElement('div')
+    viewport.className = 'virtual-table-scroll'
+    viewport.tabIndex = 0
+    viewport.setAttribute('aria-label', `Table with ${model.rows.length.toLocaleString()} rows`)
+    viewport.style.height = `${this.#viewportHeight()}px`
+
+    const table = document.createElement('table')
+    table.className = 'virtual-markdown-table'
+    const head = document.createElement('thead')
+    const headerRow = document.createElement('tr')
+    model.header.forEach((value) => {
+      const cell = document.createElement('th')
+      cell.scope = 'col'
+      cell.textContent = value
+      headerRow.append(cell)
+    })
+    head.append(headerRow)
+    const body = document.createElement('tbody')
+    table.append(head, body)
+    viewport.append(table)
+    viewport.addEventListener('scroll', () => this.#scheduleRows(), { passive: true })
+
+    this.#viewport = viewport
+    this.#body = body
+    this.#content.replaceChildren(viewport)
+    this.#renderRows()
+  }
+
+  #observeTable(): void {
+    if (typeof IntersectionObserver === 'undefined') {
+      this.#renderTable()
       return
     }
-    try {
-      await navigator.clipboard.writeText(this.#table.source)
-      this.#copyButton.textContent = 'Copied table Markdown'
-    } catch {
-      this.#copyButton.textContent = 'Copy unavailable'
-    }
+    this.#observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          this.#renderTable()
+        } else {
+          this.#unrenderTable()
+        }
+      }
+    }, { rootMargin: '640px 0px' })
+    this.#observer.observe(this.dom)
+  }
+
+  async #copySource(): Promise<void> {
+    if (this.#table === undefined) return
+    this.#copyButton.disabled = true
+    this.#copyButton.textContent = 'Copying…'
+    // Let the button acknowledge the click before the host pasteboard handles
+    // a large payload. On macOS that host path is native, not WKWebView.
+    await nextPaint()
+    const copied = await this.#copyTable(this.#table.source)
+    this.#copyButton.disabled = false
+    this.#copyButton.textContent = copied ? 'Copied table Markdown' : 'Copy unavailable'
   }
 
   update(node: ProseNode): boolean {
     const next = tableForNode(node, this.#tables)
     if (next === undefined) return false
     this.#table = next
+    this.#content.style.height = `${this.#viewportHeight()}px`
     return true
   }
 
@@ -154,16 +374,26 @@ export class DeferredTableNodeView implements NodeView {
     return true
   }
 
-  constructor(node: ProseNode, tables: ReadonlyMap<string, DeferredTable>) {
+  destroy(): void {
+    this.#observer?.disconnect()
+    if (this.#renderFrame !== undefined) cancelAnimationFrame(this.#renderFrame)
+  }
+
+  constructor(
+    node: ProseNode,
+    tables: ReadonlyMap<string, DeferredTable>,
+    copyTable: DeferredTableCopy = copyWithWebClipboard,
+  ) {
     this.#tables = tables
     this.#table = tableForNode(node, this.#tables)
+    this.#copyTable = copyTable
     this.dom = document.createElement('section')
     this.dom.className = 'deferred-table'
     this.dom.contentEditable = 'false'
     this.dom.setAttribute('data-deferred-table', '')
 
     const label = document.createElement('h3')
-    label.textContent = 'Large table held safely'
+    label.textContent = 'Table'
 
     const detail = document.createElement('p')
     detail.className = 'deferred-table-detail'
@@ -171,7 +401,14 @@ export class DeferredTableNodeView implements NodeView {
 
     const explanation = document.createElement('p')
     explanation.className = 'deferred-table-explanation'
-    explanation.textContent = 'The original Markdown is still in this document and will save unchanged. It was not expanded into thousands of live editing cells.'
+    explanation.textContent = 'All rows render as you scroll. The Markdown source remains unchanged and copyable.'
+
+    this.#content = document.createElement('div')
+    this.#content.className = 'deferred-table-content'
+    // Keep document geometry stable while off-screen row DOM is released.
+    // Without this reserved canvas, unloading an earlier table moves every
+    // later table and can make the reader chase a shifting scroll target.
+    this.#content.style.height = `${this.#viewportHeight()}px`
 
     this.#copyButton = document.createElement('button')
     this.#copyButton.type = 'button'
@@ -179,6 +416,7 @@ export class DeferredTableNodeView implements NodeView {
     this.#copyButton.textContent = 'Copy table Markdown'
     this.#copyButton.addEventListener('click', () => void this.#copySource())
 
-    this.dom.append(label, detail, explanation, this.#copyButton)
+    this.dom.append(label, detail, explanation, this.#content, this.#copyButton)
+    this.#observeTable()
   }
 }

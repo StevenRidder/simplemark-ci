@@ -70,7 +70,10 @@ test('hover keeps the semantic callout label intact while exposing the drag affo
     position: 'static',
   })
   expect(Number.parseFloat(styles.label.width)).toBeGreaterThan(100)
-  expect(styles.handle).toEqual({ opacity: '0.58', position: 'absolute' })
+  // Hover opacity is animated, so browsers can expose a sub-pixel-time
+  // interpolated value such as 0.579771 instead of the final string 0.58.
+  expect(Number.parseFloat(styles.handle.opacity)).toBeCloseTo(0.58, 2)
+  expect(styles.handle.position).toBe('absolute')
 })
 
 test('text on the marker line survives', async ({ page }) => {

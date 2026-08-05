@@ -652,6 +652,17 @@ async function mount(
     // interactive wireframe; it is not a second menu row.
     stylesBarDefault: true,
     onOpenFile: options.onOpenFile,
+    // A huge virtual table goes through Tauri's native pasteboard bridge.
+    // WKWebView's navigator.clipboard can synchronously stall while it
+    // marshals a large payload, defeating the renderer's safety guarantee.
+    copyDeferredTable: async (source) => {
+      try {
+        await writeText(source)
+        return true
+      } catch {
+        return false
+      }
+    },
     // WKWebView never answers the webview's own `window.print()`, so the panel
     // has to be raised from the native side. What lands on paper is still the
     // shared print stylesheet — this only opens the door.

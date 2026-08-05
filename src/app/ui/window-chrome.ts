@@ -2325,7 +2325,28 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     selectionMenu.hidden = true
   }
 
-  const buildSelectionMenu = (): void => {
+  const selectionShapeForTarget = (
+    target?: EventTarget | null,
+  ): { readonly inTable: boolean; readonly inCode: boolean } => {
+    const element = target instanceof Element
+      ? target
+      : target instanceof Node
+        ? target.parentElement
+        : null
+    // A context menu belongs to the block under the pointer. The editor
+    // selection may still describe the previously focused table or code block
+    // for a render tick, so using `target || selection` leaks stale commands
+    // into the next block's menu.
+    if (element?.closest('.ProseMirror') !== null && element?.closest('.ProseMirror') !== undefined) {
+      return {
+        inTable: element.closest('table') !== null,
+        inCode: element.closest('pre') !== null,
+      }
+    }
+    return options.getSelectionShape?.() ?? { inTable: false, inCode: false }
+  }
+
+  const buildSelectionMenu = (target?: EventTarget | null): void => {
     selectionMenu.replaceChildren()
     // Plain Copy first, and unchanged: the browser performs its own copy.
     selectionMenu.append(menuRow('Copy', () => document.execCommand('copy')))
@@ -2340,7 +2361,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       selectionMenu.append(menuRow(label, () => options.onClipboardExport?.(id)))
     }
 
-    const shape = options.getSelectionShape?.() ?? { inTable: false, inCode: false }
+    const shape = selectionShapeForTarget(target)
     if (shape.inCode) {
       selectionMenu.append(document.createElement('hr'))
       selectionMenu.append(menuRow('Copy Code', () => options.onClipboardExport?.('copyCode')))
@@ -2365,11 +2386,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       : target instanceof Node
         ? target.parentElement
         : null
-    const selection = options.getSelectionShape?.() ?? { inTable: false, inCode: false }
-    const shape = {
-      inTable: element?.closest('table') != null || selection.inTable,
-      inCode: element?.closest('pre') != null || selection.inCode,
-    }
+    const shape = selectionShapeForTarget(target)
     const key = `${shape.inTable}:${shape.inCode}`
     const block = element?.closest('.ProseMirror > *') ?? element
     if (key === lastNativeContext && block === lastNativeContextBlock) return
@@ -2397,7 +2414,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       return
     }
     event.preventDefault()
-    buildSelectionMenu()
+    buildSelectionMenu(event.target)
     selectionMenu.hidden = false
     selectionMenu.style.left = `${event.clientX}px`
     selectionMenu.style.top = `${event.clientY}px`

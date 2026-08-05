@@ -117,6 +117,12 @@ export interface ComposeOptions {
   readonly stylesBarDefault?: boolean
   /** Platform hook for opening a real file; absent when the platform cannot. */
   readonly onOpenFile?: () => void
+  /**
+   * Copies a large virtualised table through the host clipboard. The native
+   * shell supplies NSPasteboard rather than making WKWebView marshal a large
+   * payload on its UI thread.
+   */
+  readonly copyDeferredTable?: (markdown: string) => Promise<boolean>
   /** Shown on the disabled open control when onOpenFile is absent. */
   readonly openFileUnavailableReason?: string
   /**
@@ -533,6 +539,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     mount: chrome.editorHost,
     initialMarkdown: session.snapshot().markdown,
     renderer: ports.diagrams,
+    onCopyDeferredTable: async (source) => {
+      try {
+        if (options.copyDeferredTable !== undefined) return await options.copyDeferredTable(source)
+        return await (ports.clipboard?.write({ 'text/plain': source }) ?? Promise.resolve(false))
+      } catch {
+        return false
+      }
+    },
     ...(ports.links === undefined ? {} : {
       onOpenLink: async (href: string) => {
           try {

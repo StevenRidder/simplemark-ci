@@ -159,6 +159,8 @@ export interface MilkdownEditorOptions {
   readonly onMarkdownChanged: (markdown: string) => void
   /** Opens a rendered link through the shell's explicit platform boundary. */
   readonly onOpenLink?: (href: string) => Promise<void>
+  /** Copies a virtualised table through the shell's clipboard boundary. */
+  readonly onCopyDeferredTable?: (source: string) => Promise<boolean>
 }
 
 export class MilkdownEditor {
@@ -185,7 +187,11 @@ export class MilkdownEditor {
           language === DEFERRED_TABLE_LANGUAGE &&
           isDeferredTableNode(node, preparedMarkdown.deferredTables)
         ) {
-          return new DeferredTableNodeView(node, preparedMarkdown.deferredTables)
+          return new DeferredTableNodeView(
+            node,
+            preparedMarkdown.deferredTables,
+            options.onCopyDeferredTable,
+          )
         }
         // Only claim fences this renderer actually handles. Every other code
         // block stays an ordinary editable fence.

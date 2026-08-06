@@ -1422,6 +1422,7 @@ section.editor::-webkit-scrollbar {
 }
 
 .note-item {
+  position: relative;
   display: block;
   align-items: start;
   width: 100%;
@@ -1430,7 +1431,7 @@ section.editor::-webkit-scrollbar {
   background: transparent;
 }
 
-.note-item:not(.selected)::after {
+.note-item:not(:last-child)::after {
   content: '';
   position: absolute;
   right: 10px;
@@ -1438,19 +1439,29 @@ section.editor::-webkit-scrollbar {
   left: 14px;
   height: 1px;
   background: color-mix(in srgb, var(--line) 72%, transparent);
+  opacity: 1;
+  transition: opacity 120ms ease;
 }
 
-.note-item {
-  position: relative;
-}
-
-.note-item:hover,
-.note-item.selected {
+.note-item:hover {
   background: color-mix(in srgb, var(--soft) 90%, transparent);
 }
 
-.note-item.selected {
-  background: color-mix(in srgb, var(--soft) 82%, var(--paper));
+.note-item.selected::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+/* Hover is an ephemeral action state, so its separator recedes until the
+ * pointer leaves. Selection is instead expressed by the left-hand rule. */
+.note-item:hover::after {
+  opacity: 0;
 }
 
 .note-select {
@@ -1565,6 +1576,8 @@ section.editor::-webkit-scrollbar {
   background: transparent;
   color: var(--ink-3);
   opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
 }
 
 .note-close {
@@ -1581,12 +1594,21 @@ section.editor::-webkit-scrollbar {
   border-radius: 6px;
   background: transparent;
   color: var(--ink-3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
 }
 
 .note-close:hover,
 .note-close:focus-visible {
   background: color-mix(in srgb, var(--soft) 88%, transparent);
   color: var(--ink);
+}
+
+.note-item:hover .note-close,
+.note-close:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .note-close svg {
@@ -1599,11 +1621,10 @@ section.editor::-webkit-scrollbar {
   stroke-linejoin: round;
 }
 
-.note-pin.pinned,
 .note-item:hover .note-pin,
-.note-item.selected .note-pin,
 .note-pin:focus-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .note-pin.pinned {

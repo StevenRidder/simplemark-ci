@@ -42,6 +42,12 @@ async function openNote(page: Page, name: string): Promise<void> {
   await expect.poll(() => activeNote(page)).toBe(name)
 }
 
+async function pinNote(page: Page, name: string): Promise<void> {
+  const pin = page.getByRole('button', { name: `Pin ${name}` })
+  await pin.locator('..').hover()
+  await pin.click()
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
   await page.evaluate(() => window.localStorage.clear())
@@ -76,7 +82,7 @@ test('a walk survives the list re-sorting under it', async ({ page }) => {
   await navigate(page, 'ArrowDown')
   await expect.poll(() => activeNote(page)).toBe(order[1])
 
-  await page.getByRole('button', { name: `Pin ${order[1]}` }).click()
+  await pinNote(page, order[1]!)
   await expect.poll(() => displayedOrder(page).then((now) => now[0])).toBe(order[1])
 
   await navigate(page, 'ArrowDown')

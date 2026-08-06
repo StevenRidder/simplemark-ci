@@ -3,6 +3,18 @@ import { expect, test } from '@playwright/test'
 const notes = (page: import('@playwright/test').Page) =>
   page.getByRole('complementary', { name: 'Notes' })
 
+const closeNote = async (page: import('@playwright/test').Page, name: string) => {
+  const close = page.getByRole('button', { name: `Close ${name}` })
+  await close.locator('..').hover()
+  await close.click()
+}
+
+const togglePin = async (page: import('@playwright/test').Page, name: string) => {
+  const pin = page.getByRole('button', { name })
+  await pin.locator('..').hover()
+  await pin.click()
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
   await page.evaluate(() => window.localStorage.clear())
@@ -40,7 +52,7 @@ test('L2-010 each New Note accumulates instead of replacing the list', async ({ 
 
 test('L2-040/L2-041 pinning reorders, filters, and unpins without closing the document', async ({ page }) => {
   await page.getByRole('button', { name: 'ideas', exact: true }).click()
-  await page.getByRole('button', { name: 'Pin ideas' }).click()
+  await togglePin(page, 'Pin ideas')
 
   await expect(notes(page).locator('.note-select').first()).toHaveAccessibleName('ideas')
   await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
@@ -48,7 +60,7 @@ test('L2-040/L2-041 pinning reorders, filters, and unpins without closing the do
 
   await page.getByRole('button', { name: /Pinned\s*2/ }).click()
   await expect(notes(page).locator('.note-item')).toHaveCount(2)
-  await page.getByRole('button', { name: 'Unpin ideas' }).click()
+  await togglePin(page, 'Unpin ideas')
 
   await expect(notes(page).locator('.note-item')).toHaveCount(1)
   await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Ideas')
@@ -128,6 +140,36 @@ test('L1-120 visible sidebar controls expose names and honest disabled states', 
   await expect(library.getByRole('button', { name: 'Trash' })).toBeDisabled()
 })
 
+test('active notes use a left selection rule while X and pin remain hover-only', async ({ page }) => {
+  const list = notes(page)
+  const selected = list.locator('.note-item.selected')
+  const restingName = await list.locator('.note-item:not(.selected) .note-select').last().getAttribute('aria-label')
+  if (restingName === null) throw new Error('Expected a resting note row')
+  const resting = list.getByRole('button', { name: restingName, exact: true }).locator('..')
+
+  await expect(selected.locator('.note-close')).toHaveCSS('opacity', '0')
+  await expect(selected.locator('.note-pin')).toHaveCSS('opacity', '0')
+  expect(await selected.evaluate((row) => getComputedStyle(row, '::before').width)).toBe('3px')
+  expect(await selected.evaluate((row) => getComputedStyle(row, '::before').left)).toBe('0px')
+  expect(await selected.evaluate((row) => getComputedStyle(row, '::after').opacity)).toBe('1')
+  await expect(resting.locator('.note-close')).toHaveCSS('opacity', '0')
+  await expect(resting.locator('.note-pin')).toHaveCSS('opacity', '0')
+  await expect(resting).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  expect(await resting.evaluate((row) => getComputedStyle(row, '::after').opacity)).toBe('1')
+
+  await resting.locator('.note-select').click()
+  await page.mouse.move(0, 0)
+
+  await expect(resting).toHaveClass(/selected/)
+  await expect(resting.locator('.note-close')).toHaveCSS('opacity', '0')
+  await expect(resting.locator('.note-pin')).toHaveCSS('opacity', '0')
+  expect(await resting.evaluate((row) => getComputedStyle(row, '::before').width)).toBe('3px')
+
+  await resting.hover()
+  await expect(resting.locator('.note-close')).toHaveCSS('opacity', '1')
+  await expect(resting.locator('.note-pin')).toHaveCSS('opacity', '1')
+})
+
 test('L2-070 right-click exposes only actions that really work on this client', async ({ page }) => {
   await page.getByRole('button', { name: 'ideas', exact: true }).click({ button: 'right' })
   const menu = page.getByRole('menu')
@@ -154,6 +196,8 @@ test('closing a background note hides its row without remounting the active edit
   await expect(close).toBeVisible()
   await expect(close).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
 
+  await close.locator('..').hover()
+  await expect(close).toHaveCSS('opacity', '1')
   await close.hover()
   await expect(close).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await close.click()
@@ -168,7 +212,7 @@ test('closing a background note hides its row without remounting the active edit
 
 test('closing the active note removes it from both the list and reading pane', async ({ page }) => {
   await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('The first useful proof')
-  await page.getByRole('button', { name: 'Close architecture' }).click()
+  await closeNote(page, 'architecture')
 
   await expect(page.getByRole('button', { name: 'architecture', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'field-notes', exact: true })).toHaveAttribute(
@@ -181,9 +225,9 @@ test('closing the active note removes it from both the list and reading pane', a
 })
 
 test('closing the final visible note leaves a clean no-selection pane', async ({ page }) => {
-  await page.getByRole('button', { name: 'Close architecture' }).click()
-  await page.getByRole('button', { name: 'Close field-notes' }).click()
-  await page.getByRole('button', { name: 'Close ideas' }).click()
+  await closeNote(page, 'architecture')
+  await closeNote(page, 'field-notes')
+  await closeNote(page, 'ideas')
 
   await expect(notes(page).locator('.note-item')).toHaveCount(0)
   await expect(page.locator('.milkdown .ProseMirror')).toBeEmpty()

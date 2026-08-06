@@ -133,7 +133,9 @@ test('switches notes, filters the local index, creates a note, and can focus the
   await expect(page.getByRole('button', { name: 'ideas', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'architecture', exact: true })).toBeHidden()
 
-  await page.getByRole('button', { name: 'Pin ideas' }).click()
+  const pinIdeas = page.getByRole('button', { name: 'Pin ideas' })
+  await pinIdeas.locator('..').hover()
+  await pinIdeas.click()
   await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
   // Pinning is an in-place sidebar state change, like Bear. It deliberately
   // does not remount the shell or dismiss an active search.

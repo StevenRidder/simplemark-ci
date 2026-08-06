@@ -247,6 +247,7 @@ async function startNative(
     current = await mount(root, port, {
       filePath: opened.handle,
       pageZoom,
+      menuTarget: () => current,
       onOpenFile: openFromPicker,
       onRenameDocument: renameActiveDocument,
       workspace: catalogWorkspace(catalog, opened.handle, pins, {
@@ -404,6 +405,7 @@ async function startNative(
       current = await mount(root, new FixtureFilePort('Untitled.md', '# \n'), {
         filePath: 'Not saved',
         pageZoom,
+        menuTarget: () => current,
         onOpenFile: openFromPicker,
         onSaveDraft: saveDraft,
         workspace: nativeWorkspace('Untitled.md', {
@@ -499,6 +501,7 @@ async function startNative(
     current = await mount(root, new FixtureFilePort('No note selected.md', ''), {
       filePath: 'No note selected',
       pageZoom,
+      menuTarget: () => current,
       onOpenFile: openFromPicker,
       workspace: catalogWorkspace(after, '', pins, {
         select: selectNote,
@@ -563,6 +566,7 @@ async function startNative(
     current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
       filePath: 'Demo workspace · open a file to work with your own Markdown',
       pageZoom,
+      menuTarget: () => current,
       onOpenFile: openFromPicker,
       workspace: nativeWorkspace(WELCOME_NAME, {
         create: createNote,
@@ -637,6 +641,7 @@ async function startNative(
   current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
     filePath: 'Demo workspace · open a file to work with your own Markdown',
     pageZoom,
+    menuTarget: () => current,
     onOpenFile: openFromPicker,
     workspace: nativeWorkspace(WELCOME_NAME, {
       create: createNote,
@@ -692,6 +697,7 @@ async function startNative(
         current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
           filePath: 'Demo workspace · open a file to work with your own Markdown',
           pageZoom,
+          menuTarget: () => current,
           onOpenFile: openFromPicker,
           workspace: nativeWorkspace(WELCOME_NAME, {
             create: createNote,
@@ -737,6 +743,12 @@ async function mount(
     onRenameDocument?: (name: string) => Promise<boolean>
     workspace: WorkspaceOptions
     pageZoom: PageZoomController
+    /**
+     * The native menubar can outlive a note remount. Resolve its command
+     * target at activation time so an accelerator never dispatches into the
+     * composition that was showing when the menu was first installed.
+     */
+    menuTarget?: () => AppComposition | undefined
   },
 ): Promise<AppComposition> {
   let app: AppComposition
@@ -809,8 +821,16 @@ async function mount(
   installWindowDragging(app.element)
 
   // Native-first: the menubar is the complete command surface, generated from
-  // the same registry the toolbar uses. Rebuilt with each composition so the
-  // View checkmarks match the shell that is actually on screen.
+  // the same registry the toolbar uses. AppKit may retain an earlier native
+  // menu while a note transition replaces the webview composition, so its
+  // callbacks must resolve the live composition rather than close over `app`.
+  // The local fallback is necessary during this first mount, before the native
+  // controller has assigned its `current` reference.
+  const menuApp = (): AppComposition => options.menuTarget?.() ?? app
+
+  // Rebuilt with each composition so View checkmarks match the shell that is
+  // actually on screen. Even if AppKit keeps an earlier menu instance, the
+  // dynamic callbacks above still route its accelerators to the current note.
   // Provenance is read once at menu build. A bundle's commit cannot change
   // while it runs, and a failure to read it must not cost you the menubar.
   let provenance: BuildProvenance | undefined
@@ -821,8 +841,8 @@ async function mount(
   }
 
   await installNativeMenu({
-    run: (command) => app.run(command),
-    state: (command) => app.commandState(command),
+    run: (command) => menuApp().run(command),
+    state: (command) => menuApp().commandState(command),
     runTextService: (service: MacosTextServiceId) => {
       void invoke('perform_macos_text_service', { service }).catch((error) => {
         app.setStatus('error', `macOS text service unavailable — ${String(error)}`)

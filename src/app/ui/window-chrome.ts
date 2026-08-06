@@ -327,26 +327,6 @@ function commandButton(
   return button
 }
 
-/** Controls the approved wireframe shows but a later task delivers. */
-/** Toolbar commands that are real. */
-const TOOL_COMMANDS: ReadonlyArray<{ label: string; icon: string; command: EditorCommand }> = [
-  {
-    label: 'Checklist',
-    command: 'taskList',
-    icon: '<path d="m4 6 1.5 1.5L8 5"/><path d="m4 12 1.5 1.5L8 11"/><path d="m4 18 1.5 1.5L8 17"/><path d="M11 6h9M11 12h9M11 18h9"/>',
-  },
-  {
-    label: 'Table',
-    command: 'table',
-    icon: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 4v16"/>',
-  },
-  {
-    label: 'Convert to diagram',
-    command: 'convertToDiagram',
-    icon: '<rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="15" width="6" height="5" rx="1"/><path d="M9 6.5h5a3 3 0 0 1 3 3V15M12 12l5 3 4-3"/>',
-  },
-]
-
 const TRAILING: ReadonlyArray<{ label: string; icon: string; owner: string }> = [
   {
     label: 'Share',
@@ -772,6 +752,7 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
       command('Math', 'inlineMath'),
       command('Math Block', 'mathBlock'),
       command('Wiki Link', 'wikiLink'),
+      command('Convert to diagram', 'convertToDiagram'),
       nestedMenu('Transform', (transform) => {
         transform.append(
           command('Upper Case', 'uppercase'),
@@ -1267,13 +1248,12 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     beginTitleRename()
   })
 
-  // ---- editing tools ----
-  const editTools = document.createElement('div')
-  editTools.className = 'edit-tools'
-  editTools.setAttribute('aria-label', 'Editing tools')
-
+  // ---- reader and formatting controls ----
+  // The titlebar is only navigation, the document name, and document state.
+  // The reader panel lives with the movable Styles bar, so it never cuts the
+  // filename in half or turns the window header into a second command row.
   const formatButton = document.createElement('button')
-  formatButton.className = 'edit-tool type'
+  formatButton.className = 'styles-control styles-reader-settings-trigger'
   formatButton.type = 'button'
   formatButton.textContent = 'Aa'
   formatButton.setAttribute('aria-label', 'Text formatting')
@@ -1490,30 +1470,6 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     formatButton.classList.toggle('active', open)
   })
 
-  editTools.append(formatButton)
-  for (const entry of TOOL_COMMANDS) {
-    editTools.append(
-      commandButton(
-        'edit-tool',
-        entry.label,
-        `<svg viewBox="0 0 24 24" aria-hidden="true">${entry.icon}</svg>`,
-        entry.command,
-        options.onCommand,
-      ),
-    )
-  }
-  const insertAsset = svgButton(
-    'edit-tool',
-    'Insert image or link file',
-    '<path d="m20.5 11.5-8.8 8.8a6 6 0 0 1-8.5-8.5l9.5-9.5a4 4 0 0 1 5.7 5.7l-9.6 9.5a2 2 0 1 1-2.8-2.8l8.8-8.8"/>',
-    options.onInsertAsset === undefined ? { disabled: true, owner: 'the portable file-link work' } : {},
-  )
-  if (options.onInsertAsset !== undefined) {
-    insertAsset.addEventListener('click', () => options.onInsertAsset?.())
-  }
-  editTools.append(insertAsset)
-  editTools.append(popover)
-
   // ---- right side ----
   const right = document.createElement('div')
   right.className = 'right'
@@ -1551,7 +1507,27 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   infoButton.addEventListener('click', () => infoPanel.toggle('statistics'))
   if (isMacOS) right.append(infoButton)
 
-  const stylesBar = createStylesBar(options)
+  // A deliberately hidden palette still has one quiet recovery control at the
+  // bottom of the page. Keeping it out of the titlebar preserves that bar's
+  // single purpose while making Hide reversible in the browser shell too.
+  const stylesBarReveal = document.createElement('button')
+  stylesBarReveal.type = 'button'
+  stylesBarReveal.className = 'styles-bar-reveal'
+  stylesBarReveal.textContent = 'Show styles bar'
+
+  const stylesBar = createStylesBar({
+    ...options,
+    onStylesBarVisibleChange: (visible) => {
+      stylesBarReveal.hidden = visible
+      options.onStylesBarVisibleChange(visible)
+    },
+  })
+  stylesBarReveal.hidden = !stylesBar.hidden
+
+  const formatGroup = document.createElement('div')
+  formatGroup.className = 'styles-menu-group styles-reader-settings'
+  formatGroup.append(formatButton, popover)
+  stylesBar.append(formatGroup)
 
   // The word count rides *inside* the palette rather than beside it.
   //
@@ -1584,14 +1560,16 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   const toggleStylesBar = (): void => {
     const visible = stylesBar.hidden
     stylesBar.hidden = !visible
+    stylesBarReveal.hidden = visible
     options.onStylesBarVisibleChange(visible)
     paintStylesBarToggle()
   }
   paintStylesBarToggle()
   stylesBarToggle.addEventListener('mousedown', (event) => event.preventDefault())
   stylesBarToggle.addEventListener('click', toggleStylesBar)
-  // The same tiny View/Format affordance restores a deliberately hidden bar;
-  // hiding it can never strand the user without a way back.
+  stylesBarReveal.addEventListener('click', toggleStylesBar)
+  // Reader settings own their associated palette preference. The separate
+  // bottom-page recovery control remains available when that palette is hidden.
   popover.append(stylesBarToggle)
 
   // Bear keeps the history arrows at the window's leading edge in both cases:
@@ -1599,7 +1577,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   if (isMacOS) titlebar.append(historyNavigation, filename, right)
   else {
     left.insertBefore(historyNavigation, documentListButton.nextSibling)
-    titlebar.append(left, filename, editTools, right)
+    titlebar.append(left, filename, right)
   }
 
   // ---- editor host ----
@@ -1619,7 +1597,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   const documentSurface = document.createElement('div')
   documentSurface.className = 'document-surface'
-  documentSurface.append(stylesBar, editorSection, infoPanel.element)
+  documentSurface.append(stylesBar, stylesBarReveal, editorSection, infoPanel.element)
   const disposeDocumentScrollIndicator = installDocumentScrollIndicator(editorSection, documentSurface, page)
   windowEl.addEventListener('pointerdown', (event) => {
     if (event.target instanceof Node && !stylesBar.contains(event.target)) {

@@ -68,12 +68,12 @@ test.describe('inline commands reach the document', () => {
   }
 })
 
-test('the checklist button produces a task item', async ({ page }) => {
+test('the Todo button produces a task item', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
   await page.keyboard.type('a thing to do')
   await expect.poll(() => markdown(page)).toContain('a thing to do')
-  await page.getByRole('button', { name: 'Checklist' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Todo', exact: true }).click()
 
   await expect(page.locator(`${editor} li[data-item-type="task"]`)).toHaveCount(1)
   await expect.poll(() => markdown(page)).toMatch(/[-*] \[ \] a thing to do/)
@@ -82,7 +82,7 @@ test('the checklist button produces a task item', async ({ page }) => {
 test('the table button inserts a real table', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Tables' }).click()
 
   await expect(page.locator(`${editor} table`)).toBeVisible()
 
@@ -96,7 +96,7 @@ test('the table button inserts a real table', async ({ page }) => {
 test('table headers keep their generous title rhythm while body rows use Reading density', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Tables' }).click()
 
   const table = page.locator(`${editor} table`)
   await expect(table).toBeVisible()
@@ -109,7 +109,7 @@ test('table headers keep their generous title rhythm while body rows use Reading
 test('table-local controls change rows, columns, and alignment as portable Markdown', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Tables' }).click()
 
   const table = page.locator(`${editor} table`)
   await table.locator('th').first().click()
@@ -140,7 +140,7 @@ test('table-local controls change rows, columns, and alignment as portable Markd
 test('table rows and columns move while the GFM header remains first', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Tables' }).click()
 
   const table = page.locator(`${editor} table`)
   await table.locator('th').nth(0).click()
@@ -167,7 +167,7 @@ test('table rows and columns move while the GFM header remains first', async ({ 
 test('Tab from the final table cell creates a new editable GFM row', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Tables' }).click()
 
   const table = page.locator(`${editor} table`)
   const rowsBefore = await table.locator('tr').count()
@@ -182,7 +182,7 @@ test('Tab from the final table cell creates a new editable GFM row', async ({ pa
 test('table controls delete structure without turning into table administration', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Tables' }).click()
 
   const table = page.locator(`${editor} table`)
   await table.locator('td').first().click()
@@ -202,7 +202,7 @@ test('table controls delete structure without turning into table administration'
 test('a table column can be width-dragged without width metadata entering Markdown', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Tables' }).click()
 
   const table = page.locator(`${editor} table`)
   const cell = table.locator('th').first()
@@ -223,7 +223,7 @@ test('a table column can be width-dragged without width metadata entering Markdo
 test('table controls select cells, bold them portably, and move the table as one block', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Tables' }).click()
 
   const table = page.locator(`${editor} table`)
   const dataCells = table.locator('td')
@@ -254,7 +254,7 @@ test('table controls select cells, bold them portably, and move the table as one
 test('advanced table administration stays out of the reader menu', async ({ page }) => {
   await caretAtEnd(page)
   await page.keyboard.press('Enter')
-  await page.getByLabel('Editing tools').getByRole('button', { name: 'Table' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Tables' }).click()
 
   const table = page.locator(`${editor} table`)
   await table.locator('td').first().click()
@@ -459,7 +459,8 @@ test('convert to diagram turns a Mermaid paragraph into a rendered block', async
     .poll(() => markdown(page))
     .toContain('A --> B')
 
-  await page.getByRole('button', { name: 'Convert to diagram' }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Convert to diagram' }).click()
 
   await expect(page.locator('.diagram')).toHaveCount(2)
   await expect.poll(() => markdown(page)).toContain('```mermaid')
@@ -500,5 +501,5 @@ test('workspace controls are enabled while agent participation stays gated', asy
   await expect(page.getByRole('button', { name: 'New note' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Document list' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Work with AI' })).toBeDisabled()
-  await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
+  await expect(page.getByLabel('Styles bar').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
 })

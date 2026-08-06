@@ -39,6 +39,8 @@ test('renders the approved wireframe chrome', async ({ page }) => {
   await expect(page.locator('.filename-title')).not.toContainText('.md')
   await expect(page.locator('.status')).toHaveAttribute('data-state', 'saved')
   await expect(page.getByRole('button', { name: 'Save file' })).toBeEnabled()
+  await expect(page.locator('.titlebar').getByRole('button', { name: 'Text formatting' })).toHaveCount(0)
+  await expect(page.getByLabel('Styles bar').getByRole('button', { name: 'Text formatting' })).toBeVisible()
 
   // Typography is the wireframe's, not the browser's default.
   const bodyFont = await page.locator(editor).evaluate((el) => getComputedStyle(el).fontFamily)
@@ -77,8 +79,8 @@ test('sidebar typography uses Bear-sized macOS system text', async ({ page }) =>
   })
 })
 
-test('save-state wording does not move the formatting controls', async ({ page }) => {
-  const formatting = page.locator('.edit-tools')
+test('save-state wording does not move the styles bar', async ({ page }) => {
+  const formatting = page.getByLabel('Styles bar')
   const before = await formatting.boundingBox()
   expect(before).not.toBeNull()
 
@@ -112,12 +114,12 @@ test('workspace controls are real while collaboration controls stay disabled', a
   // portable image/file references real. SHELL-1 delivers search, new note,
   // and the document list; Work with AI remains later work.
   await expect(page.getByRole('button', { name: 'Work with AI' })).toBeDisabled()
-  await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
+  await expect(page.getByLabel('Styles bar').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Search' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Open note' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Document list' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'New note' })).toBeEnabled()
-  await expect(page.getByLabel('Editing tools').getByRole('button', { name: 'Table' })).toBeEnabled()
+  await expect(page.getByLabel('Styles bar').getByRole('button', { name: 'Tables' })).toBeEnabled()
 })
 
 test('switches notes, filters the local index, creates a note, and can focus the page', async ({ page }) => {

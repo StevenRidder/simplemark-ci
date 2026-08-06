@@ -27,7 +27,7 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
       ? item.getAttribute('aria-label')
       : item.querySelector('button')?.getAttribute('aria-label')),
   )).resolves.toEqual([
-    'Move formatting palette', 'Headers', 'Todo', 'Lists', 'Bold', 'Italic', 'Highlight', 'Link', 'Tables', 'Insert image or link file', 'More',
+    'Move formatting palette', 'Headers', 'Todo', 'Lists', 'Bold', 'Italic', 'Highlight', 'Link', 'Tables', 'Insert image or link file', 'More', 'Text formatting',
   ])
 
   const geometry = await bar.evaluate((element) => {
@@ -48,10 +48,10 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
     position: 'absolute',
     bottom: '18px',
     radius: '11px',
-    size: [405, 33],
+    size: [436, 33],
     buttonSizes: [
       [17, 29], [39, 29], [31, 29], [39, 29], [31, 29], [31, 29],
-      [39, 29], [31, 29], [31, 29], [31, 29], [31, 29],
+      [39, 29], [31, 29], [31, 29], [31, 29], [31, 29], [31, 29],
     ],
   })
 
@@ -129,9 +129,9 @@ test('every styles-bar menu mirrors Bear and every visible command is available'
   await expect(more.locator(':scope > .styles-control:not(.styles-overflow-menu-item)').allTextContents())
     .resolves.toEqual([
       'Underline', 'Strikethrough', 'Footnote', 'Code', 'Code Block', 'Math', 'Math Block',
-      'Wiki Link', 'Hide styles bar',
+      'Wiki Link', 'Convert to diagram', 'Hide styles bar',
     ])
-  for (const name of ['Underline', 'Strikethrough', 'Footnote', 'Code', 'Code Block', 'Math', 'Math Block', 'Wiki Link']) {
+  for (const name of ['Underline', 'Strikethrough', 'Footnote', 'Code', 'Code Block', 'Math', 'Math Block', 'Wiki Link', 'Convert to diagram']) {
     await expect(more.getByRole('button', { name, exact: true })).toBeEnabled()
   }
 

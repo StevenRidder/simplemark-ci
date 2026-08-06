@@ -190,6 +190,22 @@ export interface WorkspaceOptions {
   readonly onTrashNote?: (id: string) => Promise<void>
   /** Reveals a note's or folder's real file in the platform file manager (Finder). */
   readonly onRevealInFinder?: (id: string) => Promise<void>
+  /**
+   * Back and forward through visited notes, owned by the shell.
+   *
+   * The chrome deliberately does not keep the stack: replaying a visit means
+   * reopening a file in the collection it was viewed in, which is platform
+   * work. What the chrome owns is the opposite half — `onSelectNote` order,
+   * since only it knows the order the notes are actually shown in.
+   *
+   * The `can` pair exists so the arrows can be honestly disabled. An enabled
+   * arrow that does nothing is the fake control this shell refuses to ship,
+   * which is exactly why these two buttons sat disabled until now.
+   */
+  readonly onHistoryBack?: () => void
+  readonly onHistoryForward?: () => void
+  readonly canHistoryBack?: () => boolean
+  readonly canHistoryForward?: () => boolean
 }
 
 export type WorkspaceMode = 'all' | 'notes' | 'editor'
@@ -241,6 +257,17 @@ export interface WindowChrome {
   setPreferences(next: ReaderPreferences): void
   toggleHistoryNavigation(): void
   historyNavigationVisible(): boolean
+  /**
+   * Moves to the note before or after the open one, wrapping at both ends.
+   *
+   * It walks the list *as displayed* — same sort, same pin ordering, same
+   * active search filter — because that is the only order the person pressing
+   * the key can see. Resolving it from the catalog instead would step through
+   * an order nothing on screen agrees with.
+   */
+  stepNote(delta: 1 | -1): void
+  /** Repaints the back/forward arrows from the shell's current answer. */
+  refreshHistoryNavigation(): void
   setWorkspaceMode(mode: WorkspaceMode): void
   workspaceMode(): WorkspaceMode
   /**
@@ -1074,22 +1101,38 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   left.append(documentListButton)
 
   // Back and forward through visited notes, hidden by default exactly as Bear
-  // hides them. They stay disabled until a catalog can be navigated: a stub
-  // with one note has nowhere to go back to, and an enabled arrow that does
-  // nothing is the fake control this shell refuses to ship.
+  // hides them. They are real now: the shell owns the visit stack and answers
+  // whether each direction leads anywhere, and these two reflect that answer
+  // rather than being lit unconditionally. An enabled arrow that does nothing
+  // is the fake control this shell refuses to ship, which is why they sat
+  // disabled while there was no stack behind them.
+  //
+  // The arrows read the live workspace at click time rather than capturing the
+  // one present at build time: `reconcileWorkspace` swaps it wholesale, and a
+  // captured reference would leave them driving a shell that no longer exists.
+  let activeWorkspace = options.workspace
   const historyNavigation = document.createElement('div')
   historyNavigation.className = 'history-navigation'
   historyNavigation.hidden = !uiPreferences.historyNavigationVisible
-  historyNavigation.append(
-    svgButton('tool', 'Back', '<path d="m14 6-6 6 6 6"/>', {
-      disabled: true,
-      owner: 'a real folder catalog',
-    }),
-    svgButton('tool', 'Forward', '<path d="m10 6 6 6-6 6"/>', {
-      disabled: true,
-      owner: 'a real folder catalog',
-    }),
-  )
+  const backButton = svgButton('tool', 'Back', '<path d="m14 6-6 6 6 6"/>')
+  const forwardButton = svgButton('tool', 'Forward', '<path d="m10 6 6 6-6 6"/>')
+  historyNavigation.append(backButton, forwardButton)
+  // mousedown rather than click, for the same reason the toolbar uses it: the
+  // editor must keep focus while the shell reads what is selected.
+  backButton.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    activeWorkspace?.onHistoryBack?.()
+  })
+  forwardButton.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    activeWorkspace?.onHistoryForward?.()
+  })
+  const refreshHistoryNavigation = (): void => {
+    backButton.disabled = activeWorkspace?.canHistoryBack?.() !== true
+    forwardButton.disabled = activeWorkspace?.canHistoryForward?.() !== true
+    backButton.title = backButton.disabled ? 'Back — nothing behind this note' : 'Back'
+    forwardButton.title = forwardButton.disabled ? 'Forward — nothing ahead of this note' : 'Forward'
+  }
   const toggleHistoryNavigation = (): void => {
     historyNavigation.hidden = !historyNavigation.hidden
     rememberUi({ historyNavigationVisible: !historyNavigation.hidden })
@@ -1595,6 +1638,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   let repaintNoteList = (): void => {}
   let repaintFolderList = (): void => {}
   let reconcileWorkspace = (_workspace: WorkspaceOptions): void => {}
+  // A shell with no note list has no previous or next note; the default stays.
+  let stepNote = (_delta: 1 | -1): void => {}
 
   /**
    * The update strip in the library footer (docs/UPDATE-NOTIFICATION.md §2).
@@ -1646,6 +1691,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     let modifiedOrder = new Map(workspaceNotes.map((note, index) => [note.id, index]))
     let pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
     let pinSequence = 0
+    /** Note ids in the order the list last painted them. Set by `paintNotes`. */
+    let visibleOrder: readonly string[] = []
     const workspaceBody = document.createElement('div')
     workspaceBody.className = 'workspace-body'
 
@@ -2139,6 +2186,11 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
               : (modifiedOrder.get(left.id) ?? 0) - (modifiedOrder.get(right.id) ?? 0)
           return newestOnTop ? order : -order
         })
+      // Remembered so Previous/Next Note walk exactly what is on screen —
+      // including the current search filter, which is the point: while a search
+      // is narrowing the list, "next note" can only sensibly mean the next
+      // result.
+      visibleOrder = visibleNotes.map((note) => note.id)
       for (const note of visibleNotes) {
         const item = document.createElement('div')
         item.className = 'note-item'
@@ -2364,13 +2416,34 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       paintMenuState()
       paintNotes()
     }
+    /**
+     * Previous/Next Note, wrapping at both ends.
+     *
+     * `visibleOrder` rather than `workspaceNotes`: the list on screen is
+     * sorted, pin-ordered and possibly search-filtered, and stepping through
+     * any other sequence would move the selection somewhere the eye cannot
+     * follow. A list of one has nowhere to go, and wrapping to yourself is not
+     * movement, so that case does nothing rather than reopening the note.
+     */
+    stepNote = (delta): void => {
+      if (workspace.onSelectNote === undefined || visibleOrder.length < 2) return
+      const index = visibleOrder.indexOf(workspace.activeNoteId)
+      // An active note filtered out of view (mid-search) has no neighbours to
+      // speak of, so the walk starts from whichever end you are heading toward.
+      const from = index === -1 ? (delta === 1 ? -1 : 0) : index
+      const next = (from + delta + visibleOrder.length) % visibleOrder.length
+      const id = visibleOrder[next]
+      if (id !== undefined && id !== workspace.activeNoteId) workspace.onSelectNote(id)
+    }
     reconcileWorkspace = (next): void => {
       workspace = next
+      activeWorkspace = next
       workspaceNotes = next.notes.map((note) => ({ ...note }))
       modifiedOrder = new Map(workspaceNotes.map((note, index) => [note.id, index]))
       pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
       paintFolderRows()
       repaintNoteList()
+      refreshHistoryNavigation()
     }
     repaintNoteList()
     noteItems.addEventListener('scroll', () => {
@@ -2550,6 +2623,11 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   stage.append(windowEl)
 
+  // First paint of the arrows. Everything after this comes through
+  // `reconcileWorkspace`, so the buttons never state a claim the shell has
+  // stopped agreeing with.
+  refreshHistoryNavigation()
+
   return {
     element: stage,
     editorHost: page,
@@ -2572,6 +2650,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     setUpdateStatus: showUpdate,
     toggleHistoryNavigation,
     historyNavigationVisible: () => !historyNavigation.hidden,
+    stepNote: (delta) => stepNote(delta),
+    refreshHistoryNavigation,
     setWorkspaceMode: (mode) => setWorkspaceMode(mode),
     workspaceMode: () => getWorkspaceMode(),
     setPreviewDensity(density) {

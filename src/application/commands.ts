@@ -93,6 +93,11 @@ export type DocumentCommandId =
   | 'print'
   | 'find'
   | 'togglePinned'
+  // Go — moving between notes rather than within one
+  | 'historyBack'
+  | 'historyForward'
+  | 'previousNote'
+  | 'nextNote'
   // View — reading size
   | 'zoomIn'
   | 'zoomOut'
@@ -256,6 +261,20 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   print: { id: 'print', label: 'Print…', target: 'shell', accelerator: 'CmdOrCtrl+P' },
   find: { id: 'find', label: 'Find in Document…', target: 'shell', accelerator: 'CmdOrCtrl+F' },
   togglePinned: { id: 'togglePinned', label: 'Pin to Top', target: 'shell', checkable: true },
+
+  // Moving between notes, on ⌘⌥ plus the arrows.
+  //
+  // Not plain ⌘-arrows, which macOS already owns: ⌘←/→ is caret to line
+  // start/end and ⌘↑/↓ is caret to document start/end. Those are native
+  // contenteditable behaviours, so binding them here would mean calling
+  // preventDefault on the real thing in an app whose main surface is a text
+  // editor. The two conventional alternatives are taken as well — ⌘[ / ⌘] is
+  // already outdent/indent, and ⌘⇧↑/↓ is already Move Block. ⌘⌥ plus an arrow
+  // is the remaining chord that costs the document nothing.
+  historyBack: { id: 'historyBack', label: 'Back', target: 'shell', accelerator: 'CmdOrCtrl+Alt+Left' },
+  historyForward: { id: 'historyForward', label: 'Forward', target: 'shell', accelerator: 'CmdOrCtrl+Alt+Right' },
+  previousNote: { id: 'previousNote', label: 'Previous Note', target: 'shell', accelerator: 'CmdOrCtrl+Alt+Up' },
+  nextNote: { id: 'nextNote', label: 'Next Note', target: 'shell', accelerator: 'CmdOrCtrl+Alt+Down' },
 
   // Reading size. One multiplier over the whole document, never a selection
   // (D6) — which is why these are shell commands rather than editor ones.
@@ -530,6 +549,15 @@ export const MENUS: readonly MenuSpec[] = [
       ['toggleStatistics', 'contents'],
       ['toggleWordCount', 'toggleStylesBar', 'toggleHistoryNavigation'],
     ],
+  },
+  {
+    /**
+     * Where macOS puts navigation: Finder's Go menu sits after View, and
+     * history belongs beside the list-walking it interleaves with rather than
+     * buried in a View menu that is otherwise about how one document looks.
+     */
+    label: 'Go',
+    sections: [['historyBack', 'historyForward'], ['previousNote', 'nextNote']],
   },
   {
     label: 'Note',

@@ -37,6 +37,8 @@ import { loadWindowGeometry, saveWindowGeometry } from './window-geometry.js'
 import { loadActiveCollection, saveActiveCollection } from './workspace-selection.js'
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
 import { WorkspacePins } from './workspace-pins.js'
+import { WorkspaceHistoryStore } from './workspace-history.js'
+import type { Visit } from './workspace-history.js'
 import {
   WorkspaceCollections,
   WorkspaceFolderStore,
@@ -147,6 +149,8 @@ async function startNative(
   const folderStore = new WorkspaceFolderStore(window.localStorage)
   const hiddenStore = new WorkspaceHiddenStore(window.localStorage)
   const recentStore = new WorkspaceRecentStore(window.localStorage)
+  const historyStore = new WorkspaceHistoryStore(window.localStorage)
+  const history = historyStore.load()
   const watchedFolders = new Set<string>()
 
   const showOpenFailure = (error: unknown): void => {
@@ -206,6 +210,10 @@ async function startNative(
       closeNote,
       trashNote,
       revealInFinder,
+      historyBack,
+      historyForward,
+      canHistoryBack: () => history.canBack(),
+      canHistoryForward: () => history.canForward(),
       folders: collections.folders(),
       activeCollectionId: collectionId,
       recentNotesCount: collections.recentCount(),
@@ -249,6 +257,10 @@ async function startNative(
         closeNote,
         trashNote,
         revealInFinder,
+        historyBack,
+        historyForward,
+        canHistoryBack: () => history.canBack(),
+        canHistoryForward: () => history.canForward(),
         folders: collections.folders(),
         activeCollectionId,
         recentNotesCount: collections.recentCount(),
@@ -257,13 +269,27 @@ async function startNative(
     await watch(port, opened.handle)
   }
 
-  const openInCollection = (path: string, collectionId: string): void => {
+  /**
+   * Opens a note, optionally recording the arrival in the visit stack.
+   *
+   * `record` is the whole distinction between going somewhere and going back.
+   * Every ordinary open — a row click, a Previous/Next Note walk, a collection
+   * switch — is a place you chose to go, so it lands on the stack. Replaying an
+   * entry the Back button already moved the cursor to must not, or the stack
+   * would rewrite itself under its own navigation and Forward would never
+   * survive a single step backwards.
+   */
+  const openInCollection = (path: string, collectionId: string, record = true): void => {
     if (
       requestedSelection === undefined
       && path === activeHandle
       && collectionId === activeCollectionId
     ) return
     requestedSelection = { path, collectionId }
+    if (record) {
+      history.visit({ handle: path, collectionId })
+      historyStore.save(history)
+    }
     // A row click has immediate visible acknowledgement even though the
     // durable transition must save before reading another file.
     reconcileWorkspace(path, collectionId)
@@ -283,6 +309,22 @@ async function startNative(
   }
 
   const selectNote = (path: string): void => openInCollection(path, activeCollectionId)
+
+  /**
+   * Replays the entry the cursor lands on after a step.
+   *
+   * The cursor moves first and the open follows, so the stack is the single
+   * source of truth about where you are; nothing here recomputes a position
+   * from the note that happens to be showing.
+   */
+  const replay = (visit: Visit | undefined): void => {
+    if (visit === undefined) return
+    historyStore.save(history)
+    openInCollection(visit.handle, visit.collectionId, false)
+  }
+
+  const historyBack = (): void => replay(history.back())
+  const historyForward = (): void => replay(history.forward())
 
   const selectCollection = (collectionId: string): void => {
     if (collectionId === activeCollectionId) return
@@ -465,6 +507,10 @@ async function startNative(
         closeNote,
         trashNote,
         revealInFinder,
+        historyBack,
+        historyForward,
+        canHistoryBack: () => history.canBack(),
+        canHistoryForward: () => history.canForward(),
         folders: collections.folders(),
         activeCollectionId,
         recentNotesCount: collections.recentCount(),
@@ -571,6 +617,16 @@ async function startNative(
   }
   persistRecentNotes()
 
+  // A persisted stack outlives the files in it, so it is filtered against what
+  // the workspace can actually reach before anything can navigate to it. The
+  // recent map is the right authority here: it is the set of notes an explicit
+  // open has already put in reach, which is the same set history is built from.
+  {
+    const reachable = new Set(collections.recentNotes('').notes.map((note) => note.handle))
+    history.retain((visit) => reachable.has(visit.handle))
+    historyStore.save(history)
+  }
+
   current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
     filePath: 'Demo workspace · open a file to work with your own Markdown',
     pageZoom,
@@ -595,6 +651,13 @@ async function startNative(
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(restoredNote.handle)
       await install(port, opened, activeCollectionId)
+      // Launch lands you somewhere, so the stack has to agree that is where
+      // you are. `visit` ignores this when it already is the current entry —
+      // the common case, since the restored note is usually the last one you
+      // had open — so a restart does not pad the stack with a duplicate.
+      history.visit({ handle: restoredNote.handle, collectionId: activeCollectionId })
+      historyStore.save(history)
+      reconcileWorkspace(restoredNote.handle, activeCollectionId)
     } catch {
       collections.forgetRecent(restoredNote.handle)
       persistRecentNotes()
@@ -868,6 +931,10 @@ function catalogWorkspace(
     readonly closeNote: (id: string) => Promise<void>
     readonly trashNote: (id: string) => Promise<void>
     readonly revealInFinder: (id: string) => Promise<void>
+    readonly historyBack: () => void
+    readonly historyForward: () => void
+    readonly canHistoryBack: () => boolean
+    readonly canHistoryForward: () => boolean
     readonly folders: readonly WorkspaceCatalog[]
     readonly activeCollectionId: string
     readonly recentNotesCount: number
@@ -896,6 +963,10 @@ function catalogWorkspace(
     onCloseNote: actions.closeNote,
     onTrashNote: actions.trashNote,
     onRevealInFinder: actions.revealInFinder,
+    onHistoryBack: actions.historyBack,
+    onHistoryForward: actions.historyForward,
+    canHistoryBack: actions.canHistoryBack,
+    canHistoryForward: actions.canHistoryForward,
     notes: catalog.notes.map((note) => ({
       id: note.handle,
       identifier: note.name,

@@ -262,6 +262,18 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       case 'togglePinned':
         chrome.togglePinned(options.workspace?.activeNoteId ?? '')
         return
+      case 'historyBack':
+        options.workspace?.onHistoryBack?.()
+        return
+      case 'historyForward':
+        options.workspace?.onHistoryForward?.()
+        return
+      case 'previousNote':
+        chrome.stepNote(-1)
+        return
+      case 'nextNote':
+        chrome.stepNote(1)
+        return
       case 'previewSmall':
         chrome.setPreviewDensity('small')
         return
@@ -374,6 +386,19 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         enabled: options.workspace?.onTogglePinned !== undefined && active !== undefined,
         checked: active === undefined ? false : chrome.isPinned(active.id),
       }
+    }
+    // A greyed-out Back is the honest answer when there is nowhere behind you,
+    // and the menubar is where most people will discover these exist at all.
+    if (id === 'historyBack') {
+      return { enabled: options.workspace?.canHistoryBack?.() === true, checked: false }
+    }
+    if (id === 'historyForward') {
+      return { enabled: options.workspace?.canHistoryForward?.() === true, checked: false }
+    }
+    if (id === 'previousNote' || id === 'nextNote') {
+      // Two notes is the smallest list with a previous and a next in it.
+      const notes = options.workspace?.notes.length ?? 0
+      return { enabled: options.workspace?.onSelectNote !== undefined && notes > 1, checked: false }
     }
     if (id === 'toggleStylesBar') return { enabled: true, checked: chrome.stylesBarVisible() }
     if (id === 'toggleWordCount') return { enabled: true, checked: chrome.wordCountVisible() }
@@ -642,6 +667,35 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       event.preventDefault()
       findBar.open()
     }
+  })
+
+  /**
+   * Moving between notes on ⌘⌥ plus an arrow.
+   *
+   * The same double surface `find` uses, and for the same reason: the browser
+   * shell has no menubar, so a DOM listener is the only way the shortcut exists
+   * there at all. It does not double-fire in the native app — macOS resolves a
+   * menu key equivalent in `performKeyEquivalent`, before the webview's
+   * responder chain ever sees the keystroke, so exactly one of the two paths
+   * runs on each platform. That matters more here than it does for `find`,
+   * which is idempotent; going back twice on one keypress would not be.
+   */
+  const NOTE_NAVIGATION: Readonly<Record<string, DocumentCommandId>> = {
+    ArrowLeft: 'historyBack',
+    ArrowRight: 'historyForward',
+    ArrowUp: 'previousNote',
+    ArrowDown: 'nextNote',
+  }
+  chrome.element.addEventListener('keydown', (event) => {
+    if (!(event.metaKey || event.ctrlKey) || !event.altKey || event.shiftKey) return
+    const command = NOTE_NAVIGATION[event.key]
+    if (command === undefined) return
+    // Only claim the keystroke once the command is actually available, so a
+    // dead end falls through to whatever the platform would otherwise do
+    // rather than being silently swallowed.
+    if (!commandState(command).enabled) return
+    event.preventDefault()
+    runCommand(command)
   })
 
   /**

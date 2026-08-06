@@ -15,6 +15,8 @@ import type { FilePort } from '../application/index.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
+import { VisitHistory } from './workspace-history.js'
+import type { Visit } from './workspace-history.js'
 
 import './styles/tokens.css'
 import './styles/app.css'
@@ -101,10 +103,20 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   let activeId = DEMO_NOTES[0]!.id
   let current: AppComposition | undefined
 
-  const openDemoNote = async (id: string, force = false): Promise<void> => {
+  // In memory rather than persisted: the demo notes are rebuilt on every load,
+  // so a stack that outlived the page would point at notes that no longer are.
+  // The native shell persists its own for the opposite reason — its notes are
+  // real files that survive.
+  const history = new VisitHistory()
+
+  const openDemoNote = async (id: string, force = false, record = true): Promise<void> => {
     const note = DEMO_NOTES.find((candidate) => candidate.id === id)
     const port = ports.get(id)
     if (note === undefined || port === undefined || (id === activeId && current !== undefined && !force)) return
+    // Recorded after the guard, so a no-op reselect never reaches the stack.
+    // Replaying a visit passes `record: false`; a Back that pushed its own
+    // destination would make Forward unreachable in one step.
+    if (record) history.visit({ handle: id, collectionId: 'recent' })
     if (current !== undefined) {
       await current.save()
       await current.destroy()
@@ -168,6 +180,11 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     current.setStatus('saved', 'Closed note — file remains on disk')
   }
 
+  const replay = (visit: Visit | undefined): void => {
+    if (visit === undefined) return
+    void openDemoNote(visit.handle, false, false)
+  }
+
   const workspaceSnapshot = (): WorkspaceOptions => workspaceOptions(
     activeId,
     openDemoNote,
@@ -179,6 +196,12 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
       if (markdown !== undefined) await navigator.clipboard.writeText(markdown)
     },
     closeDemoNote,
+    {
+      onHistoryBack: () => replay(history.back()),
+      onHistoryForward: () => replay(history.forward()),
+      canHistoryBack: () => history.canBack(),
+      canHistoryForward: () => history.canForward(),
+    },
   )
 
   await openDemoNote(activeId)
@@ -193,6 +216,11 @@ function workspaceOptions(
   onCopyText: (text: string) => Promise<void>,
   onCopyMarkdown: (id: string) => Promise<void>,
   onCloseNote: (id: string) => Promise<void>,
+  /** Grouped rather than four more positionals — the list is long enough. */
+  navigation: Pick<
+    WorkspaceOptions,
+    'onHistoryBack' | 'onHistoryForward' | 'canHistoryBack' | 'canHistoryForward'
+  >,
 ): WorkspaceOptions {
   return {
     name: 'SimpleMark',
@@ -203,6 +231,7 @@ function workspaceOptions(
     onCopyText,
     onCopyMarkdown,
     onCloseNote,
+    ...navigation,
     notes: DEMO_NOTES.map((note) => ({
       id: note.id,
       identifier: note.name,

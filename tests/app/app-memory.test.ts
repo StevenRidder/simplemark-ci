@@ -72,22 +72,26 @@ describe('stable app memory', () => {
   test('restores and remembers browser-style WebKit magnification', () => {
     const storage = new MemoryStorage()
     const requested: number[] = []
+    const trafficLightPositions: number[] = []
     let enabled = 0
     savePageZoom(storage, 1.25)
     const controller = createPageZoomController(storage, {
       enable: () => { enabled += 1 },
       setMagnification: (zoom) => { requested.push(zoom) },
+      syncTrafficLightPosition: (zoom) => { trafficLightPositions.push(zoom) },
     })
 
     controller.set(1.5)
 
     expect(enabled).toBe(1)
     expect(requested).toEqual([1.25, 1.5])
+    expect(trafficLightPositions).toEqual([1.25, 1.5])
     expect(controller.current()).toBe(1.5)
     expect(loadPageZoom(storage)).toBe(1.5)
 
     controller.remember(1.75)
     expect(requested).toEqual([1.25, 1.5])
+    expect(trafficLightPositions).toEqual([1.25, 1.5, 1.75])
     expect(controller.current()).toBe(1.75)
     expect(loadPageZoom(storage)).toBe(1.75)
   })

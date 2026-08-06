@@ -30,7 +30,7 @@ describe('native window capabilities', () => {
     expect(capability.permissions).toContain('clipboard-manager:allow-write-text')
   })
 
-  it('centres the macOS traffic lights in the 58px pane header', () => {
+  it('uses the default-scale pane-header baseline before native zoom adjustment', () => {
     expect(config.app.windows[0]?.trafficLightPosition).toEqual({ x: 18, y: 32 })
   })
 })

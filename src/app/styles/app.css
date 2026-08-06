@@ -3266,7 +3266,9 @@ section.editor::-webkit-scrollbar {
 }
 
 :root[data-shell='native'] .workspace-body[data-layout='notes'] .notes-header {
-  padding-left: 78px;
+  /* In the two-pane layout, leave a little more breathing room after the
+     traffic-light cluster before the collection title begins. */
+  padding-left: 90px;
 }
 
 :root[data-shell='native'] .workspace-body.navigation-hidden .native-editor-head {

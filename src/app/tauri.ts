@@ -77,11 +77,16 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   const pageZoom = createPageZoomController(window.localStorage, {
     enable: () => invoke('enable_page_magnification'),
     setMagnification: (magnification) => invoke('set_page_magnification', { magnification }),
+    syncTrafficLightPosition: (magnification) => invoke('sync_traffic_lights_to_page_zoom', { magnification }),
   })
   await installNativePageMagnificationTracking(pageZoom)
   const controller = await startNative(root, pageZoom)
   let geometryTimer: ReturnType<typeof setTimeout> | undefined
   const rememberGeometry = (): void => {
+    // Wry re-applies its configured traffic-light inset whenever the window
+    // redraws during a resize. Put the zoom-aware baseline back afterwards.
+    void invoke('sync_traffic_lights_to_page_zoom', { magnification: pageZoom.current() })
+      .catch(() => undefined)
     clearTimeout(geometryTimer)
     geometryTimer = setTimeout(() => {
       void Promise.all([

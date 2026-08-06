@@ -38,6 +38,8 @@ mod macos_context_menu;
 #[cfg(target_os = "macos")]
 mod macos_note_navigation;
 #[cfg(target_os = "macos")]
+mod macos_traffic_lights;
+#[cfg(target_os = "macos")]
 mod macos_zoom;
 
 #[cfg(target_os = "macos")]
@@ -1128,6 +1130,26 @@ fn set_page_magnification(
     Ok(())
 }
 
+/// Keeps the native traffic lights aligned with the whole-page WebKit zoom.
+/// The controls live outside the web view, so AppKit cannot infer that scale.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn sync_traffic_lights_to_page_zoom(
+    window: tauri::WebviewWindow,
+    magnification: f64,
+) -> Result<(), String> {
+    macos_traffic_lights::sync_to_page_zoom(&window, magnification)
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn sync_traffic_lights_to_page_zoom(
+    _window: tauri::WebviewWindow,
+    _magnification: f64,
+) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -1166,6 +1188,7 @@ pub fn run() {
             build_provenance,
             enable_page_magnification,
             set_page_magnification,
+            sync_traffic_lights_to_page_zoom,
             watch_note,
             stop_watching_note,
             watch_workspace_folder

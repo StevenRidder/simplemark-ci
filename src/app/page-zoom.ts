@@ -20,6 +20,11 @@ export interface NativeMagnificationPort {
   readonly enable: () => void | Promise<void>
   /** Restores a saved scale or returns to Actual Size through WebKit. */
   readonly setMagnification: (zoom: number) => void | Promise<void>
+  /**
+   * Keeps the native macOS traffic lights on the same header baseline as the
+   * magnified web view. Other platforms deliberately have no equivalent.
+   */
+  readonly syncTrafficLightPosition?: (zoom: number) => void | Promise<void>
 }
 
 export function clampPageZoom(value: number): number {
@@ -60,6 +65,7 @@ export function createPageZoomController(
 
   const preview = (zoom: number): void => {
     current = clampPageZoom(zoom)
+    void native.syncTrafficLightPosition?.(current)
   }
 
   const remember = (zoom: number): void => {

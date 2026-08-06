@@ -95,7 +95,12 @@ export class DocumentSession {
     return { ok: true, revision: this.#revision }
   }
 
-  async save(): Promise<SaveResult> {
+  async save(force = false): Promise<SaveResult> {
+    // Selecting another note asks the current session to save before it is
+    // swapped out. A clean document has nothing to persist, and writing it
+    // anyway changes the file's modification date just for having been read.
+    if (!force && !this.#dirty) return { ok: true, revision: this.#revision }
+
     try {
       await this.port.save(this.handle, new TextEncoder().encode(this.markdown))
     } catch (error) {

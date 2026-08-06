@@ -1677,7 +1677,6 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   } else {
     let workspace = options.workspace
     let workspaceNotes = workspace.notes.map((note) => ({ ...note }))
-    let modifiedOrder = new Map(workspaceNotes.map((note, index) => [note.id, index]))
     let pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
     let pinSequence = 0
     /** Note ids in the order the list last painted them. Set by `paintNotes`. */
@@ -1975,6 +1974,12 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       if (action !== undefined) button.addEventListener('click', action)
       return button
     }
+    const menuSection = (label: string): HTMLDivElement => {
+      const section = document.createElement('div')
+      section.className = 'notes-menu-section'
+      section.textContent = label
+      return section
+    }
     const countRow = document.createElement('div')
     countRow.className = 'notes-menu-count'
     countRow.textContent = `${workspaceNotes.length} notes`
@@ -1982,6 +1987,10 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const createdKnown = workspaceNotes.every((note) => note.createdAt !== undefined)
     const sortModified = menuRow('Sort by modification date')
     const sortCreated = menuRow('Sort by creation date')
+    if (!datesKnown) {
+      sortModified.disabled = true
+      sortModified.title = 'Modification date — available when the catalog reports timestamps'
+    }
     if (!createdKnown) {
       sortCreated.disabled = true
       sortCreated.title = 'Creation date — available when the catalog reports timestamps'
@@ -1995,22 +2004,23 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     exportNotes.disabled = true
     exportNotes.title = 'Export — available when a real folder catalog is connected'
     const showAll = menuRow('Recent Notes')
-    const showPinned = menuRow('Pinned')
+    const showPinned = menuRow('Pinned only')
     notesMenu.append(
       countRow,
+      menuSection('Sort'),
       sortModified,
       sortCreated,
       sortTitle,
       newestOnTopRow,
-      document.createElement('hr'),
+      menuSection('Layout'),
       previewSmall,
       previewMedium,
       previewLarge,
-      document.createElement('hr'),
-      exportNotes,
-      document.createElement('hr'),
+      menuSection('Filter'),
       showAll,
       showPinned,
+      menuSection('File'),
+      exportNotes,
     )
 
     const noteItems = document.createElement('div')
@@ -2131,7 +2141,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       // `<img onerror=…>` write markup into the chrome.
       const tick = (on: boolean): string => (on ? '✓  ' : '')
       const label = document.createElement('span')
-      label.textContent = noteFilter === 'pinned' ? 'Pinned' : (workspace.collectionLabel ?? 'Recent Notes')
+      label.textContent = noteFilter === 'pinned' ? 'Pinned only' : (workspace.collectionLabel ?? 'Recent Notes')
       const disclosure = document.createElement('span')
       disclosure.setAttribute('aria-hidden', 'true')
       disclosure.innerHTML = tablerIcon('chevron-down')
@@ -2144,7 +2154,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       previewMedium.textContent = `${tick(previewDensity === 'medium')}Medium preview`
       previewLarge.textContent = `${tick(previewDensity === 'large')}Large preview`
       showAll.textContent = `${tick(noteFilter === 'all')}Recent Notes`
-      showPinned.textContent = `${tick(noteFilter === 'pinned')}Pinned`
+      const pinnedCount = workspaceNotes.filter((note) => note.pinned).length
+      showPinned.textContent = `${tick(noteFilter === 'pinned')}Pinned only (${pinnedCount})`
       noteList.dataset['preview'] = previewDensity
       paintLibrary()
     }
@@ -2157,10 +2168,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       // orders — reversing a title sort is what `A to Z` means, and that is
       // offered under Folders Sorting rather than here.
       //
-      // Modification order comes from the catalog's own sequence rather than
-      // from a timestamp, because that is the order the catalog actually knows;
-      // creation date needs a real stamp, and the menu disables that sort when
-      // the catalog cannot supply one.
+      // Native catalogs provide filesystem timestamps. Selection never changes
+      // either one: only a content write can change modification date.
       const visibleNotes = [...workspaceNotes]
         .filter((note) => noteFilter === 'all' || note.pinned)
         .filter((note) => query === '' || `${note.title} ${note.preview}`.toLocaleLowerCase().includes(query))
@@ -2175,7 +2184,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
           const order =
             notesSort === 'created'
               ? (right.createdAt ?? 0) - (left.createdAt ?? 0)
-              : (modifiedOrder.get(left.id) ?? 0) - (modifiedOrder.get(right.id) ?? 0)
+              : (right.updatedAt ?? 0) - (left.updatedAt ?? 0)
           return newestOnTop ? order : -order
         })
       // Remembered so Previous/Next Note walk exactly what is on screen —
@@ -2183,6 +2192,24 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       // is narrowing the list, "next note" can only sensibly mean the next
       // result.
       visibleOrder = visibleNotes.map((note) => note.id)
+      if (visibleNotes.length === 0) {
+        const empty = document.createElement('div')
+        empty.className = 'note-list-empty'
+        if (noteFilter === 'pinned') {
+          const message = document.createElement('span')
+          message.textContent = 'No pinned notes'
+          const showRecent = document.createElement('button')
+          showRecent.type = 'button'
+          showRecent.className = 'note-list-empty-action'
+          showRecent.textContent = 'Show Recent Notes'
+          showRecent.addEventListener('click', selectRecentNotes)
+          empty.append(message, showRecent)
+        } else {
+          empty.textContent = query === '' ? 'No notes in this view' : 'No notes match this search'
+        }
+        noteItems.append(empty)
+        return
+      }
       for (const note of visibleNotes) {
         const item = document.createElement('div')
         item.className = 'note-item'
@@ -2243,6 +2270,18 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         preview.textContent = note.preview
         const updated = document.createElement('time')
         updated.textContent = note.updatedLabel
+        if (note.pinned) {
+          // The pin is durable note state, unlike Close and Pin/Unpin actions
+          // which appear only on hover. It explains why this note is leading
+          // Recent Notes without turning the row into a permanent toolbar.
+          const pinStatus = document.createElement('span')
+          pinStatus.className = 'note-pinned-status'
+          pinStatus.setAttribute('role', 'img')
+          pinStatus.setAttribute('aria-label', 'Pinned')
+          pinStatus.title = 'Pinned'
+          pinStatus.innerHTML = tablerIcon('pin')
+          updated.prepend(pinStatus)
+        }
         select.append(title, preview, updated)
         if (workspace.onSelectNote !== undefined) {
           select.addEventListener('click', () => workspace.onSelectNote?.(note.id))
@@ -2414,9 +2453,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
      * `visibleOrder` rather than `workspaceNotes`: the list on screen is
      * sorted, pin-ordered and possibly search-filtered, and stepping through
      * any other sequence would move the selection somewhere the eye cannot
-     * follow. `NoteWalk` owns the harder half — Recent Notes re-sorts as you
-     * open notes, so the sequence a run of presses walks has to be the one it
-     * started with rather than whatever the list says on each keystroke.
+     * follow. `NoteWalk` keeps a run stable if another list action reorders it
+     * while the user is stepping through notes.
      */
     stepNote = (delta): void => {
       if (workspace.onSelectNote === undefined) return
@@ -2428,7 +2466,6 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       workspace = next
       activeWorkspace = next
       workspaceNotes = next.notes.map((note) => ({ ...note }))
-      modifiedOrder = new Map(workspaceNotes.map((note, index) => [note.id, index]))
       pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
       paintFolderRows()
       repaintNoteList()

@@ -1320,16 +1320,18 @@ section.editor::-webkit-scrollbar {
   display: none;
 }
 
-.notes-menu hr {
-  margin: 5px 0;
-  border: 0;
-  border-top: 1px solid var(--line);
-}
-
 .notes-menu-count {
   padding: 5px 9px;
   color: var(--ink-3);
   font-size: 11px;
+}
+
+.notes-menu-section {
+  padding: 8px 9px 3px;
+  color: var(--ink-3);
+  font: 600 10px/1 var(--sans);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
 .notes-menu-row {
@@ -1419,6 +1421,27 @@ section.editor::-webkit-scrollbar {
   border: 3px solid transparent;
   border-radius: 999px;
   background: color-mix(in srgb, var(--ink-3) 42%, transparent) content-box;
+}
+
+.note-list-empty {
+  padding: 25px 12px;
+  color: var(--ink-3);
+  font: 13px/1.45 var(--sans);
+}
+
+.note-list-empty-action {
+  display: block;
+  margin: 7px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: 600 13px/1.45 var(--sans);
+}
+
+.note-list-empty-action:hover,
+.note-list-empty-action:focus-visible {
+  text-decoration: underline;
 }
 
 .note-item {
@@ -1516,9 +1539,30 @@ section.editor::-webkit-scrollbar {
 }
 
 .note-select time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--ink-3);
   font-size: 12px;
   line-height: 1.25;
+}
+
+.note-pinned-status {
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  color: var(--accent);
+}
+
+.note-pinned-status svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .workspace-notes[data-preview='small'] .note-item {

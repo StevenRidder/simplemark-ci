@@ -32,6 +32,24 @@ describe('DocumentSession', () => {
     expect(session.snapshot()).toEqual({ revision: 0, markdown: '# Title\n\nbody\n', dirty: false })
   })
 
+  test('saving an untouched document is a no-op', async () => {
+    const { port, saved } = stubPort('# Title\n')
+    const session = await DocumentSession.open(port)
+
+    await expect(session.save()).resolves.toEqual({ ok: true, revision: 0 })
+    expect(saved).toEqual([])
+    expect(session.snapshot().dirty).toBe(false)
+  })
+
+  test('a forced save can export an untouched document without making it dirty', async () => {
+    const { port, saved } = stubPort('# Title\n')
+    const session = await DocumentSession.open(port)
+
+    await expect(session.save(true)).resolves.toEqual({ ok: true, revision: 0 })
+    expect(saved).toEqual(['# Title\n'])
+    expect(session.snapshot().dirty).toBe(false)
+  })
+
   test('applying a transaction at the current revision advances it and marks the document dirty', async () => {
     const { port } = stubPort('# Title\n')
     const session = await DocumentSession.open(port)

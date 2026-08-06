@@ -23,6 +23,9 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('L2-020 selecting notes preserves the complete catalog and changes only the document', async ({ page }) => {
+  const initialOrder = await notes(page).locator('.note-select').evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute('aria-label')),
+  )
   await expect(notes(page).locator('.note-item')).toHaveCount(3)
 
   for (const [name, heading] of [
@@ -34,6 +37,9 @@ test('L2-020 selecting notes preserves the complete catalog and changes only the
     await expect(notes(page).locator('.note-item')).toHaveCount(3)
     await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText(heading)
     await expect(page.getByRole('button', { name, exact: true })).toHaveAttribute('aria-current', 'page')
+    await expect.poll(() => notes(page).locator('.note-select').evaluateAll((rows) =>
+      rows.map((row) => row.getAttribute('aria-label')),
+    )).toEqual(initialOrder)
   }
 })
 
@@ -56,6 +62,7 @@ test('L2-040/L2-041 pinning reorders, filters, and unpins without closing the do
 
   await expect(notes(page).locator('.note-select').first()).toHaveAccessibleName('ideas')
   await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'ideas', exact: true }).locator('..').getByRole('img', { name: 'Pinned' })).toBeVisible()
   await expect(page.getByLabel('Library')).toContainText('Pinned2')
 
   await page.getByRole('button', { name: /Pinned\s*2/ }).click()
@@ -64,6 +71,7 @@ test('L2-040/L2-041 pinning reorders, filters, and unpins without closing the do
 
   await expect(notes(page).locator('.note-item')).toHaveCount(1)
   await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Ideas')
+  await expect(page.getByRole('button', { name: 'ideas', exact: true }).locator('..').getByRole('img', { name: 'Pinned' })).toHaveCount(0)
   await expect(page.getByLabel('Library')).toContainText('Pinned1')
 })
 
@@ -90,7 +98,25 @@ test('L2-001/L2-050/L2-060 list options expose count, sorting, and all preview d
   await open.click()
   let menu = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
   await expect(menu.getByText('3 notes')).toBeVisible()
+  await expect(menu.getByText('Sort', { exact: true })).toBeVisible()
+  await expect(menu.getByText('Layout', { exact: true })).toBeVisible()
+  await expect(menu.getByText('Filter', { exact: true })).toBeVisible()
   await menu.getByRole('button', { name: 'Sort by title' }).click()
+  await expect.poll(() => notes(page).locator('.note-select').evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute('aria-label')),
+  )).toEqual(['architecture', 'field-notes', 'ideas'])
+
+  await togglePin(page, 'Unpin architecture')
+  await open.click()
+  menu = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
+  await menu.getByRole('button', { name: 'Sort by creation date' }).click()
+  await expect.poll(() => notes(page).locator('.note-select').evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute('aria-label')),
+  )).toEqual(['field-notes', 'ideas', 'architecture'])
+
+  await open.click()
+  menu = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
+  await menu.getByRole('button', { name: 'Sort by modification date' }).click()
   await expect.poll(() => notes(page).locator('.note-select').evaluateAll((rows) =>
     rows.map((row) => row.getAttribute('aria-label')),
   )).toEqual(['architecture', 'field-notes', 'ideas'])
@@ -105,6 +131,22 @@ test('L2-001/L2-050/L2-060 list options expose count, sorting, and all preview d
     await menu.getByRole('button', { name: label }).click()
     await expect(notes(page)).toHaveAttribute('data-preview', density)
   }
+})
+
+test('Pinned only is a recoverable filter when no notes are pinned', async ({ page }) => {
+  await togglePin(page, 'Unpin architecture')
+  const open = page.getByRole('button', { name: 'Note list options' })
+  await open.click()
+  const menu = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
+
+  await expect(menu.getByRole('button', { name: 'Pinned only (0)' })).toBeVisible()
+  await menu.getByRole('button', { name: 'Pinned only (0)' }).click()
+  await expect(notes(page).locator('.note-item')).toHaveCount(0)
+  await expect(notes(page).getByText('No pinned notes')).toBeVisible()
+
+  await notes(page).getByRole('button', { name: 'Show Recent Notes' }).click()
+  await expect(notes(page).locator('.note-item')).toHaveCount(3)
+  await expect(page.getByRole('button', { name: 'Note list options' })).toContainText('Recent Notes')
 })
 
 test('L1-050 Recent Notes and Pinned keep collection title, selection, and count aligned', async ({ page }) => {

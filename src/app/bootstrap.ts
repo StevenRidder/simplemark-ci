@@ -211,7 +211,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         options.workspace?.onCreateNote?.()
         return
       case 'save':
-        void save()
+        void save(true)
         return
       case 'print':
         options.onPrint?.()
@@ -489,7 +489,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   const autosaveMs = options.autosaveMs ?? 900
-  const save = async (): Promise<boolean> => {
+  const save = async (force = false): Promise<boolean> => {
     clearTimeout(saveTimer)
 
     if (options.onSaveDraft !== undefined) {
@@ -504,7 +504,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       }
     }
 
-    const result = await session.save()
+    const result = await session.save(force)
     if (result.ok) {
       chrome.setStatus('saved', options.saveSuccessMessage)
       return true
@@ -545,7 +545,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       uiPreferences = next
       saveUiPreferences(storage, next)
     },
-    onSave: () => void save(),
+    onSave: () => void save(true),
     ...(options.onRenameDocument === undefined ? {} : { onRenameDocument: renameDocument }),
     onInsertAsset: ports.assets === undefined
       ? undefined

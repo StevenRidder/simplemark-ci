@@ -983,6 +983,8 @@ function catalogWorkspace(
       title: note.name.replace(/\.(md|markdown)$/i, ''),
       preview: 'Local Markdown file',
       updatedLabel: relativeDate(note.modifiedMs),
+      ...(note.modifiedMs === 0 ? {} : { updatedAt: note.modifiedMs }),
+      ...(note.createdMs === 0 ? {} : { createdAt: note.createdMs }),
       pinned: pins.has(note.handle),
     })),
   }

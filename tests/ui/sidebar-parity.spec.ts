@@ -182,6 +182,47 @@ test('L1-120 visible sidebar controls expose names and honest disabled states', 
   await expect(library.getByRole('button', { name: 'Trash' })).toBeDisabled()
 })
 
+test('browser Settings omits the native App Icon capability', async ({ page }) => {
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await expect(page.getByRole('heading', { name: 'App Icon' })).toHaveCount(0)
+})
+
+test('native App Icon chooser commits successful changes and preserves selection on failure', async ({ page }) => {
+  await page.evaluate(async () => {
+    const catalogPath = '/src/app/app-icons.ts'
+    const settingsPath = '/src/app/ui/app-icon-settings.ts'
+    const { APP_ICON_CHOICES } = await import(catalogPath) as typeof import('../../src/app/app-icons.js')
+    const { createAppIconSettings } = await import(settingsPath) as typeof import('../../src/app/ui/app-icon-settings.js')
+    const chooser = createAppIconSettings({
+      choices: APP_ICON_CHOICES,
+      selected: 'midnight',
+      onChange: async (icon) => {
+        if (icon === 'original') throw new Error('native bridge refused the icon')
+        document.body.dataset['chosenIcon'] = icon
+      },
+      onError: (error) => {
+        document.body.dataset['iconError'] = error instanceof Error ? error.message : String(error)
+      },
+    })
+    document.body.replaceChildren(chooser)
+  })
+
+  await expect(page.getByRole('heading', { name: 'App Icon' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Use .* app icon$/ })).toHaveCount(5)
+  await expect(page.getByRole('button', { name: 'Use Midnight app icon' }))
+    .toHaveAttribute('aria-pressed', 'true')
+
+  await page.getByRole('button', { name: 'Use Blue Page app icon' }).click()
+  await expect(page.locator('body')).toHaveAttribute('data-chosen-icon', 'blue-page')
+  await expect(page.getByRole('button', { name: 'Use Blue Page app icon' }))
+    .toHaveAttribute('aria-pressed', 'true')
+
+  await page.getByRole('button', { name: 'Use Original app icon' }).click()
+  await expect(page.locator('body')).toHaveAttribute('data-icon-error', 'native bridge refused the icon')
+  await expect(page.getByRole('button', { name: 'Use Blue Page app icon' }))
+    .toHaveAttribute('aria-pressed', 'true')
+})
+
 test('active notes use a left selection rule while X and pin remain hover-only', async ({ page }) => {
   const list = notes(page)
   const selected = list.locator('.note-item.selected')

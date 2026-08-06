@@ -46,6 +46,8 @@ import type {
   PreviewDensity,
   UiPreferences,
 } from '../ui-preferences.js'
+import type { AppIconChoice, AppIconId } from '../app-icons.js'
+import { createAppIconSettings } from './app-icon-settings.js'
 
 export type { FoldersSort, InfoTab, NotesSort, PreviewDensity } from '../ui-preferences.js'
 
@@ -131,6 +133,12 @@ export interface WindowChromeOptions {
   readonly uiPreferences: UiPreferences
   /** Persists shell choices without ever writing them into Markdown. */
   readonly onUiPreferencesChange: (preferences: UiPreferences) => void
+  /** Current native application icon; absent where the shell cannot change it. */
+  readonly appIcon?: AppIconId
+  /** Native icon choices and their vector thumbnails. */
+  readonly appIconChoices?: readonly AppIconChoice[]
+  /** Applies and persists one native application icon. */
+  readonly onAppIconChange?: (icon: AppIconId) => Promise<void>
 }
 
 /** A compact, derived note index entry. Markdown remains the only durable source. */
@@ -1853,6 +1861,23 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       const open = popover.classList.toggle('open')
       settings.classList.toggle('active', open)
     })
+    if (
+      isMacOS
+      && options.appIcon !== undefined
+      && options.appIconChoices !== undefined
+      && options.onAppIconChange !== undefined
+    ) {
+      popover.append(createAppIconSettings({
+        choices: options.appIconChoices,
+        selected: options.appIcon,
+        onChange: options.onAppIconChange,
+        onError: (error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          status.dataset['state'] = 'error'
+          status.textContent = `Icon unchanged — ${message}`
+        },
+      }))
+    }
     libraryFooter.append(updateBar, sync, settings)
     if (isMacOS) {
       popover.classList.add('sidebar-settings-popover')

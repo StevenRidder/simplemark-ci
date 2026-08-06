@@ -38,6 +38,7 @@ import { loadActiveCollection, saveActiveCollection } from './workspace-selectio
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
 import { WorkspacePins } from './workspace-pins.js'
 import { NoteWalk } from './note-walk.js'
+import { APP_ICON_CHOICES, normaliseAppIconId } from './app-icons.js'
 import { WorkspaceHistoryStore } from './workspace-history.js'
 import type { Visit } from './workspace-history.js'
 import {
@@ -785,6 +786,7 @@ async function mount(
   },
 ): Promise<AppComposition> {
   let app: AppComposition
+  const appIcon = normaliseAppIconId(await invoke<string>('get_app_icon'))
 
   app = await composeApp({
     ports: {
@@ -811,6 +813,9 @@ async function mount(
     pageZoom: options.pageZoom,
     workspace: options.workspace,
     chromeMode: 'macos',
+    appIcon,
+    appIconChoices: APP_ICON_CHOICES,
+    onAppIconChange: (icon) => invoke('set_app_icon', { icon }),
     // The native menubar is the complete command surface. The small floating
     // palette is the fast, Apple Notes-style reach shown in the approved
     // interactive wireframe; it is not a second menu row.

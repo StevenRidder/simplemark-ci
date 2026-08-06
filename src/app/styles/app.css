@@ -788,6 +788,72 @@ button[disabled] {
   font-size: 19px;
 }
 
+.app-icon-settings {
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.app-icon-settings h2 {
+  margin: 0 0 7px 3px;
+  color: var(--ink-3);
+  font: 600 10px/1 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.app-icon-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.app-icon-choice {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  overflow: visible;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  padding: 3px;
+  background: transparent;
+}
+
+.app-icon-choice:hover:not(:disabled) {
+  background: var(--soft);
+}
+
+.app-icon-choice img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+}
+
+.app-icon-choice.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.app-icon-check {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: none;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font: 700 10px/1 var(--sans);
+}
+
+.app-icon-choice.selected .app-icon-check {
+  display: grid;
+}
+
 /* Layout preference rows (EDITOR-3): width, leading, spacing, indent. Each is
    a quiet segmented control — a label and two or three named steps. */
 .pref-row {

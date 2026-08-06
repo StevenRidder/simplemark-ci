@@ -33,6 +33,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, Url};
 use tauri_plugin_dialog::DialogExt;
 
+mod app_icons;
 #[cfg(target_os = "macos")]
 mod macos_context_menu;
 #[cfg(target_os = "macos")]
@@ -383,7 +384,8 @@ fn markdown_file_name(name: &str) -> Result<String, String> {
     match extension {
         None => Ok(format!("{name}.md")),
         Some(extension)
-            if extension.eq_ignore_ascii_case("md") || extension.eq_ignore_ascii_case("markdown") =>
+            if extension.eq_ignore_ascii_case("md")
+                || extension.eq_ignore_ascii_case("markdown") =>
         {
             Ok(name.to_string())
         }
@@ -1185,6 +1187,8 @@ pub fn run() {
             print_note,
             perform_macos_text_service,
             set_native_context_menu_shape,
+            app_icons::get_app_icon,
+            app_icons::set_app_icon,
             build_provenance,
             enable_page_magnification,
             set_page_magnification,
@@ -1202,6 +1206,11 @@ pub fn run() {
 
     #[cfg(target_os = "macos")]
     macos_note_navigation::install(app.handle());
+
+    #[cfg(target_os = "macos")]
+    if let Err(error) = app_icons::restore() {
+        eprintln!("SimpleMark could not restore the selected app icon: {error}");
+    }
 
     app.run(|app, event| {
         #[cfg(target_os = "macos")]
@@ -1547,8 +1556,14 @@ mod tests {
 
     #[test]
     fn new_note_names_are_markdown_filenames_not_paths() {
-        assert_eq!(markdown_file_name("Project plan").unwrap(), "Project plan.md");
-        assert_eq!(markdown_file_name("Project.markdown").unwrap(), "Project.markdown");
+        assert_eq!(
+            markdown_file_name("Project plan").unwrap(),
+            "Project plan.md"
+        );
+        assert_eq!(
+            markdown_file_name("Project.markdown").unwrap(),
+            "Project.markdown"
+        );
         assert!(markdown_file_name("../outside.md").is_err());
         assert!(markdown_file_name("Project.txt").is_err());
     }
@@ -1584,7 +1599,10 @@ mod tests {
         let renamed = rename_note(source.display().to_string(), "renamed".to_string()).unwrap();
         assert_eq!(renamed.name, "renamed.md");
         assert!(!source.exists());
-        assert_eq!(fs::read(directory.path().join("renamed.md")).unwrap(), b"# Exact\r\n\r\nbytes");
+        assert_eq!(
+            fs::read(directory.path().join("renamed.md")).unwrap(),
+            b"# Exact\r\n\r\nbytes"
+        );
     }
 
     #[test]

@@ -32,6 +32,7 @@ import {
 import type { ReaderPreferences } from './reader-preferences.js'
 import { loadUiPreferences, saveUiPreferences } from './ui-preferences.js'
 import type { UiPreferences } from './ui-preferences.js'
+import type { AppIconChoice, AppIconId } from './app-icons.js'
 import type { UpdateStatus } from './update-status.js'
 import { documentStatistics } from './document-statistics.js'
 
@@ -151,6 +152,10 @@ export interface ComposeOptions {
   readonly workspace?: WorkspaceOptions
   /** Which platform owns the application chrome around the shared workspace. */
   readonly chromeMode?: 'web' | 'macos'
+  /** Native application icon capability; omitted by browser composition. */
+  readonly appIcon?: AppIconId
+  readonly appIconChoices?: readonly AppIconChoice[]
+  readonly onAppIconChange?: (icon: AppIconId) => Promise<void>
   /** Supplies caret context before macOS opens WebKit's native right-click menu. */
   readonly onNativeContextMenu?: (
     shape: { readonly inTable: boolean; readonly inCode: boolean },
@@ -545,6 +550,15 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       uiPreferences = next
       saveUiPreferences(storage, next)
     },
+    ...(options.appIcon === undefined
+      || options.appIconChoices === undefined
+      || options.onAppIconChange === undefined
+      ? {}
+      : {
+          appIcon: options.appIcon,
+          appIconChoices: options.appIconChoices,
+          onAppIconChange: options.onAppIconChange,
+        }),
     onSave: () => void save(true),
     ...(options.onRenameDocument === undefined ? {} : { onRenameDocument: renameDocument }),
     onInsertAsset: ports.assets === undefined

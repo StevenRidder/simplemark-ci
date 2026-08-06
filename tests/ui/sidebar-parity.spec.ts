@@ -43,6 +43,11 @@ test('L2-020 selecting notes preserves the complete catalog and changes only the
   }
 })
 
+/** The rows the middle pane is actually showing, top to bottom. */
+const rowOrder = (page: import('@playwright/test').Page) =>
+  notes(page).locator('.note-select').evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute('aria-label')))
+
 test('L2-010 each New Note accumulates instead of replacing the list', async ({ page }) => {
   const newNote = page.getByRole('button', { name: 'New note' })
   await newNote.click()
@@ -54,6 +59,24 @@ test('L2-010 each New Note accumulates instead of replacing the list', async ({ 
   await expect(page.getByRole('button', { name: 'new-note-4', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'new-note-5', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByLabel('Library')).toContainText('Recent Notes5')
+})
+
+test('L2-010 a new note arrives at the top of the notes it joins', async ({ page }) => {
+  // `architecture` ships pinned, and a pin outranks every other order — a new
+  // note leads the notes it can lead, rather than displacing a pinned one.
+  expect(await rowOrder(page)).toEqual(['architecture', 'field-notes', 'ideas'])
+
+  await page.getByRole('button', { name: 'New note' }).click()
+  expect(await rowOrder(page)).toEqual(['architecture', 'new-note-4', 'field-notes', 'ideas'])
+
+  await page.getByRole('button', { name: 'New note' }).click()
+  expect(await rowOrder(page)).toEqual([
+    'architecture',
+    'new-note-5',
+    'new-note-4',
+    'field-notes',
+    'ideas',
+  ])
 })
 
 test('L2-040/L2-041 pinning reorders, filters, and unpins without closing the document', async ({ page }) => {

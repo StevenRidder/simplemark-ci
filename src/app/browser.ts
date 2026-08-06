@@ -135,7 +135,9 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   const createDemoNote = (): void => {
     const id = `note-${DEMO_NOTES.length + 1}`
     const name = `new-note-${DEMO_NOTES.length + 1}.md`
-    DEMO_NOTES.push({
+    // Front of the catalog, matching the native shell: a note you just made is
+    // the newest thing you have, so it leads the list rather than trailing it.
+    DEMO_NOTES.unshift({
       id,
       name,
       preview: 'A new local note — start writing.',

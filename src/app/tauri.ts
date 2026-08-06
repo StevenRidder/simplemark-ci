@@ -41,6 +41,7 @@ import { NoteWalk } from './note-walk.js'
 import { APP_ICON_CHOICES, normaliseAppIconId } from './app-icons.js'
 import { WorkspaceHistoryStore } from './workspace-history.js'
 import type { Visit } from './workspace-history.js'
+import { DRAFT_NOTE_ID, noteRows } from './workspace-view.js'
 import {
   WorkspaceCollections,
   WorkspaceFolderStore,
@@ -178,6 +179,14 @@ async function startNative(
   let workspaceHandle: string | undefined
   let activeCollectionId = loadActiveCollection(window.localStorage)
   let requestedSelection: { readonly path: string; readonly collectionId: string } | undefined
+  /**
+   * Whether the open document is a new note with no file behind it yet.
+   *
+   * Shell state rather than a different workspace shape: a new note is one more
+   * row in whatever list you were already looking at, so every catalog the
+   * shell builds while this is true simply carries an extra row.
+   */
+  let draft = false
   const collections = new WorkspaceCollections()
   const catalogPort = new TauriWorkspaceCatalogPort(invoke)
   const pins = new WorkspacePins(window.localStorage)
@@ -229,34 +238,57 @@ async function startNative(
     hiddenStore.save(collections.hiddenHandles())
   }
 
+  /**
+   * The one set of row and collection actions every catalog view is built from.
+   *
+   * Assembled in a function rather than copied per mount because the copies are
+   * how the middle pane drifted apart in the first place: whichever transition
+   * forgot one grew its own note list.
+   */
+  const workspaceActions = (collectionId: string): CatalogActions => ({
+    select: selectNote,
+    create: createNote,
+    addFolder: addFolder,
+    selectCollection,
+    togglePinned,
+    copyText,
+    copyMarkdown,
+    duplicateNote,
+    exportNote,
+    closeNote,
+    trashNote,
+    revealInFinder,
+    historyBack,
+    historyForward,
+    canHistoryBack: () => history.canBack(),
+    canHistoryForward: () => history.canForward(),
+    noteWalk,
+    folders: collections.folders(),
+    activeCollectionId: collectionId,
+    recentNotesCount: collections.recentCount(),
+  })
+
+  /** The middle pane for a collection, including the draft row when there is one. */
+  const workspaceView = (
+    selectedHandle: string,
+    collectionId = activeCollectionId,
+  ): WorkspaceOptions => catalogWorkspace(
+    collections.collection(collectionId, workspaceHandle ?? selectedHandle),
+    selectedHandle,
+    pins,
+    workspaceActions(collectionId),
+    draft,
+  )
+
   const reconcileWorkspace = (
     selectedHandle = activeHandle,
     collectionId = activeCollectionId,
   ): void => {
-    if (selectedHandle === undefined) return
-    const catalog = collections.collection(collectionId, workspaceHandle ?? selectedHandle)
-    current.reconcileWorkspace(catalogWorkspace(catalog, selectedHandle, pins, {
-      select: selectNote,
-      create: createNote,
-      addFolder: addFolder,
-      selectCollection,
-      togglePinned,
-      copyText,
-      copyMarkdown,
-      duplicateNote,
-      exportNote,
-      closeNote,
-      trashNote,
-      revealInFinder,
-      historyBack,
-      historyForward,
-      canHistoryBack: () => history.canBack(),
-      canHistoryForward: () => history.canForward(),
-      noteWalk,
-      folders: collections.folders(),
-      activeCollectionId: collectionId,
-      recentNotesCount: collections.recentCount(),
-    }))
+    // A draft has no handle and still has to keep its row: it is the note on
+    // screen. Without it a folder refresh mid-draft would repaint the list
+    // without the note you are looking at.
+    if (selectedHandle === undefined && !draft) return
+    current.reconcileWorkspace(workspaceView(selectedHandle ?? DRAFT_NOTE_ID, collectionId))
   }
 
   const install = async (
@@ -277,6 +309,9 @@ async function startNative(
     const catalog = collections.collection(collectionId, inspected.handle)
     await current.destroy()
     activeHandle = opened.handle
+    // Whatever was being drafted has either become this file or been left
+    // behind; either way the row standing in for it is gone.
+    draft = false
     workspaceHandle = collectionId === 'recent' ? inspected.handle : catalog.handle
     current = await mount(root, port, {
       filePath: opened.handle,
@@ -284,31 +319,35 @@ async function startNative(
       menuTarget: () => current,
       onOpenFile: openFromPicker,
       onRenameDocument: renameActiveDocument,
-      workspace: catalogWorkspace(catalog, opened.handle, pins, {
-        select: selectNote,
-        create: createNote,
-        addFolder: addFolder,
-        selectCollection,
-        togglePinned,
-        copyText,
-        copyMarkdown,
-        duplicateNote,
-        exportNote,
-        closeNote,
-        trashNote,
-        revealInFinder,
-        historyBack,
-        historyForward,
-        canHistoryBack: () => history.canBack(),
-        canHistoryForward: () => history.canForward(),
-        noteWalk,
-        folders: collections.folders(),
-        activeCollectionId,
-        recentNotesCount: collections.recentCount(),
-      }),
+      workspace: catalogWorkspace(
+        catalog,
+        opened.handle,
+        pins,
+        workspaceActions(activeCollectionId),
+      ),
     })
     await watch(port, opened.handle)
   }
+
+  /**
+   * True when the new note on screen is still exactly as it was created.
+   *
+   * A new note starts as an empty heading. Leaving one you never typed in must
+   * not raise a destination panel — being unable to click another note without
+   * answering a save dialog is what made a new note feel like a trap.
+   */
+  const discardsUntouchedDraft = (): boolean =>
+    draft && current.session.snapshot().markdown.replace(/^#+/u, '').trim() === ''
+
+  /**
+   * Flushes the open document before a transition replaces it.
+   *
+   * `false` means the transition must not continue. The draft flag is left
+   * alone: only the code that actually swaps the document clears it, so an
+   * abandoned transition cannot strip the draft's row from a list that is still
+   * showing the draft.
+   */
+  const flush = async (): Promise<boolean> => discardsUntouchedDraft() || current.save()
 
   /**
    * Opens a note, optionally recording the arrival in the visit stack.
@@ -321,6 +360,10 @@ async function startNative(
    * survive a single step backwards.
    */
   const openInCollection = (path: string, collectionId: string, record = true): void => {
+    // The draft row is the note already on screen and no file answers to its
+    // id, so selecting it is a no-op rather than a read of a path that is not
+    // one. Every other row action guards the same way.
+    if (path === DRAFT_NOTE_ID) return
     if (
       requestedSelection === undefined
       && path === activeHandle
@@ -337,7 +380,7 @@ async function startNative(
     current.setStatus('saved', `Opening ${path.split('/').pop() ?? 'note'}…`)
     void operations.enqueueLatest('note-selection', async (isCurrent) => {
       try {
-        if (!(await current.save())) return
+        if (!(await flush())) return
         if (!isCurrent()) return
         const port = new TauriFilePort(invoke)
         const opened = await port.openAt(path)
@@ -388,12 +431,29 @@ async function startNative(
       collections.addFolder(catalog)
       persistFolders()
       await watchFolder(catalog.handle)
-      if (!(await current.save())) return
+      if (!(await flush())) return
       const next = catalog.notes.find((note) => note.handle === activeHandle) ?? catalog.notes[0]!
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(next.handle)
       await install(port, opened, catalog.handle)
     })
+  }
+
+  /**
+   * Where a just-saved new note belongs.
+   *
+   * Saving into the folder you were browsing should leave you in that folder.
+   * The folder is re-listed rather than assumed: only the filesystem knows
+   * whether the destination panel actually put the file there.
+   */
+  const collectionForSavedNote = async (handle: string): Promise<string> => {
+    if (activeCollectionId === 'recent') return 'recent'
+    const folder = collections.folder(activeCollectionId)
+    if (folder === undefined) return 'recent'
+    collections.addFolder(await catalogPort.listFolder(folder.handle))
+    const contains = collections.folder(activeCollectionId)?.notes
+      .some((note) => note.handle === handle) === true
+    return contains ? activeCollectionId : 'recent'
   }
 
   const saveDraft = async (markdown: string): Promise<boolean> => {
@@ -403,7 +463,7 @@ async function startNative(
       new TextEncoder().encode(markdown),
     )
     if (opened === null) return false
-    await install(port, opened, 'recent')
+    await install(port, opened, await collectionForSavedNote(opened.handle))
     current.setStatus('saved', `Saved ${opened.name.replace(/\.(md|markdown)$/iu, '')}`)
     return true
   }
@@ -425,16 +485,23 @@ async function startNative(
     return true
   }
 
+  /**
+   * Opens a new, unsaved note without disturbing the list you are looking at.
+   *
+   * The collection is deliberately left alone. A new note is a row added to the
+   * catalog on screen, not a reason to be moved to a different collection — and
+   * the list stays populated the whole time, which is the point: this used to
+   * compose the welcome screen's one-row workspace, so the middle pane emptied
+   * itself until the note was saved.
+   */
   const createNote = (): void => {
     void enqueue(async () => {
-      if (!(await current.save())) return
+      if (!(await flush())) return
       stopWatching?.()
       stopWatching = undefined
       await invoke('stop_watching_note')
       activeHandle = undefined
-      workspaceHandle = undefined
-      activeCollectionId = 'recent'
-      saveActiveCollection(window.localStorage, activeCollectionId)
+      draft = true
       await current.destroy()
       current = await mount(root, new FixtureFilePort('Untitled.md', '# \n'), {
         filePath: 'Not saved',
@@ -442,18 +509,19 @@ async function startNative(
         menuTarget: () => current,
         onOpenFile: openFromPicker,
         onSaveDraft: saveDraft,
-        workspace: nativeWorkspace('Untitled.md', {
-          create: createNote,
-          addFolder,
-          selectCollection,
-          folders: collections.folders(),
-        }),
+        workspace: workspaceView(DRAFT_NOTE_ID),
       })
       current.setStatus('dirty', 'Not saved')
     })
   }
 
-  const togglePinned = (handle: string): boolean => pins.toggle(handle)
+  /**
+   * Every row action below is handed a row id, and one row on screen may be the
+   * unsaved note. Pinning it, copying it, or revealing it would all reach for a
+   * file that does not exist yet, so each one recognises the draft and declines.
+   */
+  const togglePinned = (handle: string): boolean =>
+    handle === DRAFT_NOTE_ID ? false : pins.toggle(handle)
 
   const copyText = async (text: string): Promise<void> => {
     await writeText(text)
@@ -461,13 +529,18 @@ async function startNative(
   }
 
   const copyMarkdown = async (handle: string): Promise<void> => {
+    if (handle === DRAFT_NOTE_ID) {
+      await copyText(current.session.snapshot().markdown)
+      return
+    }
     const port = new TauriFilePort(invoke)
     const opened = await port.openAt(handle)
     await copyText(new TextDecoder().decode(opened.bytes))
   }
 
   const duplicateNote = (handle: string): Promise<void> => enqueue(async () => {
-    if (!(await current.save())) return
+    if (handle === DRAFT_NOTE_ID) return
+    if (!(await flush())) return
     const duplicate = await invoke<{ readonly handle: string }>('duplicate_note', { handle })
     if (activeCollectionId !== 'recent') {
       collections.addFolder(await catalogPort.listFolder(activeCollectionId))
@@ -478,21 +551,60 @@ async function startNative(
   })
 
   const exportNote = (handle: string): Promise<void> => enqueue(async () => {
-    if (handle === activeHandle && !(await current.save())) return
+    if (handle === DRAFT_NOTE_ID) return
+    if (handle === activeHandle && !(await flush())) return
     const exported = await invoke<boolean>('export_note', { handle })
     if (exported) current.setStatus('saved', 'Exported')
   })
 
   const revealInFinder = async (handle: string): Promise<void> => {
+    if (handle === DRAFT_NOTE_ID) {
+      current.setStatus('error', 'Save this note before revealing it in Finder')
+      return
+    }
     await invoke('reveal_in_finder', { handle })
+  }
+
+  /**
+   * Throws the unsaved note away and lands on the collection behind it.
+   *
+   * Closing or trashing the draft row is the only honest meaning available:
+   * there is no file to close or trash, so what goes is the draft itself.
+   */
+  const discardDraft = async (): Promise<void> => {
+    draft = false
+    const catalog = collections.collection(activeCollectionId, workspaceHandle ?? '')
+    const next = catalog.notes[0]
+    if (next !== undefined) {
+      const port = new TauriFilePort(invoke)
+      const opened = await port.openAt(next.handle)
+      await install(port, opened, activeCollectionId)
+      current.setStatus('saved', 'Discarded the new note')
+      return
+    }
+    activeHandle = undefined
+    await current.destroy()
+    current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
+      filePath: 'Demo workspace · open a file to work with your own Markdown',
+      pageZoom,
+      onOpenFile: openFromPicker,
+      workspace: nativeWorkspace(WELCOME_NAME, {
+        create: createNote,
+        addFolder,
+        selectCollection,
+        folders: collections.folders(),
+      }),
+    })
+    current.setStatus('saved', 'Discarded the new note')
   }
 
   let closeNote: (handle: string) => Promise<void>
   closeNote = (handle: string): Promise<void> => enqueue(async () => {
+    if (handle === DRAFT_NOTE_ID) return discardDraft()
     const before = collections.collection(activeCollectionId, workspaceHandle ?? handle)
     const closedIndex = before.notes.findIndex((note) => note.handle === handle)
     const wasActive = handle === activeHandle
-    if (wasActive && !(await current.save())) return
+    if (wasActive && !(await flush())) return
 
     if (activeCollectionId !== 'recent') {
       collections.hideFromFolders(handle)
@@ -537,34 +649,14 @@ async function startNative(
       pageZoom,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
-      workspace: catalogWorkspace(after, '', pins, {
-        select: selectNote,
-        create: createNote,
-        addFolder: addFolder,
-        selectCollection,
-        togglePinned,
-        copyText,
-        copyMarkdown,
-        duplicateNote,
-        exportNote,
-        closeNote,
-        trashNote,
-        revealInFinder,
-        historyBack,
-        historyForward,
-        canHistoryBack: () => history.canBack(),
-        canHistoryForward: () => history.canForward(),
-        noteWalk,
-        folders: collections.folders(),
-        activeCollectionId,
-        recentNotesCount: collections.recentCount(),
-      }),
+      workspace: catalogWorkspace(after, '', pins, workspaceActions(activeCollectionId)),
     })
     current.setStatus('saved', message)
   })
 
   const trashNote = (handle: string): Promise<void> => enqueue(async () => {
-    if (handle === activeHandle && !(await current.save())) return
+    if (handle === DRAFT_NOTE_ID) return discardDraft()
+    if (handle === activeHandle && !(await flush())) return
     current.setStatus('saved', 'Moving to Trash…')
     await invoke('trash_note', { handle })
     collections.forgetRecent(handle)
@@ -593,6 +685,7 @@ async function startNative(
 
     stopWatching?.()
     activeHandle = undefined
+    draft = false
     workspaceHandle = undefined
     activeCollectionId = 'recent'
     saveActiveCollection(window.localStorage, activeCollectionId)
@@ -624,7 +717,7 @@ async function startNative(
         throw error
       }
 
-      if (!(await current.save())) return
+      if (!(await flush())) return
       await install(port, opened, 'recent')
     })
   }
@@ -726,6 +819,15 @@ async function startNative(
         return
       }
 
+      // A draft has no handle either, and it must survive a folder changing
+      // underneath it: the note being written is not on disk, so nothing that
+      // happened on disk can be a reason to throw it away. Repaint the list
+      // around it and leave the editor alone.
+      if (draft) {
+        reconcileWorkspace()
+        return
+      }
+
       if (activeHandle === undefined) {
         await current.destroy()
         current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
@@ -743,7 +845,7 @@ async function startNative(
         return
       }
 
-      if (!(await current.save())) return
+      if (!(await flush())) return
       const activeCatalog = collections.collection(activeCollectionId, activeHandle)
       const next = activeCatalog.notes.find((note) => note.handle === activeHandle)
         ?? activeCatalog.notes[0]
@@ -759,7 +861,7 @@ async function startNative(
     openPath: (path) => enqueue(async () => {
       // Finder has already chosen the destination, so flush first. This also
       // makes reopening the same file read the bytes we just committed.
-      if (!(await current.save())) return
+      if (!(await flush())) return
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(path)
       await install(port, opened, 'recent')
@@ -979,32 +1081,37 @@ function nativeWorkspace(
   }
 }
 
+/** Everything a catalog view can do, in one place so no mount can miss one. */
+interface CatalogActions {
+  readonly select: (id: string) => void
+  readonly create: () => void
+  readonly addFolder: () => void
+  readonly selectCollection: (id: string) => void
+  readonly togglePinned: (id: string) => boolean
+  readonly copyText: (text: string) => Promise<void>
+  readonly copyMarkdown: (id: string) => Promise<void>
+  readonly duplicateNote: (id: string) => Promise<void>
+  readonly exportNote: (id: string) => Promise<void>
+  readonly closeNote: (id: string) => Promise<void>
+  readonly trashNote: (id: string) => Promise<void>
+  readonly revealInFinder: (id: string) => Promise<void>
+  readonly historyBack: () => void
+  readonly historyForward: () => void
+  readonly canHistoryBack: () => boolean
+  readonly canHistoryForward: () => boolean
+  readonly noteWalk: NoteWalk
+  readonly folders: readonly WorkspaceCatalog[]
+  readonly activeCollectionId: string
+  readonly recentNotesCount: number
+}
+
 function catalogWorkspace(
   catalog: WorkspaceCatalog,
   activeNoteId: string,
   pins: WorkspacePins,
-  actions: {
-    readonly select: (id: string) => void
-    readonly create: () => void
-    readonly addFolder: () => void
-    readonly selectCollection: (id: string) => void
-    readonly togglePinned: (id: string) => boolean
-    readonly copyText: (text: string) => Promise<void>
-    readonly copyMarkdown: (id: string) => Promise<void>
-    readonly duplicateNote: (id: string) => Promise<void>
-    readonly exportNote: (id: string) => Promise<void>
-    readonly closeNote: (id: string) => Promise<void>
-    readonly trashNote: (id: string) => Promise<void>
-    readonly revealInFinder: (id: string) => Promise<void>
-    readonly historyBack: () => void
-    readonly historyForward: () => void
-    readonly canHistoryBack: () => boolean
-    readonly canHistoryForward: () => boolean
-    readonly noteWalk: NoteWalk
-    readonly folders: readonly WorkspaceCatalog[]
-    readonly activeCollectionId: string
-    readonly recentNotesCount: number
-  },
+  actions: CatalogActions,
+  /** Adds the row standing in for a new note that has no file yet. */
+  draft = false,
 ): WorkspaceOptions {
   return {
     name: 'SimpleMark',
@@ -1034,28 +1141,8 @@ function catalogWorkspace(
     canHistoryBack: actions.canHistoryBack,
     canHistoryForward: actions.canHistoryForward,
     noteWalk: actions.noteWalk,
-    notes: catalog.notes.map((note) => ({
-      id: note.handle,
-      identifier: note.name,
-      portableLink: `./${note.name}`,
-      title: note.name.replace(/\.(md|markdown)$/i, ''),
-      preview: 'Local Markdown file',
-      updatedLabel: relativeDate(note.modifiedMs),
-      ...(note.modifiedMs === 0 ? {} : { updatedAt: note.modifiedMs }),
-      ...(note.createdMs === 0 ? {} : { createdAt: note.createdMs }),
-      pinned: pins.has(note.handle),
-    })),
+    notes: noteRows(catalog.notes, (handle) => pins.has(handle), { draft }),
   }
-}
-
-function relativeDate(modifiedMs: number): string {
-  if (modifiedMs === 0) return 'Unknown'
-  const elapsed = Math.max(0, Date.now() - modifiedMs)
-  if (elapsed < 60_000) return 'Now'
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m`
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h`
-  if (elapsed < 172_800_000) return 'Yesterday'
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(modifiedMs)
 }
 
 /**

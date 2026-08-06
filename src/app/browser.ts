@@ -15,6 +15,7 @@ import type { FilePort } from '../application/index.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
+import { NoteWalk } from './note-walk.js'
 import { VisitHistory } from './workspace-history.js'
 import type { Visit } from './workspace-history.js'
 
@@ -108,6 +109,9 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   // The native shell persists its own for the opposite reason — its notes are
   // real files that survive.
   const history = new VisitHistory()
+  // Shell-scoped like the history: opening a note rebuilds the whole
+  // composition, so a walk kept inside it would restart on every step.
+  const noteWalk = new NoteWalk()
 
   const openDemoNote = async (id: string, force = false, record = true): Promise<void> => {
     const note = DEMO_NOTES.find((candidate) => candidate.id === id)
@@ -201,6 +205,7 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
       onHistoryForward: () => replay(history.forward()),
       canHistoryBack: () => history.canBack(),
       canHistoryForward: () => history.canForward(),
+      noteWalk,
     },
   )
 
@@ -219,7 +224,7 @@ function workspaceOptions(
   /** Grouped rather than four more positionals — the list is long enough. */
   navigation: Pick<
     WorkspaceOptions,
-    'onHistoryBack' | 'onHistoryForward' | 'canHistoryBack' | 'canHistoryForward'
+    'onHistoryBack' | 'onHistoryForward' | 'canHistoryBack' | 'canHistoryForward' | 'noteWalk'
   >,
 ): WorkspaceOptions {
   return {

@@ -35,6 +35,7 @@ import {
 } from '../reader-preferences.js'
 import type { ReaderPreferences } from '../reader-preferences.js'
 import type { DocumentStatistics } from '../document-statistics.js'
+import { NoteWalk } from '../note-walk.js'
 import { describeUpdate, detailUpdate } from '../update-status.js'
 import type { UpdateStatus } from '../update-status.js'
 import type {
@@ -206,6 +207,16 @@ export interface WorkspaceOptions {
   readonly onHistoryForward?: () => void
   readonly canHistoryBack?: () => boolean
   readonly canHistoryForward?: () => boolean
+  /**
+   * The in-progress Previous/Next Note walk, owned by the shell.
+   *
+   * It cannot live in the chrome. Opening a note destroys this whole
+   * presentation tree and mounts a new one, which is precisely when a walk in
+   * progress has to survive — a walk rebuilt on every step is a walk that
+   * always re-reads a list that just re-sorted, which is the bug this exists to
+   * prevent. The shell outlives the mounts, so it holds it.
+   */
+  readonly noteWalk?: NoteWalk
 }
 
 export type WorkspaceMode = 'all' | 'notes' | 'editor'
@@ -1693,6 +1704,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     let pinSequence = 0
     /** Note ids in the order the list last painted them. Set by `paintNotes`. */
     let visibleOrder: readonly string[] = []
+    // Only reached by a shell that supplies no walk of its own; such a shell
+    // remounts per note anyway, so this instance is per-mount and harmless.
+    const ownWalk = new NoteWalk()
     const workspaceBody = document.createElement('div')
     workspaceBody.className = 'workspace-body'
 
@@ -2417,23 +2431,20 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       paintNotes()
     }
     /**
-     * Previous/Next Note, wrapping at both ends.
+     * Previous/Next Note.
      *
      * `visibleOrder` rather than `workspaceNotes`: the list on screen is
      * sorted, pin-ordered and possibly search-filtered, and stepping through
      * any other sequence would move the selection somewhere the eye cannot
-     * follow. A list of one has nowhere to go, and wrapping to yourself is not
-     * movement, so that case does nothing rather than reopening the note.
+     * follow. `NoteWalk` owns the harder half — Recent Notes re-sorts as you
+     * open notes, so the sequence a run of presses walks has to be the one it
+     * started with rather than whatever the list says on each keystroke.
      */
     stepNote = (delta): void => {
-      if (workspace.onSelectNote === undefined || visibleOrder.length < 2) return
-      const index = visibleOrder.indexOf(workspace.activeNoteId)
-      // An active note filtered out of view (mid-search) has no neighbours to
-      // speak of, so the walk starts from whichever end you are heading toward.
-      const from = index === -1 ? (delta === 1 ? -1 : 0) : index
-      const next = (from + delta + visibleOrder.length) % visibleOrder.length
-      const id = visibleOrder[next]
-      if (id !== undefined && id !== workspace.activeNoteId) workspace.onSelectNote(id)
+      if (workspace.onSelectNote === undefined) return
+      const walk = workspace.noteWalk ?? ownWalk
+      const id = walk.step(visibleOrder, workspace.activeNoteId, delta)
+      if (id !== undefined) workspace.onSelectNote(id)
     }
     reconcileWorkspace = (next): void => {
       workspace = next

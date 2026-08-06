@@ -37,6 +37,7 @@ import { loadWindowGeometry, saveWindowGeometry } from './window-geometry.js'
 import { loadActiveCollection, saveActiveCollection } from './workspace-selection.js'
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
 import { WorkspacePins } from './workspace-pins.js'
+import { NoteWalk } from './note-walk.js'
 import { WorkspaceHistoryStore } from './workspace-history.js'
 import type { Visit } from './workspace-history.js'
 import {
@@ -151,6 +152,9 @@ async function startNative(
   const recentStore = new WorkspaceRecentStore(window.localStorage)
   const historyStore = new WorkspaceHistoryStore(window.localStorage)
   const history = historyStore.load()
+  // Shell-scoped on purpose: every note open destroys and remounts the chrome,
+  // so a walk held in there would restart on the step that needs it to continue.
+  const noteWalk = new NoteWalk()
   const watchedFolders = new Set<string>()
 
   const showOpenFailure = (error: unknown): void => {
@@ -214,6 +218,7 @@ async function startNative(
       historyForward,
       canHistoryBack: () => history.canBack(),
       canHistoryForward: () => history.canForward(),
+      noteWalk,
       folders: collections.folders(),
       activeCollectionId: collectionId,
       recentNotesCount: collections.recentCount(),
@@ -261,6 +266,7 @@ async function startNative(
         historyForward,
         canHistoryBack: () => history.canBack(),
         canHistoryForward: () => history.canForward(),
+        noteWalk,
         folders: collections.folders(),
         activeCollectionId,
         recentNotesCount: collections.recentCount(),
@@ -511,6 +517,7 @@ async function startNative(
         historyForward,
         canHistoryBack: () => history.canBack(),
         canHistoryForward: () => history.canForward(),
+        noteWalk,
         folders: collections.folders(),
         activeCollectionId,
         recentNotesCount: collections.recentCount(),
@@ -935,6 +942,7 @@ function catalogWorkspace(
     readonly historyForward: () => void
     readonly canHistoryBack: () => boolean
     readonly canHistoryForward: () => boolean
+    readonly noteWalk: NoteWalk
     readonly folders: readonly WorkspaceCatalog[]
     readonly activeCollectionId: string
     readonly recentNotesCount: number
@@ -967,6 +975,7 @@ function catalogWorkspace(
     onHistoryForward: actions.historyForward,
     canHistoryBack: actions.canHistoryBack,
     canHistoryForward: actions.canHistoryForward,
+    noteWalk: actions.noteWalk,
     notes: catalog.notes.map((note) => ({
       id: note.handle,
       identifier: note.name,

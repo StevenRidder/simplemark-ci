@@ -674,11 +674,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
    *
    * The same double surface `find` uses, and for the same reason: the browser
    * shell has no menubar, so a DOM listener is the only way the shortcut exists
-   * there at all. It does not double-fire in the native app — macOS resolves a
-   * menu key equivalent in `performKeyEquivalent`, before the webview's
-   * responder chain ever sees the keystroke, so exactly one of the two paths
-   * runs on each platform. That matters more here than it does for `find`,
-   * which is idempotent; going back twice on one keypress would not be.
+   * there at all. It does not double-fire in the native app — AppKit's native
+   * bridge claims the chord before the webview's responder chain sees it, so
+   * exactly one of the two paths runs on each platform. That matters more here
+   * than it does for `find`, which is idempotent; going back twice on one
+   * keypress would not be.
    */
   const NOTE_NAVIGATION: Readonly<Record<string, DocumentCommandId>> = {
     ArrowLeft: 'historyBack',

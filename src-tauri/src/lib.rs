@@ -36,6 +36,8 @@ use tauri_plugin_dialog::DialogExt;
 #[cfg(target_os = "macos")]
 mod macos_context_menu;
 #[cfg(target_os = "macos")]
+mod macos_note_navigation;
+#[cfg(target_os = "macos")]
 mod macos_zoom;
 
 #[cfg(target_os = "macos")]
@@ -1174,6 +1176,9 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     macos_context_menu::install(app.handle())
         .expect("SimpleMark failed to install the native context menu bridge");
+
+    #[cfg(target_os = "macos")]
+    macos_note_navigation::install(app.handle());
 
     app.run(|app, event| {
         #[cfg(target_os = "macos")]

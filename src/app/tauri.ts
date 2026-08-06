@@ -102,6 +102,7 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   await nativeWindow.onMoved(rememberGeometry)
   await nativeWindow.onResized(rememberGeometry)
   await installNativeContextMenuBridge(controller)
+  await installNativeNoteNavigationBridge(controller)
   await installOpenRequestBridge(controller)
   await installMarkdownDropBridge(controller)
   return controller.current()
@@ -125,6 +126,33 @@ async function installNativeContextMenuBridge(controller: NativeController): Pro
     controller.current().runNativeContextCommand(
       event.payload as Parameters<AppComposition['runNativeContextCommand']>[0],
     )
+  })
+}
+
+const NATIVE_NOTE_NAVIGATION_COMMANDS = [
+  'historyBack',
+  'historyForward',
+  'previousNote',
+  'nextNote',
+] as const
+
+function isNativeNoteNavigationCommand(
+  command: string,
+): command is (typeof NATIVE_NOTE_NAVIGATION_COMMANDS)[number] {
+  return (NATIVE_NOTE_NAVIGATION_COMMANDS as readonly string[]).includes(command)
+}
+
+/**
+ * AppKit owns Command-Option-arrow before a WKWebView's responder chain.
+ * Resolve the active composition here, rather than capturing a composition at
+ * startup, so the chord follows the note after every native remount.
+ */
+async function installNativeNoteNavigationBridge(controller: NativeController): Promise<void> {
+  await listen<string>('native-note-navigation', (event) => {
+    if (!isNativeNoteNavigationCommand(event.payload)) return
+    const app = controller.current()
+    if (!app.commandState(event.payload).enabled) return
+    app.run(event.payload)
   })
 }
 

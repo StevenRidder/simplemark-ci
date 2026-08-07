@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The two keys that make SimpleMark's own document directory a real folder
+	  the person owns, rather than a private container they cannot reach.
+
+	  UIFileSharingEnabled publishes it under "On My iPhone / SimpleMark" in the
+	  Files app. LSSupportsOpeningDocumentsInPlace means a note opened from
+	  anywhere else is edited where it lives instead of being copied in — which
+	  is the same promise the desktop app makes: it is still your file, in
+	  ordinary Markdown, at a location you chose.
+	-->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+</dict>
+</plist>

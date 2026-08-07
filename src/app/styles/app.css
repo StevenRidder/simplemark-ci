@@ -2925,10 +2925,13 @@ section.editor::-webkit-scrollbar {
     backdrop-filter: none;
   }
   .filename,
-  .path-hide,
   .status {
     display: none;
   }
+  /* `.path-hide` used to take the Document list button with it. On a narrow
+     viewport that button is not decoration: it is the only control that
+     returns from an open note to the list, because the two panes cannot be
+     on screen together. Hiding it stranded the reader with no way back. */
   .left {
     margin-right: auto;
   }

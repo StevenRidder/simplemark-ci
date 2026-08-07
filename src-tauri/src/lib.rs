@@ -21,18 +21,30 @@ use std::fs::{self, File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+// Subprocesses, filesystem watching, and the timing they need are all desktop
+// capabilities: iOS forbids spawning processes and offers no `notify` backend.
+#[cfg(desktop)]
 use std::process::Command;
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError};
+#[cfg(desktop)]
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, TryRecvError};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+#[cfg(desktop)]
+use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
+#[cfg(desktop)]
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, Url};
 use tauri_plugin_dialog::DialogExt;
 
+// Its two commands are registered on every platform so the shell can ask and be
+// told no, but everything behind them is AppKit. On iOS that leaves the helpers
+// unreferenced rather than wrong.
+#[cfg_attr(mobile, allow(dead_code))]
 mod app_icons;
 #[cfg(target_os = "macos")]
 mod macos_context_menu;
@@ -163,18 +175,24 @@ pub struct WriteLedger(Arc<Mutex<HashMap<PathBuf, u64>>>);
 pub struct NoteWatchControl(Mutex<Option<ActiveNoteWatch>>);
 
 struct ActiveNoteWatch {
+    /// Only the desktop watcher compares paths; iOS keeps the registry so the
+    /// managed state and the stop/replace commands stay one shape.
+    #[cfg_attr(mobile, allow(dead_code))]
     path: PathBuf,
     stop: Sender<()>,
 }
 
+#[cfg(desktop)]
 fn watcher_was_stopped(stop: &Receiver<()>) -> bool {
     matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected))
 }
 
+#[cfg(desktop)]
 fn active_note_watch_matches(active: &Option<ActiveNoteWatch>, path: &Path) -> bool {
     active.as_ref().is_some_and(|watch| watch.path == path)
 }
 
+#[cfg(desktop)]
 fn replace_active_note_watch(
     active: &mut Option<ActiveNoteWatch>,
     path: PathBuf,
@@ -227,11 +245,39 @@ async fn open_note(app: AppHandle) -> Result<Option<OpenedNote>, String> {
     read_note(&path).map(Some)
 }
 
+/// The folder this platform supplies without anyone choosing it.
+///
+/// Desktop has none: a folder becomes a collection because the person picked
+/// it, and inventing one would adopt a directory nobody pointed at. iOS is the
+/// opposite — the operating system hands the application exactly one document
+/// directory, published to the Files app and replicated by iCloud, and there
+/// is no picker that could choose a different one. Returning it is a statement
+/// of fact rather than a guess.
+///
+/// The shell adopts this only when no folder has been adopted already, so a
+/// person's own choice always outranks the platform's.
+#[cfg(desktop)]
+#[tauri::command]
+async fn default_workspace() -> Result<Option<WorkspaceCatalog>, String> {
+    Ok(None)
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+async fn default_workspace(app: AppHandle) -> Result<Option<WorkspaceCatalog>, String> {
+    let directory = app
+        .path()
+        .document_dir()
+        .map_err(|error| format!("This device exposed no documents directory: {error}"))?;
+    workspace_catalog_for_directory(&directory).map(Some)
+}
+
 /// Prompts for a folder whose direct Markdown children become one collection.
 ///
 /// Picking a folder is deliberately separate from opening a file: opening
 /// `Downloads/example.md` must never imply permission to adopt every Markdown
 /// file in Downloads.
+#[cfg(desktop)]
 #[tauri::command]
 async fn open_workspace_folder(app: AppHandle) -> Result<Option<WorkspaceCatalog>, String> {
     let picked = app.dialog().file().blocking_pick_folder();
@@ -243,6 +289,25 @@ async fn open_workspace_folder(app: AppHandle) -> Result<Option<WorkspaceCatalog
     let directory = picked
         .into_path()
         .map_err(|error| format!("That folder has no readable path: {error}"))?;
+    workspace_catalog_for_directory(&directory).map(Some)
+}
+
+/// On iOS there is no folder picker, and there does not need to be.
+///
+/// The application owns one document directory, exposed to the Files app and
+/// replicated by iCloud, so the folder that would be chosen on desktop is
+/// already known. Adopting a collection is therefore not a prompt but a fact:
+/// return the catalog of the directory the operating system gave this app.
+///
+/// This is the mobile half of the same `WorkspaceCatalogPort` contract — a
+/// folder of ordinary Markdown files — reached by a different route.
+#[cfg(mobile)]
+#[tauri::command]
+async fn open_workspace_folder(app: AppHandle) -> Result<Option<WorkspaceCatalog>, String> {
+    let directory = app
+        .path()
+        .document_dir()
+        .map_err(|error| format!("This device exposed no documents directory: {error}"))?;
     workspace_catalog_for_directory(&directory).map(Some)
 }
 
@@ -351,6 +416,16 @@ fn read_note_data(document_handle: String, href: String) -> Result<String, Strin
     read_data_at(&document_handle, &href)
 }
 
+/// iOS forbids spawning a subprocess, so the desktop `open`/`xdg-open` route
+/// does not exist. The platform equivalent is `UIApplication.open`, which is
+/// Phase 1 work; until then this is a named limitation rather than a silent
+/// failure, and the Markdown source is untouched either way.
+#[cfg(mobile)]
+fn open_with_system(_target: &str) -> Result<(), String> {
+    Err("Opening external links is not available on iOS yet".to_string())
+}
+
+#[cfg(desktop)]
 fn open_with_system(target: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut command = Command::new("open");
@@ -732,16 +807,27 @@ async fn export_note(app: AppHandle, handle: String) -> Result<bool, String> {
     Ok(true)
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 async fn trash_note(handle: String) -> Result<(), String> {
     let path = PathBuf::from(&handle);
     move_note_to_trash(path).map_err(|error| format!("Could not move {handle} to Trash: {error}"))
 }
 
+/// iOS has no user-visible Trash an app may move a document into, so this is a
+/// named limitation rather than a silent no-op: the note is still the person's
+/// file, and the Files app is where it is deleted.
+#[cfg(mobile)]
+#[tauri::command]
+async fn trash_note(_handle: String) -> Result<(), String> {
+    Err("Deleting a note is done from the Files app on iOS".to_string())
+}
+
 /// Reveals a note or folder in the platform file manager, with the item
 /// selected where the platform supports that (Finder, Explorer).
 #[tauri::command]
 async fn reveal_in_finder(handle: String) -> Result<(), String> {
+    #[cfg_attr(mobile, allow(unused_variables))]
     let path = PathBuf::from(&handle);
 
     #[cfg(target_os = "macos")]
@@ -781,6 +867,7 @@ async fn reveal_in_finder(handle: String) -> Result<(), String> {
     Err("Revealing files is not supported on this platform".to_string())
 }
 
+#[cfg(desktop)]
 fn move_note_to_trash(path: PathBuf) -> Result<(), trash::Error> {
     // trash-rs defaults to scripting Finder on macOS. That adds an Automation
     // permission prompt and can leave the app waiting for an AppleEvent timeout.
@@ -810,6 +897,10 @@ fn take_open_note_request(queue: State<'_, OpenRequestQueue>) -> Result<Option<S
     Ok(path.map(|path| path.display().to_string()))
 }
 
+/// Only a desktop shell is handed files by the operating system this way:
+/// `RunEvent::Opened` on macOS and a command line elsewhere. iOS delivers
+/// documents through the Files app instead, which is Phase 1 work.
+#[cfg_attr(mobile, allow(dead_code))]
 fn opened_markdown_paths(urls: &[Url]) -> Vec<PathBuf> {
     urls.iter()
         .filter_map(|url| url.to_file_path().ok())
@@ -824,6 +915,7 @@ fn opened_markdown_paths(urls: &[Url]) -> Vec<PathBuf> {
         .collect()
 }
 
+#[cfg_attr(mobile, allow(dead_code))]
 fn opened_markdown_args(args: &[String], cwd: &str) -> Vec<PathBuf> {
     args.iter()
         .skip(1)
@@ -866,6 +958,7 @@ fn queue_opened_paths(app: &AppHandle, paths: Vec<PathBuf>) {
     }
 }
 
+#[cfg_attr(mobile, allow(dead_code))]
 fn queue_opened_notes(app: &AppHandle, urls: &[Url]) {
     queue_opened_paths(app, opened_markdown_paths(urls));
 }
@@ -930,6 +1023,7 @@ fn save_note(handle: String, bytes: String, ledger: State<'_, WriteLedger>) -> R
 ///
 /// The event carries only the path. The shared application layer decides what a
 /// change means; this crate must not reach into the document to apply it.
+#[cfg(desktop)]
 #[tauri::command]
 fn watch_note(
     app: AppHandle,
@@ -1050,6 +1144,7 @@ fn stop_watching_note(control: State<'_, NoteWatchControl>) -> Result<(), String
 ///
 /// The event names the folder only. TypeScript re-lists it through the catalog
 /// port, keeping filesystem observation out of the shared application model.
+#[cfg(desktop)]
 #[tauri::command]
 fn watch_workspace_folder(app: AppHandle, handle: String) -> Result<(), String> {
     let directory = PathBuf::from(&handle);
@@ -1088,6 +1183,36 @@ fn watch_workspace_folder(app: AppHandle, handle: String) -> Result<(), String> 
     Ok(())
 }
 
+/// iOS placeholders for the two filesystem watches.
+///
+/// `notify` has no iOS backend, and iCloud is not a plain filesystem anyway: a
+/// note can exist as a placeholder before its bytes have been downloaded, so
+/// the desktop "the directory changed" signal is the wrong shape even if it
+/// were available. The real iOS input is `NSFilePresenter`/`NSFileCoordinator`,
+/// which reports when a download completes.
+///
+/// Until that exists, these resolve rather than fail so that opening a note
+/// works — but nothing is being watched. **External changes made on another
+/// device are not detected on iOS**, which means ADR-0006's external-bytes
+/// adapter currently has no mobile input. This is a known, named gap, not a
+/// working watcher.
+#[cfg(mobile)]
+#[tauri::command]
+fn watch_note(
+    _app: AppHandle,
+    _handle: String,
+    _ledger: State<'_, WriteLedger>,
+    _control: State<'_, NoteWatchControl>,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+fn watch_workspace_folder(_app: AppHandle, _handle: String) -> Result<(), String> {
+    Ok(())
+}
+
 /// Raises the operating system's print panel for the document window.
 ///
 /// This exists because WKWebView leaves the webview's own `window.print()`
@@ -1096,11 +1221,21 @@ fn watch_workspace_folder(app: AppHandle, handle: String) -> Result<(), String> 
 /// same: pagination, what is hidden, and what a page looks like are decided by
 /// the shared print stylesheet, and this function neither reads the document
 /// nor knows that it is Markdown.
+#[cfg(desktop)]
 #[tauri::command]
 fn print_note(window: tauri::WebviewWindow) -> Result<(), String> {
     window
         .print()
         .map_err(|error| format!("Could not open the print panel: {error}"))
+}
+
+/// iOS printing goes through `UIPrintInteractionController`, not the webview,
+/// so there is no `print()` to forward to. The shared print stylesheet is
+/// unaffected; only the transport is missing.
+#[cfg(mobile)]
+#[tauri::command]
+fn print_note(_window: tauri::WebviewWindow) -> Result<(), String> {
+    Err("Printing is not available on iOS yet".to_string())
 }
 
 /// Sends a standard AppKit text-service action through the responder chain.
@@ -1211,13 +1346,20 @@ fn sync_traffic_lights_to_page_zoom(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
-        // Must be the first plugin. A Finder open while SimpleMark is already
-        // running is a document transition in that window, never permission
-        // to create a second application process and another main window.
-        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            queue_opened_paths(app, opened_markdown_args(&args, &cwd));
-        }))
+    let builder = tauri::Builder::default();
+
+    // Must be the first plugin. A Finder open while SimpleMark is already
+    // running is a document transition in that window, never permission
+    // to create a second application process and another main window.
+    //
+    // iOS needs no such lock: the operating system already guarantees one
+    // process per application, and there is no command line to inspect.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+        queue_opened_paths(app, opened_markdown_args(&args, &cwd));
+    }));
+
+    let app = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(WriteLedger::default())
@@ -1235,6 +1377,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_note,
             open_workspace_folder,
+            default_workspace,
             read_note_at,
             read_note_data,
             open_document_link,
@@ -1280,10 +1423,10 @@ pub fn run() {
         eprintln!("SimpleMark could not restore the selected app icon: {error}");
     }
 
-    app.run(|app, event| {
+    app.run(|_app, _event| {
         #[cfg(target_os = "macos")]
-        if let RunEvent::Opened { urls } = event {
-            queue_opened_notes(app, &urls);
+        if let RunEvent::Opened { urls } = _event {
+            queue_opened_notes(_app, &urls);
         }
     });
 }

@@ -1623,6 +1623,20 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   let setWorkspaceMode = (_mode: WorkspaceMode): void => {}
   let getWorkspaceMode = (): WorkspaceMode => 'editor'
+
+  /**
+   * The width below which the note list and the document cannot share a row.
+   *
+   * Must stay equal to the `max-width: 620px` breakpoint in `app.css`, where
+   * `.document-surface` is hidden outright. Below it the two panes are not a
+   * split view that got narrow — they are two screens, and opening a note has
+   * to move between them or the document is unreachable. On a phone that is
+   * every portrait viewport.
+   */
+  const SINGLE_PANE_WIDTH = 620
+
+  const isSinglePane = (): boolean =>
+    globalThis.matchMedia?.(`(max-width: ${SINGLE_PANE_WIDTH}px)`).matches === true
   let toggleWorkspacePin = (_id: string): void => {}
   let workspacePinState = (_id: string): boolean => false
 
@@ -2335,7 +2349,14 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         }
         select.append(title, preview, updated)
         if (workspace.onSelectNote !== undefined) {
-          select.addEventListener('click', () => workspace.onSelectNote?.(note.id))
+          select.addEventListener('click', () => {
+            workspace.onSelectNote?.(note.id)
+            // On a single-pane viewport the document is not merely narrow, it
+            // is hidden, so selecting a note without moving to it looks like
+            // nothing happened. `editor` is the existing mode that reveals it;
+            // the Document list button is the way back.
+            if (isSinglePane()) setWorkspaceMode('editor')
+          })
         }
         const close = document.createElement('button')
         close.type = 'button'

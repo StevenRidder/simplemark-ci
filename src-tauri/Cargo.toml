@@ -19,14 +19,22 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
-tauri-plugin-single-instance = "2"
 tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 sha2 = "0.10"
+
+# Desktop-only capabilities. None of these three has an iOS implementation:
+# `notify` gates every backend behind a desktop `target_os`, `trash` has no
+# platform module for iOS, and a single-instance lock is meaningless where the
+# operating system already guarantees one process per app. Declaring them here
+# rather than `#[cfg]`-ing their use sites keeps the iOS build from compiling
+# code it can never link.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 notify = "6"
 trash = "5"
+tauri-plugin-single-instance = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"

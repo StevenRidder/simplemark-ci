@@ -70,7 +70,11 @@ jobs:
       matrix:
         include:
           - leg: macos-arm64
-            runner: macos-15
+            # macos-26 (GA 2026-02-26) is the first image whose SDK carries
+            # FoundationModels. On macos-15 the Swift bridge cannot compile and
+            # `build.rs` degrades to a warning, so the DMG would build green
+            # with note summaries silently absent.
+            runner: macos-26
             target: aarch64-apple-darwin
             bundles: dmg
             os: macos
@@ -135,11 +139,30 @@ jobs:
         run: npm ci
 
       - name: Build the native package
+        env:
+          # Layer 2: turn a silent degrade into a build failure, but only where
+          # the capability is genuinely owed. Local builds leave this unset so
+          # an older Mac still produces a working app.
+          SIMPLEMARK_REQUIRE_INTELLIGENCE: ${{ matrix.leg == 'macos-arm64' && '1' || '' }}
         run: |
           set -euo pipefail
           mkdir -p .artifacts
           npx tauri build --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" \
             2>&1 | tee ".artifacts/release-build-${{ matrix.leg }}.log"
+
+      # Layer 3: assert the capability is in the binary. A published release
+      # that quietly lost a native feature is the failure this exists to stop.
+      - name: Assert native capabilities are present
+        # macOS only. Windows and Linux own no native capabilities and have no
+        # macOS floor, so there is nothing to assert — and their binary is not
+        # even called `simplemark` on Windows.
+        if: startsWith(matrix.leg, 'macos')
+        run: |
+          set -euo pipefail
+          node scripts/verify-native-capabilities.mjs \
+            --binary "src-tauri/target/${{ matrix.target }}/release/simplemark" \
+            --leg "${{ matrix.leg }}" \
+            ${{ startsWith(matrix.leg, 'macos') && '--max-minos 11.0' || '' }}
 
       # §3 and §10: assert the bundle at the path Tauri wrote it to *before*
       # renaming, so a Tauri release that changes its output layout fails here

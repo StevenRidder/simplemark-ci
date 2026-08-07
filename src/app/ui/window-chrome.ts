@@ -296,6 +296,8 @@ export interface WindowChrome {
    */
   setPreviewDensity(density: PreviewDensity): void
   previewDensity(): PreviewDensity
+  /** Replaces one row's subtitle in place, without reordering the list. */
+  applyNoteSummary(handle: string, summary: string): void
   setNotesSort(sort: NotesSort): void
   notesSort(): NotesSort
   toggleNewestOnTop(): void
@@ -1680,11 +1682,25 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   updateBar.addEventListener('click', () => options.onUpdate?.())
 
+  // The note list's model and container live inside the workspace branch, but
+  // a summary arrives long after that branch has run. This slot lets the
+  // branch publish the one operation the outside needs, without hoisting its
+  // state or exposing the DOM.
+  let applySummaryToRow: (handle: string, summary: string) => void = () => {}
+
   if (options.workspace === undefined) {
     windowEl.append(titlebar, documentSurface)
   } else {
     let workspace = options.workspace
     let workspaceNotes = workspace.notes.map((note) => ({ ...note }))
+    applySummaryToRow = (handle, summary) => {
+      const note = workspaceNotes.find((candidate) => candidate.id === handle)
+      if (note === undefined) return
+      Object.assign(note, { preview: summary })
+      const row = noteItems.querySelector(`.note-item[data-note-id="${CSS.escape(handle)}"]`)
+      const span = row?.querySelector('.note-select span')
+      if (span !== null && span !== undefined) span.textContent = summary
+    }
     let pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
     let pinSequence = 0
     /** Note ids in the order the list last painted them. Set by `paintNotes`. */
@@ -2238,6 +2254,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       for (const note of visibleNotes) {
         const item = document.createElement('div')
         item.className = 'note-item'
+        // Lets an arriving summary find its row without a full repaint, which
+        // would re-run the sort and could reorder the list.
+        item.dataset['noteId'] = note.id
         item.classList.toggle('selected', note.id === workspace.activeNoteId)
         const select = document.createElement('button')
         select.type = 'button'
@@ -2292,6 +2311,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
           })
         }
         const preview = document.createElement('span')
+        // No title attribute: the row wraps and shows the summary in full, so
+        // there is nothing hidden for a tooltip to reveal.
         preview.textContent = note.preview
         const updated = document.createElement('time')
         updated.textContent = note.updatedLabel
@@ -2711,6 +2732,17 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       repaintNoteList()
     },
     previewDensity: () => previewDensity,
+    /**
+     * Applies one summary in place.
+     *
+     * Updates the note model as well as the span, because the search filter
+     * reads `preview` and a repaint would otherwise discard a DOM-only change.
+     * Deliberately does not repaint: repainting re-runs the sort, and a
+     * summary arriving must never reorder the list under the reader.
+     */
+    applyNoteSummary(handle: string, summary: string): void {
+      applySummaryToRow(handle, summary)
+    },
     setNotesSort(sort) {
       notesSort = sort
       rememberUi({ notesSort })

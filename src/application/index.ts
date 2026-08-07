@@ -21,6 +21,8 @@ export type {
   RenderedDiagram,
   ClipboardPayload,
   ClipboardPort,
+  NoteSummary,
+  NoteSummaryPort,
 } from './ports.js'
 export { DocumentSession } from './document-session.js'
 export type {

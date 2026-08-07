@@ -47,6 +47,8 @@ export interface WorkspaceCatalogEntry {
   readonly name: string
   readonly modifiedMs: number
   readonly createdMs: number
+  /** The note's own lead sentence, when it has one. */
+  readonly preview?: string
 }
 
 /** A non-recursive local folder whose Markdown files form the visible catalog. */
@@ -178,4 +180,31 @@ export interface ClipboardPort {
   write(payload: ClipboardPayload): Promise<boolean>
   /** The clipboard's text, or null when the host will not surrender it. */
   readText(): Promise<string | null>
+}
+
+/** One note's summary, keyed to the exact content it describes. */
+export interface NoteSummary {
+  readonly handle: string
+  /** Hex SHA-256 of the bytes this summary was written from. */
+  readonly contentHash: string
+  readonly summary: string
+}
+
+/**
+ * Optional one-line summaries for note-list rows.
+ *
+ * The "bytes, not strings" rule above does not reach this port: a summary is
+ * display text that never round-trips to disk, so it cannot destroy the byte
+ * evidence the D7 contract protects.
+ *
+ * Implementations: Foundation Models on macOS 26+ Apple silicon, and an
+ * unavailable one everywhere else. A caller must work correctly when
+ * `available()` is false — the note list then shows extracted previews only.
+ */
+export interface NoteSummaryPort {
+  available(): Promise<boolean>
+  /** Requests summaries, highest priority first. Idempotent; supersedes. */
+  request(handles: readonly string[]): Promise<void>
+  /** Returns an unsubscribe function. */
+  onSummary(listener: (summary: NoteSummary) => void): () => void
 }

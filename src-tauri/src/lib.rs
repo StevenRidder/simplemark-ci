@@ -43,6 +43,12 @@ mod macos_traffic_lights;
 #[cfg(target_os = "macos")]
 mod macos_zoom;
 
+pub mod note_preview;
+pub mod note_summaries;
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+pub mod foundation_models;
+
 #[cfg(target_os = "macos")]
 use objc2::{sel, MainThreadMarker};
 #[cfg(target_os = "macos")]
@@ -63,6 +69,15 @@ pub struct BuildProvenance {
     /// `owner/name` this build came from, or `unknown`. Read from the build's
     /// own remote so no source file names the private canonical repository.
     repository: String,
+    /// Native capabilities compiled into *this* binary.
+    ///
+    /// A capability can be absent for honest reasons — wrong architecture, an
+    /// SDK without the framework, a platform Apple does not serve — and a
+    /// green build proves nothing about which. Reporting it lets an installed
+    /// bundle be asked rather than inferred: grepping a `.app` answers only
+    /// for things that survive as symbols or shell config, and gives false
+    /// negatives for everything else.
+    capabilities: Vec<String>,
 }
 
 /// The commit and time this binary was built from.
@@ -74,7 +89,17 @@ fn build_provenance() -> BuildProvenance {
         sha,
         built_at: env!("SIMPLEMARK_BUILD_TIME").to_string(),
         repository: env!("SIMPLEMARK_BUILD_REPOSITORY").to_string(),
+        capabilities: native_capabilities(),
     }
+}
+
+/// What this binary can actually do, as opposed to what the source allows.
+fn native_capabilities() -> Vec<String> {
+    let mut capabilities = Vec::new();
+    if cfg!(simplemark_intelligence) {
+        capabilities.push("note-summaries".to_string());
+    }
+    capabilities
 }
 
 /// Seven characters, git's own abbreviation, except for the honest non-SHA
@@ -107,6 +132,14 @@ pub struct WorkspaceCatalogEntry {
     name: String,
     modified_ms: u64,
     created_ms: u64,
+    /// The author's own lead sentence, when the note has one. `None` renders
+    /// no subtitle rather than an empty one.
+    ///
+    /// Skipped rather than serialized as `null`, so the field is genuinely
+    /// absent on the wire and the TypeScript `preview?: string` is honest
+    /// instead of quietly meaning `string | null`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preview: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -440,6 +473,12 @@ fn millis(time: Result<SystemTime, std::io::Error>) -> u64 {
         .unwrap_or(0)
 }
 
+/// How much of a note is read to find its preview.
+///
+/// Every extraction rule looks at the document's opening only, and opening a
+/// folder must not wait on I/O — so this is deliberately small.
+const PREVIEW_READ_LIMIT: u64 = 8 * 1024;
+
 fn catalog_entry(path: &Path) -> Result<WorkspaceCatalogEntry, String> {
     let metadata = fs::metadata(path)
         .map_err(|error| format!("Could not inspect {}: {error}", path.display()))?;
@@ -451,7 +490,18 @@ fn catalog_entry(path: &Path) -> Result<WorkspaceCatalogEntry, String> {
             .unwrap_or_else(|| path.display().to_string()),
         modified_ms: millis(metadata.modified()),
         created_ms: millis(metadata.created()),
+        preview: preview_of(path),
     })
+}
+
+/// An unreadable note is not a catalog failure. The row still lists, without
+/// a subtitle — the same outcome as a note that has no prose.
+fn preview_of(path: &Path) -> Option<String> {
+    use std::io::Read;
+    let file = fs::File::open(path).ok()?;
+    let mut buffer = Vec::with_capacity(PREVIEW_READ_LIMIT as usize);
+    file.take(PREVIEW_READ_LIMIT).read_to_end(&mut buffer).ok()?;
+    note_preview::extract_preview(&String::from_utf8_lossy(&buffer))
 }
 
 fn inspected_workspace_note(path: &Path) -> Result<WorkspaceCatalog, String> {
@@ -967,6 +1017,13 @@ fn watch_note(
                 continue;
             }
 
+            // Starts the quiescence timer. An agent rewriting this file fires
+            // here many times a second; this only stamps a time, so the burst
+            // costs one re-summary once the writes stop rather than one each.
+            if let Some(summaries) = app.try_state::<note_summaries::SummaryState>() {
+                note_summaries::note_changed_externally(&summaries, &handle);
+            }
+
             let _ = app.emit("note-changed-externally", handle.clone());
         }
     });
@@ -1166,6 +1223,15 @@ pub fn run() {
         .manage(WriteLedger::default())
         .manage(NoteWatchControl::default())
         .manage(OpenRequestQueue::default())
+        .setup(|app| {
+            // Summaries are derived data: if the data directory cannot be
+            // resolved, the note list shows extracted previews and the app
+            // starts normally rather than refusing to run.
+            if let Ok(path) = note_summaries::cache_path(&app.handle()) {
+                tauri::Manager::manage(app, note_summaries::SummaryState::new(path));
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             open_note,
             open_workspace_folder,
@@ -1195,7 +1261,9 @@ pub fn run() {
             sync_traffic_lights_to_page_zoom,
             watch_note,
             stop_watching_note,
-            watch_workspace_folder
+            watch_workspace_folder,
+            note_summaries::note_summaries_available,
+            note_summaries::request_note_summaries
         ])
         .build(tauri::generate_context!())
         .expect("SimpleMark failed to start");
@@ -1225,6 +1293,52 @@ mod tests {
     use super::*;
 
     /// The D7 contract in the one place this crate can break it.
+    #[test]
+    fn catalog_entries_carry_a_preview() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("note.md"),
+            b"# Title\n\nThe agent rewrites this file while you read it.\n",
+        )
+        .unwrap();
+
+        let catalog = workspace_catalog_for_directory(directory.path()).unwrap();
+
+        assert_eq!(
+            catalog.notes[0].preview.as_deref(),
+            Some("The agent rewrites this file while you read it.")
+        );
+    }
+
+    /// A note with no prose is not an error and not an empty string — it has
+    /// no preview, and the row simply shows none.
+    #[test]
+    fn a_note_without_prose_has_no_preview() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("stub.md"), b"# Just A Heading\n").unwrap();
+
+        let catalog = workspace_catalog_for_directory(directory.path()).unwrap();
+
+        assert_eq!(catalog.notes[0].preview, None);
+    }
+
+    /// Opening a folder must not read whole notes. A large file still yields
+    /// its preview from the first 8 KiB.
+    #[test]
+    fn reads_only_a_bounded_prefix_of_each_note() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut huge = String::from("# Huge\n\nThe opening sentence is right here.\n");
+        huge.push_str(&"filler filler filler\n".repeat(250_000));
+        fs::write(directory.path().join("huge.md"), huge.as_bytes()).unwrap();
+
+        let catalog = workspace_catalog_for_directory(directory.path()).unwrap();
+
+        assert_eq!(
+            catalog.notes[0].preview.as_deref(),
+            Some("The opening sentence is right here.")
+        );
+    }
+
     #[test]
     fn round_trips_bytes_that_a_string_would_destroy() {
         let awkward: Vec<u8> = vec![b'a', b'\r', 0xF0, 0x9F, 0x92, 0xA9, 0xFF, b'\n'];

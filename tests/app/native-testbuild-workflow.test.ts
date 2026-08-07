@@ -76,7 +76,7 @@ describe('native test-build workflow', () => {
 
   it('builds the four contracted legs on pinned native runners (§3)', () => {
     expect(matrixInclude(workflow)).toEqual([
-      { leg: 'macos-arm64', runner: 'macos-15', target: 'aarch64-apple-darwin', bundles: 'dmg', os: 'macos', arch: 'arm64' },
+      { leg: 'macos-arm64', runner: 'macos-26', target: 'aarch64-apple-darwin', bundles: 'dmg', os: 'macos', arch: 'arm64' },
       { leg: 'macos-x64', runner: 'macos-15-intel', target: 'x86_64-apple-darwin', bundles: 'dmg', os: 'macos', arch: 'x64' },
       { leg: 'windows-x64', runner: 'windows-2025', target: 'x86_64-pc-windows-msvc', bundles: 'msi,nsis', os: 'windows', arch: 'x64' },
       { leg: 'linux-x64', runner: 'ubuntu-22.04', target: 'x86_64-unknown-linux-gnu', bundles: 'appimage,deb', os: 'linux', arch: 'x64' },

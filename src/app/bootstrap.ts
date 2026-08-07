@@ -79,6 +79,8 @@ export interface AppComposition {
   run(command: DocumentCommandId): void
   /** Runs a native context-menu export against the pre-AppKit selection. */
   runNativeContextCommand(command: DocumentCommandId): void
+  /** Replaces one note row's subtitle in place, without reordering the list. */
+  applyNoteSummary(handle: string, summary: string): void
   /** Whether the optional styles bar is showing, for the View menu checkmark. */
   stylesBarVisible(): boolean
   /**
@@ -820,6 +822,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   return {
     element: chrome.element,
     run: runCommand,
+    applyNoteSummary: (handle, summary) => chrome.applyNoteSummary(handle, summary),
     runNativeContextCommand: (command) => {
       void copySelection(command, nativeContextSelection)
     },

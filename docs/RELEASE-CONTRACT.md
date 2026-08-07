@@ -106,7 +106,7 @@ Four legs. Each builds natively for its own architecture; nothing is cross-compi
 
 | Leg | Runner label | Rust target | Bundles |
 |---|---|---|---|
-| macOS arm64 | `macos-15` | `aarch64-apple-darwin` | `dmg` |
+| macOS arm64 | `macos-26` | `aarch64-apple-darwin` | `dmg` |
 | macOS x64 | `macos-15-intel` | `x86_64-apple-darwin` | `dmg` |
 | Windows x64 | `windows-2025` | `x86_64-pc-windows-msvc` | `msi`, `nsis` |
 | Linux x64 | `ubuntu-22.04` | `x86_64-unknown-linux-gnu` | `appimage`, `deb` (see below) |
@@ -139,7 +139,20 @@ Why these labels:
   which Apple's toolchain supports. That fallback is a **recorded decision, not a silent
   substitution**, because a cross-compiled leg cannot run its own smoke test (APP-6) —
   the runner cannot execute the binary it just produced.
-- **`macos-15`, not `macos-14`.** `macos-14` is deprecated.
+- **`macos-26` for the arm64 leg, raised from `macos-15`.** This is the recorded reason the
+  paragraph above requires. `macos-15` carries the macOS 15 SDK, which has no
+  `FoundationModels` framework, so the Swift bridge behind note summaries cannot compile there.
+  `build.rs` degrades to a warning in that case — deliberately, so a contributor on an older Mac
+  still gets a working app — which means the leg would have gone **green while silently shipping a
+  DMG without the capability**. That is the shape of the Graphviz CSP defect, so the move is paired
+  with two assertions rather than trusted: `SIMPLEMARK_REQUIRE_INTELLIGENCE=1` turns the degrade
+  into a build failure on this leg, and `scripts/verify-native-capabilities.mjs` reads the linked
+  binary and fails if the symbol is absent. `macos-26` became generally available on 2026-02-26.
+- **Raising the build SDK must not raise the runtime floor.** The Swift bridge is compiled against
+  `arm64-apple-macosx26.0`, and if that propagated to the final link every Mac below macOS 26 would
+  refuse to launch the app — the same failure mode the `ubuntu-22.04` pin above exists to prevent.
+  It does not propagate today (`minos` stays at 11.0), and both macOS legs now assert it with
+  `--max-minos 11.0` rather than relying on it staying true.
 
 Linux system dependencies, installed before the build:
 

@@ -39,7 +39,102 @@ fn main() {
         println!("cargo:rerun-if-changed={path}");
     }
 
+    build_intelligence_bridge();
+
     tauri_build::build()
+}
+
+/// Compiles the Foundation Models bridge and links it into this binary.
+///
+/// Apple silicon macOS only. Apple Intelligence requires Apple silicon, so the
+/// x86_64 leg is not a gap to fill later — the feature genuinely cannot exist
+/// there, and gating on the architecture keeps that leg building untouched.
+///
+/// A missing or too-old Swift toolchain is not a build failure. It sets no
+/// `simplemark_intelligence` cfg, the Rust side compiles its unavailable path,
+/// and the app ships with extracted previews only — the same outcome as a Mac
+/// with Apple Intelligence switched off.
+fn build_intelligence_bridge() {
+    println!("cargo:rerun-if-changed=swift/SimpleMarkIntelligence.swift");
+    println!("cargo:rustc-check-cfg=cfg(simplemark_intelligence)");
+    println!("cargo:rerun-if-env-changed=SIMPLEMARK_REQUIRE_INTELLIGENCE");
+
+    // Degrading quietly is right for a contributor on an older Mac and wrong
+    // for a release: a green build that silently dropped a capability is
+    // exactly how the Graphviz CSP defect shipped. The caller that can promise
+    // the toolchain is the one that says so, the same way
+    // `SIMPLEMARK_BUILD_SHA` works.
+    let required = supplied("SIMPLEMARK_REQUIRE_INTELLIGENCE")
+        .is_some_and(|value| value != "0" && !value.eq_ignore_ascii_case("false"));
+
+    let target = std::env::var("TARGET").unwrap_or_default();
+    if !target.starts_with("aarch64-apple-darwin") {
+        assert!(
+            !required,
+            "SIMPLEMARK_REQUIRE_INTELLIGENCE is set but TARGET is {target}. \
+             Foundation Models needs aarch64-apple-darwin; set it only on that leg."
+        );
+        return;
+    }
+
+    let Ok(out_dir) = std::env::var("OUT_DIR") else {
+        return;
+    };
+
+    let refuse = |reason: &str| {
+        assert!(
+            !required,
+            "SIMPLEMARK_REQUIRE_INTELLIGENCE is set but the Foundation Models \
+             bridge cannot be built: {reason}. This build would ship a macOS \
+             app with note summaries silently missing."
+        );
+        println!("cargo:warning={reason}; note summaries disabled");
+    };
+
+    // FoundationModels ships in the macOS 26 SDK. An older SDK compiles every
+    // other file in this crate perfectly well, so probe rather than assume.
+    let sdk = match run("xcrun", &["--show-sdk-version"]) {
+        Some(version) => version,
+        None => {
+            refuse("no macOS SDK found");
+            return;
+        }
+    };
+    let major: u32 = sdk.split('.').next().unwrap_or("0").parse().unwrap_or(0);
+    if major < 26 {
+        refuse(&format!("macOS SDK {sdk} predates FoundationModels"));
+        return;
+    }
+
+    let library = format!("{out_dir}/libSimpleMarkIntelligence.a");
+    let compiled = Command::new("swiftc")
+        .args([
+            "-O",
+            "-target",
+            "arm64-apple-macosx26.0",
+            "-emit-library",
+            "-static",
+            "-module-name",
+            "SimpleMarkIntelligence",
+            "-o",
+            &library,
+            "swift/SimpleMarkIntelligence.swift",
+        ])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+
+    if !compiled {
+        refuse("swiftc failed");
+        return;
+    }
+
+    println!("cargo:rustc-link-search=native={out_dir}");
+    println!("cargo:rustc-link-lib=static=SimpleMarkIntelligence");
+    // The Swift runtime the static library depends on.
+    println!("cargo:rustc-link-search=native=/usr/lib/swift");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+    println!("cargo:rustc-cfg=simplemark_intelligence");
 }
 
 /// Files whose change must force this script to run again.

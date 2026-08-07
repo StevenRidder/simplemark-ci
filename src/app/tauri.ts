@@ -39,6 +39,11 @@ import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
 import { WorkspacePins } from './workspace-pins.js'
 import { NoteWalk } from './note-walk.js'
 import { APP_ICON_CHOICES, normaliseAppIconId } from './app-icons.js'
+import {
+  TauriNoteSummaryPort,
+  UnavailableNoteSummaryPort,
+} from '../adapters/intelligence/index.js'
+import type { NoteSummaryPort } from '../application/index.js'
 import { WorkspaceHistoryStore } from './workspace-history.js'
 import type { Visit } from './workspace-history.js'
 import { DRAFT_NOTE_ID, noteRows } from './workspace-view.js'
@@ -200,6 +205,44 @@ async function startNative(
   const noteWalk = new NoteWalk()
   const watchedFolders = new Set<string>()
 
+  // Shell-scoped like the walk: remounting the chrome per note must not drop
+  // the subscription or re-ask the native side whether a model exists.
+  const summaryTransport = new TauriNoteSummaryPort(invoke, listen)
+  const noteSummaries: NoteSummaryPort = (await summaryTransport.available())
+    ? summaryTransport
+    : new UnavailableNoteSummaryPort()
+  // Arrives on a background thread over a second after it was asked for, so
+  // the row is patched in place rather than repainting and re-running the sort.
+  noteSummaries.onSummary((summary) => {
+    current.applyNoteSummary(summary.handle, summary.summary)
+  })
+  /**
+   * How many notes one request may ask for.
+   *
+   * A bound rather than a viewport: the catalog is already sorted newest-first,
+   * so its order is the relevance order and the head of the list is very nearly
+   * what is on screen. That gets the benefit an IntersectionObserver would,
+   * without the webview reporting scroll position across the bridge.
+   *
+   * It is also a cost fix, not only a politeness one. The native side must read
+   * and hash a note before it can look it up — the cache is keyed by content —
+   * so an uncapped request re-reads and re-hashes the whole collection on every
+   * catalog refresh, which happens each time you switch notes.
+   *
+   * Notes past the bound keep their extracted preview until you select one, at
+   * which point it becomes the active note and goes to the front.
+   */
+  const SUMMARY_REQUEST_LIMIT = 30
+
+  /** Active note first, then the most recent of the collection. */
+  const requestSummaries = (activeHandle: string, catalog: WorkspaceCatalog): void => {
+    const handles = [
+      ...(activeHandle === '' ? [] : [activeHandle]),
+      ...catalog.notes.map((note) => note.handle).filter((handle) => handle !== activeHandle),
+    ].slice(0, SUMMARY_REQUEST_LIMIT)
+    if (handles.length > 0) void noteSummaries.request(handles)
+  }
+
   const showOpenFailure = (error: unknown): void => {
     const message = error instanceof Error ? error.message : String(error)
     current.setStatus('error', `Could not open file — ${message}`)
@@ -272,13 +315,14 @@ async function startNative(
   const workspaceView = (
     selectedHandle: string,
     collectionId = activeCollectionId,
-  ): WorkspaceOptions => catalogWorkspace(
-    collections.collection(collectionId, workspaceHandle ?? selectedHandle),
-    selectedHandle,
-    pins,
-    workspaceActions(collectionId),
-    draft,
-  )
+  ): WorkspaceOptions => {
+    const catalog = collections.collection(collectionId, workspaceHandle ?? selectedHandle)
+    // Every catalog the shell shows passes through here, so this is the one
+    // place summaries need asking for. Fire-and-forget: results arrive on an
+    // event and never hold up the render.
+    requestSummaries(selectedHandle, catalog)
+    return catalogWorkspace(catalog, selectedHandle, pins, workspaceActions(collectionId), draft)
+  }
 
   const reconcileWorkspace = (
     selectedHandle = activeHandle,
@@ -304,6 +348,7 @@ async function startNative(
     // dumps all of its siblings into Recent Notes.
     collections.rememberRecent(entry)
     persistRecentNotes()
+    requestSummaries(opened.handle, inspected)
     activeCollectionId = collectionId
     saveActiveCollection(window.localStorage, collectionId)
     const catalog = collections.collection(collectionId, inspected.handle)
@@ -1073,7 +1118,7 @@ function nativeWorkspace(
       {
         id: fileName,
         title: fileName.replace(/\.(md|markdown)$/i, ''),
-        preview: 'Current local Markdown file',
+        preview: '',
         updatedLabel: 'Open',
         pinned: false,
       },

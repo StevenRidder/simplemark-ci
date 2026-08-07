@@ -1593,15 +1593,17 @@ section.editor::-webkit-scrollbar {
   line-height: 1.25;
 }
 
+/* The summary wraps in full rather than being clipped to one line. A
+   two-sentence summary carries the specific detail in its second half, so
+   an ellipsis would hide the part worth reading. The row grows to fit. */
 .note-select span {
   grid-column: 1 / -1;
-  overflow: hidden;
   color: var(--ink-3);
   font-size: 13px;
   font-weight: 400;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .note-select time {
@@ -1665,11 +1667,7 @@ section.editor::-webkit-scrollbar {
 }
 
 .workspace-notes[data-preview='large'] .note-select span {
-  overflow: hidden;
-  display: -webkit-box;
   white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .note-pin {

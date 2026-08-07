@@ -1,5 +1,6 @@
 import type { WorkspaceCatalogEntry } from '../application/index.js'
 import type { WorkspaceNote } from './ui/window-chrome.js'
+import { previewFor } from './note-preview-line.js'
 
 /**
  * The middle pane's rows, assembled as a value.
@@ -49,7 +50,7 @@ export function noteRows(
     identifier: note.name,
     portableLink: `./${note.name}`,
     title: note.name.replace(/\.(md|markdown)$/i, ''),
-    preview: 'Local Markdown file',
+    preview: previewFor(note),
     updatedLabel: relativeDate(note.modifiedMs, options.now),
     // A zero stamp means the catalog does not know, and the View menu disables
     // the date sorts for a catalog that cannot answer. Passing 0 through would

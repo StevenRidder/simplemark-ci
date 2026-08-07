@@ -1699,7 +1699,10 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       Object.assign(note, { preview: summary })
       const row = noteItems.querySelector(`.note-item[data-note-id="${CSS.escape(handle)}"]`)
       const span = row?.querySelector('.note-select span')
-      if (span !== null && span !== undefined) span.textContent = summary
+      if (span !== null && span !== undefined) {
+        span.textContent = summary
+        ;(span as HTMLElement).title = summary
+      }
     }
     let pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
     let pinSequence = 0
@@ -2311,9 +2314,11 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
           })
         }
         const preview = document.createElement('span')
-        // No title attribute: the row wraps and shows the summary in full, so
-        // there is nothing hidden for a tooltip to reveal.
         preview.textContent = note.preview
+        // The row shows up to three lines and clamps beyond that, so there can
+        // be text the reader cannot see. Removed when the row wrapped without
+        // limit; restored now that it does not.
+        if (note.preview !== '') preview.title = note.preview
         const updated = document.createElement('time')
         updated.textContent = note.updatedLabel
         if (note.pinned) {

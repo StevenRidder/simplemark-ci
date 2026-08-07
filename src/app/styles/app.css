@@ -1467,9 +1467,14 @@ section.editor::-webkit-scrollbar {
   color: var(--ink-3);
 }
 
+/* A flex column, not a grid. Grid sized its auto rows from the item's
+   min-height and ignored the wrapped subtitle's contribution once the subtitle
+   became a `-webkit-box` for line clamping — the track stayed at 70px while the
+   row's own content needed 110px, so every summary spilled into the row below.
+   A column has no track sizing to get wrong: each row is as tall as it is. */
 .note-items {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 0;
   min-height: 0;
   overflow-y: auto;
@@ -1514,6 +1519,8 @@ section.editor::-webkit-scrollbar {
   position: relative;
   display: block;
   align-items: start;
+  /* Never shrink to fit the column: the row is as tall as its content. */
+  flex: 0 0 auto;
   width: 100%;
   min-height: 70px;
   border-radius: 9px;
@@ -1593,17 +1600,24 @@ section.editor::-webkit-scrollbar {
   line-height: 1.25;
 }
 
-/* The summary wraps in full rather than being clipped to one line. A
-   two-sentence summary carries the specific detail in its second half, so
-   an ellipsis would hide the part worth reading. The row grows to fit. */
+/* Adaptive, but bounded. The row grows with the summary instead of clipping
+   it to one line — a two-sentence summary carries its specific detail in the
+   second half. Left unbounded it swallowed the row: 180 characters in a 300px
+   column is five lines, which buries the title the reader is scanning for and
+   makes the list all subtitle. Three lines fits a two-sentence summary at this
+   column width and keeps the row recognisably a row. */
 .note-select span {
+  display: -webkit-box;
   grid-column: 1 / -1;
+  overflow: hidden;
   color: var(--ink-3);
   font-size: 13px;
   font-weight: 400;
   line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .note-select time {
@@ -1641,6 +1655,10 @@ section.editor::-webkit-scrollbar {
   display: none;
 }
 
+.workspace-notes[data-preview='medium'] .note-select span {
+  -webkit-line-clamp: 3;
+}
+
 .workspace-notes[data-preview='small'] .note-close,
 .workspace-notes[data-preview='small'] .note-pin {
   right: 4px;
@@ -1667,7 +1685,7 @@ section.editor::-webkit-scrollbar {
 }
 
 .workspace-notes[data-preview='large'] .note-select span {
-  white-space: normal;
+  -webkit-line-clamp: 5;
 }
 
 .note-pin {

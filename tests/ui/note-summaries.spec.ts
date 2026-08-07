@@ -70,6 +70,69 @@ test.describe('note summaries', () => {
     await expect(rows.first()).toBeVisible()
   })
 
+  test('a long summary grows its row instead of spilling into the next', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(() => window.simplemark !== undefined)
+
+    const rows = page.locator('.note-item')
+    await expect(rows.first()).toBeVisible()
+
+    // The defect this catches shipped: the list was a CSS grid, and once the
+    // subtitle became a clamped `-webkit-box` the auto-sized track stopped
+    // counting its height. Rows stayed at their 70px minimum while their own
+    // content needed 110px, so every summary overlapped the row beneath it.
+    const long =
+      "Total's FMP asset sync is live in production. Pads sync cleanly without " +
+      'creating duplicates, operators have a review queue and health dashboard, ' +
+      'and the schedule runs every 30 minutes.'
+
+    const spills = await page.evaluate((summary) => {
+      const items = [...document.querySelectorAll('.note-item')]
+      items.forEach((item) => {
+        const id = (item as HTMLElement).dataset['noteId']
+        if (id !== undefined) window.simplemark!.applyNoteSummary(id, summary)
+      })
+      return items.map((item) => {
+        const row = item.getBoundingClientRect()
+        const content = item.querySelector('.note-select')!.getBoundingClientRect()
+        return Math.round(content.bottom - row.bottom)
+      })
+    }, long)
+
+    expect(spills.length).toBeGreaterThan(0)
+    for (const spill of spills) expect(spill).toBeLessThanOrEqual(0)
+  })
+
+  test('a short summary makes a shorter row than a long one', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForFunction(() => window.simplemark !== undefined)
+    await expect(page.locator('.note-item').first()).toBeVisible()
+
+    // "Adaptive to the text" in both directions: bounded above by the clamp,
+    // and not padded out to a fixed height below it.
+    const heights = await page.evaluate(() => {
+      const items = [...document.querySelectorAll('.note-item')]
+      if (items.length < 2) return null
+      const apply = (item: Element, text: string): void => {
+        const id = (item as HTMLElement).dataset['noteId']
+        if (id !== undefined) window.simplemark!.applyNoteSummary(id, text)
+      }
+      apply(items[0]!, 'Short one.')
+      apply(
+        items[1]!,
+        "Total's FMP asset sync is live in production. Pads sync cleanly without " +
+          'creating duplicates, operators have a review queue and health dashboard.',
+      )
+      return {
+        short: Math.round(items[0]!.getBoundingClientRect().height),
+        long: Math.round(items[1]!.getBoundingClientRect().height),
+      }
+    })
+
+    if (heights === null) test.skip(true, 'needs at least two notes')
+    expect(heights!.long).toBeGreaterThan(heights!.short)
+  })
+
   test('a summary for a note that is not listed changes nothing', async ({ page }) => {
     await page.goto('/')
     await page.waitForFunction(() => window.simplemark !== undefined)

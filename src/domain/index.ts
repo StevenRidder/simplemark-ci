@@ -47,3 +47,5 @@ export {
   markdownTableToHtml,
   markdownToPlainText,
 } from './clipboard/formats.js'
+export { CONTEXT_LENGTH, buildAnchor, matchAnchor } from './notes/anchor.js'
+export type { Anchor } from './notes/anchor.js'

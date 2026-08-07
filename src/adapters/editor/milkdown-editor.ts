@@ -173,6 +173,8 @@ export class MilkdownEditor {
   private constructor(
     private readonly editor: Editor,
     private readonly renderer: DiagramRenderer,
+    /** The single exit every document change leaves through. */
+    private readonly emitMarkdown: (editorMarkdown: string) => void,
   ) {}
 
   static async mount(options: MilkdownEditorOptions): Promise<MilkdownEditor> {
@@ -216,12 +218,29 @@ export class MilkdownEditor {
         new AssetImageNodeView(node, view, getPos)
     })
 
+    /**
+     * The last Markdown the application has been told about.
+     *
+     * Every change leaves through `emitMarkdown`, whether it arrives on
+     * Milkdown's debounced listener or on a flush, and each emission is
+     * measured against this. So a flush that beats the timer does not get
+     * counted twice when the timer finally fires, and the document never
+     * looks dirty again for an edit that was already delivered.
+     */
+    let lastEmitted: string | undefined
+    const emitMarkdown = (editorMarkdown: string): void => {
+      const markdown = preparedMarkdown.restoreMarkdown(editorMarkdown)
+      if (markdown === lastEmitted) return
+      lastEmitted = markdown
+      options.onMarkdownChanged(markdown)
+    }
+
     const editor = await Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, options.mount)
         ctx.set(defaultValueCtx, preparedMarkdown.editorMarkdown)
-        ctx.get(listenerCtx).markdownUpdated((_ctx, markdown, previous) => {
-          if (markdown !== previous) options.onMarkdownChanged(preparedMarkdown.restoreMarkdown(markdown))
+        ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
+          emitMarkdown(markdown)
         })
       })
       .use(commonmark)
@@ -281,7 +300,14 @@ export class MilkdownEditor {
       .use(imageView)
       .create()
 
-    const instance = new MilkdownEditor(editor, options.renderer)
+    // The baseline comes from the mounted document rather than from
+    // `initialMarkdown`, and through the same serialiser every later emission
+    // uses. Parsing and re-serialising normalises some Markdown, so comparing
+    // against the string on disk would make an untouched document look edited
+    // the first time anything flushed it.
+    lastEmitted = preparedMarkdown.restoreMarkdown(editor.action(getMarkdown()))
+
+    const instance = new MilkdownEditor(editor, options.renderer, emitMarkdown)
     instance.installLinkOpening(options.mount, options.onOpenLink)
     instance.installBlockReordering()
     instance.installTableControls()
@@ -1464,6 +1490,22 @@ export class MilkdownEditor {
    */
   serialize(): string {
     return this.editor.action(getMarkdown())
+  }
+
+  /**
+   * Delivers any edit the debounced change listener has not handed over yet.
+   *
+   * Milkdown's listener plugin debounces `markdownUpdated` by 200ms, so between
+   * the last keystroke and that timer the session still holds the previous
+   * document. Every path that turns the session into bytes — Save, autosave,
+   * closing a note, switching notes — has to close that gap first, or it writes
+   * the document as it was a moment ago and then reports success.
+   *
+   * Cheap to call when nothing is pending: the serialised document matches what
+   * was last emitted, so no transaction is raised and the document stays clean.
+   */
+  flushPendingChanges(): void {
+    this.emitMarkdown(this.editor.action(getMarkdown()))
   }
 
   /**

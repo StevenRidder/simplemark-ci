@@ -176,15 +176,32 @@ test('pasted Mermaid round-trips to the file as a portable fence', async ({ page
     navigator.clipboard.writeText('flowchart TD\n  SAVE[Save] --> DISK[(Real file)]'),
   )
   await page.keyboard.press('ControlOrMeta+v')
+  // The second rendered diagram is the readiness condition: the fence is in the
+  // document. Waiting on `dirty` instead would prove nothing — the Enter above
+  // already dirtied it — and it was that false gate which let this test save
+  // before the paste reached the session and fail once in CI.
   await expect(page.locator('.diagram .diagram-render svg')).toHaveCount(2)
 
-  await expect
-    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().dirty))
-    .toBe(true)
   await page.evaluate(() => window.simplemark!.save())
   const onDisk = await diskContent(page)
   expect(onDisk).toContain('```mermaid')
   expect(onDisk).toContain('SAVE[Save] --> DISK[(Real file)]')
+})
+
+test('a save issued straight after an edit writes that edit, not the one before it', async ({ page }) => {
+  await openTheFile(page)
+
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('Typed and saved in the same breath.')
+
+  // Deliberately no wait for `dirty` or for the session markdown. Milkdown's
+  // change listener is debounced, so a save arriving inside that window is the
+  // ordinary case — Cmd+S on the last word typed, or a note switch that saves
+  // on the way out. The save has to carry the editor's current document.
+  await page.evaluate(() => window.simplemark!.save())
+
+  expect(await diskContent(page)).toContain('Typed and saved in the same breath.')
 })
 
 test('cancelling the picker leaves the current document untouched', async ({ page }) => {

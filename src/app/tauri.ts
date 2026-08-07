@@ -380,9 +380,18 @@ async function startNative(
    * A new note starts as an empty heading. Leaving one you never typed in must
    * not raise a destination panel — being unable to click another note without
    * answering a save dialog is what made a new note feel like a trap.
+   *
+   * The session is flushed first, because this decides whether a document is
+   * thrown away. The editor hands changes over on a debounce, so a draft typed
+   * into and left within that window still reads as the empty heading it was
+   * created as — and answering "untouched" there discards what was just typed
+   * without so much as a destination panel.
    */
-  const discardsUntouchedDraft = (): boolean =>
-    draft && current.session.snapshot().markdown.replace(/^#+/u, '').trim() === ''
+  const discardsUntouchedDraft = (): boolean => {
+    if (!draft) return false
+    current.flushPendingChanges()
+    return current.session.snapshot().markdown.replace(/^#+/u, '').trim() === ''
+  }
 
   /**
    * Flushes the open document before a transition replaces it.
@@ -575,6 +584,9 @@ async function startNative(
 
   const copyMarkdown = async (handle: string): Promise<void> => {
     if (handle === DRAFT_NOTE_ID) {
+      // No file backs the draft, so the session is the only copy — and it is a
+      // debounce behind the editor. Copying a note has to yield the note.
+      current.flushPendingChanges()
       await copyText(current.session.snapshot().markdown)
       return
     }

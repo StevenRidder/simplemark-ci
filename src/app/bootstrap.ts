@@ -67,6 +67,17 @@ export interface AppComposition {
   destroy(): Promise<void>
   /** Flushes any pending debounced save. `false` leaves the current document in place. */
   save(): Promise<boolean>
+  /**
+   * Brings the session up to date with the document on screen.
+   *
+   * The editor hands changes over on a debounce, so for a moment after the last
+   * keystroke `session.snapshot()` still describes the previous document.
+   * `save` already closes that gap for itself; this exists for the shell code
+   * that *reads* the session to make a decision — is this draft untouched, what
+   * do I put on the clipboard — because deciding on a stale snapshot throws away
+   * whatever was typed last.
+   */
+  flushPendingChanges(): void
   /** Shows a truthful platform or file-reference limitation in the shell. */
   setStatus(state: SaveState, message: string): void
   /**
@@ -498,6 +509,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const autosaveMs = options.autosaveMs ?? 900
   const save = async (force = false): Promise<boolean> => {
     clearTimeout(saveTimer)
+    // The editor hands changes over on a debounce, so the session can be a
+    // couple of hundred milliseconds behind the document on screen. Saving what
+    // the session happens to hold would drop the last thing typed and still say
+    // "Saved" — worst of all on the save that runs while closing a note.
+    editor?.flushPendingChanges()
 
     if (options.onSaveDraft !== undefined) {
       try {
@@ -521,6 +537,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   }
 
   const renameDocument = async (name: string): Promise<boolean> => {
+    editor?.flushPendingChanges()
     const result = await session.save()
     if (!result.ok) {
       chrome.setStatus('error', `Not renamed — ${result.reason}`)
@@ -838,6 +855,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       await editor.destroy()
     },
     save,
+    flushPendingChanges: () => editor?.flushPendingChanges(),
     setStatus: (state, message) => chrome.setStatus(state, message),
   }
 }

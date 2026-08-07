@@ -589,6 +589,11 @@ async function startNative(
         workspace: workspaceView(DRAFT_NOTE_ID),
       })
       current.setStatus('dirty', 'Not saved')
+      // A new note exists so you can start typing. Landing with focus still on
+      // whatever you clicked to get here — the New Note button, a menu item —
+      // means the first keystroke (or paste) goes nowhere until you click into
+      // the page yourself.
+      current.editor.focusEnd()
     })
   }
 

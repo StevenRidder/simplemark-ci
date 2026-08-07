@@ -60,6 +60,10 @@ describe('creating a note in the native shell', () => {
     expect(createNote).not.toMatch(/workspaceHandle = /)
   })
 
+  it('focuses the editor so typing or pasting works without an extra click', () => {
+    expect(createNote).toContain('current.editor.focusEnd()')
+  })
+
   it('keeps the welcome shape for the states that genuinely have no catalog', () => {
     // The guard above is about `createNote`, not about deleting a shape the
     // launch and empty-workspace states legitimately need.

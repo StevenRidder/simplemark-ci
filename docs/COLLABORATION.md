@@ -2,9 +2,10 @@
 
 **Prepared expansion architecture, not the install reason or the next product proof.**
 
-- **Status:** Draft 4 — retained for later agent participation and distributed collaboration;
-  renderer-first POC governed by [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md)
-- **Date:** 2026-08-02
+- **Status:** Draft 5 — retained for later agent participation and distributed collaboration;
+  renderer-first POC governed by [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md),
+  decomposed by [`ADR-0007`](decisions/0007-annotation-before-participation.md)
+- **Date:** 2026-08-07
 - **Companion to:** [`DESIGN.md`](DESIGN.md), [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md), [`RENDERERS.md`](RENDERERS.md)
 
 ---
@@ -42,6 +43,14 @@ Everything below describes a **later session capability.** None of it belongs in
 POC or default interface: no participant controls, coordinator, relay, chat, presence, scope, run
 state, or activity surface. The ordinary product is the same local file rendered beautifully while
 external tools update it.
+
+**One exception, and it is a narrow one.** §4's Conversation layer ships its human half — a note
+anchored to a passage, and resolving it — ahead of everything else here, because it introduces none
+of the nouns in that list. No participant, no authority, no agent, no run state. Its only surface is
+a rail that does not exist when nothing is unresolved.
+[`ADR-0007`](decisions/0007-annotation-before-participation.md) records why that is a release from
+the `ADR-0005` gate rather than a hole in it: the gate governs putting an agent inside a human's
+attention, and a person annotating their own document is not that.
 
 The useful idea borrowed from Google Wave is the living shared artifact. Not the inbox, the chat, the tasks, or the social layer.
 
@@ -287,20 +296,38 @@ Every client holds the same document, and every client wants to write `note.md` 
 
 **Rule: exactly one client per storage location is the save leader.**
 
-A *vault* is **where the bytes end up, not which machine holds the folder.** This distinction is
+The unit is **where the bytes end up, not which machine holds the folder.** This distinction is
 load-bearing. `~/Dropbox/notes` on your Mac and `C:\Users\you\Dropbox\notes` on your PC are two
-devices and **one vault** — Dropbox propagates between them. Treating them as two vaults elects two
+devices and **one destination** — Dropbox propagates between them. Treating them as two elects two
 leaders, both write byte-identical content to the same synced path, and the provider manufactures
 conflicted copies of a document nobody edited twice. That is the exact failure this section exists
-to prevent, arriving through the back door. A vault is therefore identified by its provider-synced
-root, not by device plus path.
+to prevent, arriving through the back door.
 
-- Each vault elects a leader among the clients attached to it — normally the only one.
+**[`ADR-0006`](decisions/0006-one-authoritative-change-stream.md) names that unit and fixes how it
+is identified.** An earlier draft of this section said the unit was identified by its
+provider-synced root. That was the right instinct and an unimplementable rule: paths differ across
+devices, provider topology is not generally observable, and inferring it would require
+provider-specific code in a product that deliberately operates no cloud sync service.
+
+So the unit is a **materialization group** with a stable opaque id, and the id is **explicitly
+paired or carried in SimpleMark-owned portable metadata — never inferred** from `~/Dropbox`, an
+iCloud container, a provider API, machine identity, or path spelling. Clients that cannot prove they
+share a group are different groups. Failing closed this way is deliberate: an unpaired second device
+keeps its own copy, which is untidy, where a wrongly merged group produces exactly the conflicted
+copies above.
+
+- Each materialization group elects a leader among the clients attached to it — normally the only one.
 - The leader alone performs the debounced Markdown write. Others render, edit, and synchronize
   through the chosen authority protocol but never touch that folder.
 - Leadership uses an explicit renewable lease owned by the authority. A CRDT-awareness lease is
   only a candidate if Yjs wins the spike; timeout values must be measured rather than assumed.
-- Your teammate's Mac is a *different* vault and has its own leader. Everyone ends up with their own portable copy, written once each.
+- Your teammate's Mac is a *different* group and has its own leader. Everyone ends up with their own portable copy, written once each.
+- Cloud providers replicate the leader's bytes. They do not order transactions, elect the leader, or
+  become the document authority.
+
+A materialization group is **not** a *vault*. A vault is the folder tree an agent is confined to
+([`MCP-SERVER.md`](MCP-SERVER.md) §11) and the unit `agentMayOpenNotes` is set on. One is about
+where bytes land, the other about what an agent may reach; an earlier draft used one word for both.
 
 Without this rule, multi-device and files-on-disk actively fight. With it, they compose.
 
@@ -311,18 +338,46 @@ Without this rule, multi-device and files-on-disk actively fight. With it, they 
 | Layer | Contains | Persisted as |
 |---|---|---|
 | **Canvas** | The polished Markdown document and rendered blocks | The `.md` file |
-| **Conversation** | Live chat and asynchronous notes anchored to a range, block, or diagram node; agent control events may be shown here but are issued separately | `.simplemark/threads/<noteId>.json` |
-| **Activity** | Who changed what, agent status, reversible transactions, snapshots | `.simplemark/activity/<noteId>.jsonl` |
+| **Conversation** | Live chat and asynchronous notes anchored to a range, block, or diagram node; agent control events may be shown here but are issued separately | `<app data>/SimpleMark/threads/<noteKey>.json` |
+| **Activity** | Who changed what, agent status, reversible transactions, snapshots | `<app data>/SimpleMark/activity/<noteKey>.jsonl` |
 
 Only the Canvas is portable Markdown. Conversation and Activity are sidecars — losing them loses history and discussion, never content. That asymmetry is deliberate: **the thing you own must survive the thing you don't need.**
 
+> **Amended by [`ADR-0007`](decisions/0007-annotation-before-participation.md).** Earlier drafts put
+> both sidecars in `.simplemark/` beside the document. Opening one file from a folder the app does
+> not own would have created a directory there, so they live in application data instead, keyed by
+> the note's front-matter `id` — or by a hash of its path when the document would not take one. The
+> app is a guest in folders it does not own. The accepted cost: copying the `.md` elsewhere does not
+> carry its threads.
+
+Conversation ships before any of §5. Its human half — anchor a note to a passage, list it, resolve
+it — needs no participant, no authority and no agent, and `ADR-0007` releases it from the
+`ADR-0005` gate on that basis. **Leave note** in §5.4 is that same surface once an agent is in the
+room; nothing about it changes when one arrives.
+
 ### 4.1 Anchors
 
-In the POC, comments, agent requests, and pending edits use session-local block/range anchors owned
-by `DocumentSession`, not line numbers or raw byte offsets. If a later Yjs adapter is accepted, it
-may implement the same application anchor contract with `RelativePosition`.
+Two mechanisms, because there are two different questions. They are not competing sources of truth.
 
-This replaces the content-hash anchors in [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) §3.1 **while a session is live**. Those remain correct for cold-file patching — both mechanisms exist, and the MCP tool surface picks by document state.
+| Job | Mechanism | Owner |
+|---|---|---|
+| A human's note, across sessions and external edits | Quote + 30 characters of context either side | Pure domain matcher |
+| A participant's scope and edit target, within a session | Opaque, authority-issued token | The document authority |
+
+A note anchor must be re-derivable **from text alone**, because after the app closes the text is all
+that survives. A participant anchor must be **opaque**, because
+[`ADR-0004`](decisions/0004-mcp-as-participant-client.md) §6 makes one-scope-at-a-time structural
+rather than advisory — an agent that could mint an anchor could mint a scope. If a later Yjs adapter
+is accepted, it may implement the participant contract with `RelativePosition`; the note contract is
+unaffected either way, which is part of why they are separate.
+
+**Neither guesses.** Ambiguity resolves to a visible orphan, never to a near match: a note on the
+wrong sentence is worse than a note that admits it is lost. While a document is open, positions map
+forward through every transaction and the note anchor is re-derived on close, so editing in
+SimpleMark teaches an anchor its new wording instead of staling it.
+
+Both replace the content-hash anchors in [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) §3.1, which that
+document already records as superseded.
 
 ---
 
@@ -567,19 +622,40 @@ The gate moved. It is no longer "the file watcher caught an agent write."
 | **0** | **Fidelity spike** (`DESIGN.md` §12) | The 10 fixtures survive parse → serialize untouched |
 | **1** | **Beautiful living document POC** | Open → render → watched external update → correct → save → reopen; `POC.md` passes and is used for one real day |
 | **2** | **Daily-use renderer product** | Technical renderer breadth, calm file handling, typography; shippable alone |
-| **3** | **Optional local agent participation** | One `DocumentSession`; prove direct transactions beat the watched-file workflow without adding cockpit UI |
+| **A** | **Anchored notes** | Capture on a passage, survive reopening, orphan visibly rather than guess. No agent, no authority |
+| **B** | **Resolve** | A thread closes and writes nothing to the document |
+| — | **The reader one-day trial** (`POC.md`) | **The gate.** Only a correction or direction workflow that external file updates cannot serve opens what follows |
+| **C0** | **AI connection** | An unresolved design problem: provider, model and key without a cockpit |
+| **C** | **Ask** | An agent answers in a thread and cannot edit the document |
+| **D** | **Agent edits from a thread** | One `DocumentSession`; prove direct transactions beat the watched-file workflow without adding cockpit UI |
 | **4** | **Multi-client authority decision** | Only if needed: step authority first; compare Yjs only for masterless need |
-| **5+** | **Collaboration expansion** | A second human client, then remote peers, Conversation, Activity, and multi-agent tests |
+| **5+** | **Collaboration expansion** | A second human client, then remote peers, Activity, and multi-agent tests |
 | **Later** | Excalidraw, converters, public plugin API | Only after the document experience remains coherent |
 
 **Phase 2 is a real ship.** If everything after it were abandoned, SimpleMark would still be the
 beautiful living document for AI-generated Markdown. Broader formats and participation expand only
 after their value is proven.
 
-### 8.1 The later local agent-participation test
+**A and B sit before the gate; C0, C and D sit behind it.** That split is
+[`ADR-0007`](decisions/0007-annotation-before-participation.md): what Phase 3 used to call *optional
+local agent participation* was one row containing an unresolved provider problem, a conversation
+surface, an authority, a fence and separate undo. Anchoring a human's own note to a passage adds no
+participant and is not what `ADR-0005`'s gate was protecting, so it ships on its own — and whether
+it proves useful alone is the honest test of whether the Conversation layer is a capability or a
+dependency.
 
-This is explicitly **not** the renderer-first `POC.md`. Build it only after that product is useful
-without an in-app agent:
+**The gate row is not decoration.** `POC.md`'s reader trial is the evidence that authorizes C0
+onward, and it is a different trial from §8.1's — six questions about reading, not four about an
+agent. Running §8.1 without it means testing whether an agent in the document is good before
+establishing that anything needed one.
+
+### 8.1 The D trial — local agent participation
+
+This is explicitly **not** the renderer-first `POC.md` trial, and it is not a substitute for it.
+`POC.md`'s trial asks whether the reader is worth keeping open and whether anything needs an agent
+in the document at all; this one asks whether a scoped agent editing live is better than reviewing
+its suggestions. Run this only after that one has authorized C0, and after A and B have shipped —
+this trial needs a thread to speak into.
 
 ```text
 - One human cursor in one local Markdown document.
@@ -601,14 +677,22 @@ without an in-app agent:
 
 **If it feels like a useful co-worker, keep live-edit mode.** If you repeatedly pause it, make suggest mode the default and keep live mode for the moments where it is magical. Either outcome is a result; only building both without measuring is a failure.
 
-### 8.2 Two definitions of done
+### 8.2 Three definitions of done
 
-**Phase 3 — the notebook:**
+**Phase 2 — the notebook:**
 
 > You paste a bare Mermaid diagram into a note and it becomes a picture. Typography is beautiful,
 > search is instant, and the file on disk is clean Markdown that opens correctly in Bear. Nothing
 > is running but the app. PPTX and other document previews arrive only after their converter is
 > separately proven.
+
+**A and B — the annotated document:**
+
+> On a call, you highlight a sentence, press one key, type the customer's question, and keep
+> reading. Reopening the note a week later puts the note back on that sentence. A passage someone
+> rewrote elsewhere leaves its note in the rail saying what it was on, rather than sliding onto the
+> paragraph below. Resolving one closes it and changes nothing in the `.md`. With nothing
+> outstanding, the window looks exactly as it did before the feature existed.
 
 **Phase 5+ — the room expansion:**
 

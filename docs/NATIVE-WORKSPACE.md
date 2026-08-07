@@ -34,7 +34,9 @@ native macOS menubar
 - The native shell supplies the real window controls and menubar. The web surface never paints
   traffic lights or a pretend system menu.
 - The three panes collapse through shared View commands to notes + editor or editor only.
-- There is no permanent agent, activity, chat, or inspector rail.
+- There is no permanent agent, activity, chat, or inspector rail. The anchored-notes rail
+  ([`ADR-0007`](decisions/0007-annotation-before-participation.md)) is conditional and does not
+  contradict this: no open threads, no rail.
 - The titlebar contains only window/document state and rare global actions. Formatting does not
   occupy a second permanent row.
 

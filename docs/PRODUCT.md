@@ -283,6 +283,13 @@ The canonical product demonstration is one continuous shot:
 Do not lead the first demo with chat, model selection, inviting an agent, a collaboration room,
 presence, comments, activity, history, or settings. Those demonstrate machinery instead of value.
 
+This is a rule about **what leads**, not a ban on the capability. Anchored notes
+([`ADR-0007`](decisions/0007-annotation-before-participation.md)) are the one item on that list that
+ships early, and they obey the rule rather than escape it: nothing appears until a person highlights
+a passage and asks for it, and the rail is gone again once nothing is unresolved. Demonstrate them
+where they are actually useful — reading a document with someone and capturing what they said —
+never as a feature tour of a comment system.
+
 ## Language to use
 
 Lead with:

@@ -7,8 +7,9 @@ product and contributes no default UI.**
 - **Date:** 2026-08-02
 - **Governed by:** [`ADR-0001`](decisions/0001-single-product-modular-architecture.md),
   [`ADR-0002`](decisions/0002-local-document-session-before-crdt.md),
-  [`ADR-0004`](decisions/0004-mcp-as-participant-client.md), and sequencing decision
-  [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md)
+  [`ADR-0004`](decisions/0004-mcp-as-participant-client.md), and sequencing decisions
+  [`ADR-0005`](decisions/0005-rendered-document-before-agent-participation.md) and
+  [`ADR-0007`](decisions/0007-annotation-before-participation.md)
 - **Supersedes:** [`AGENT-WORKSPACE.md`](AGENT-WORKSPACE.md) §3–§4 and
   [`COLLABORATION.md`](COLLABORATION.md) §7
 - **Companion to:** [`DESIGN.md`](DESIGN.md), [`COLLABORATION.md`](COLLABORATION.md),
@@ -25,6 +26,23 @@ inventory, session management, chat, activity feed, or agent chrome.
 Everything below is dormant expansion architecture. It becomes eligible only if real use shows that
 direct scoped transactions are materially better than watched file updates while preserving the
 document-first interface.
+
+**Where this sits in the sequence.**
+[`ADR-0007`](decisions/0007-annotation-before-participation.md) splits agent participation into
+sub-projects, and this contract serves the last two of them:
+
+| | Needs from this document | Also needs |
+|---|---|---|
+| **C** — an agent answers in a thread, cannot edit | Participants, presence, `post_message`, the `commenter` capability | **C0**, an unresolved design problem: a provider, model and key without a cockpit |
+| **D** — an agent edits from a thread | All of it: `apply_transaction`, scopes, fences, budgets, journal, revert | C, plus everything `COLLABORATION.md` specifies |
+
+**C0 gates C, and it is not plumbing.** `PRODUCT.md` does not want provider setup and model
+selection becoming visible product surface, and nothing here resolves that. This document specifies
+what an agent may do once one is connected; it deliberately says nothing about how it got connected,
+and that gap is a decision someone still owes.
+
+Sub-projects A and B — a human's own anchored notes, and resolving them — need none of this. They
+introduce no participant, so they are not behind the `ADR-0005` gate at all.
 
 You tell an agent to edit a SimpleMark note. It might be open on your screen with two colleagues
 in it, or it might be a file nobody has touched in a month. **The agent makes the same call either

@@ -75,6 +75,12 @@ Further invariants:
   Markdown as a beautiful living document. Raw source, agent controls, collaboration, sessions,
   and activity do not occupy the default surface. Editing is contextual; agent participation is a
   later gate.
+- **Annotation is decomposed (ADR-0007).** Agent participation is A→B→C0→C→D, not one step. A and B
+  — a person's own anchored notes, and resolving them — introduce no participant and ship ahead of
+  the `POC.md` reader trial. C0 (provider, model, key) is an unresolved design problem that gates
+  everything with an agent in it. Threads live in application data, never beside the document, and
+  nothing but a front-matter `id` is ever written to a `.md` on their behalf. Note anchors are text;
+  participant anchors stay opaque and authority-issued — do not merge the two.
 
 - **Fidelity (D7).** Untouched blocks re-emit their original bytes; only dirty blocks
   serialize. `originalSource` is an immutable save baseline, never collaborative content.

@@ -139,3 +139,14 @@ Use SimpleMark as the reading surface for real agent-generated documents for one
 If the document is not worth keeping open, improve the reader before adding scope. If it is useful,
 expand renderer breadth and daily-use file handling. Test in-app agent participation only when real
 use identifies a correction or direction workflow that external file updates cannot serve well.
+
+**This trial is the gate on everything downstream of it, and it is nobody else's trial.**
+[`COLLABORATION.md`](COLLABORATION.md) §8.1 describes a second, different one-day trial — four
+questions about living with an agent in the document. That one presumes what this one decides.
+Running it first would be testing whether an agent in the document is good without first
+establishing that anything needed an agent there.
+
+Concretely, under [`ADR-0007`](decisions/0007-annotation-before-participation.md) this trial's
+result authorizes **C0 onward** — the AI connection, an agent answering in a thread, and an agent
+editing from one. It does not gate **A and B**, a person's own anchored notes and resolving them:
+those add no participant to the document and are not what this gate protects.

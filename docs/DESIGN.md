@@ -279,6 +279,14 @@ is open.** The left pane is a small folder/source list; the middle pane is a spa
 note index (title, one-line preview, modified time, and a quiet pin); the right pane is the document. The index is
 derived from the Markdown folder, never a second source of truth. Both panes can collapse into a
 single-document focus view. There is no permanent activity, chat, agent, or inspector rail.
+
+**Permanent** is the operative word, and it is what the anchored-notes rail
+([`ADR-0007`](decisions/0007-annotation-before-participation.md)) is measured against. That rail
+exists only while a note in this document is unresolved: no open threads, no rail — absent from the
+layout, not present and empty. A document with nothing outstanding is the three panes above and
+nothing else. A rail that were merely *usually* empty would fail this rule; one that does not exist
+does not.
+
 The note index and document are independent scroll surfaces. The document keeps a quiet, persistent,
 proportional position indicator: its thumb length shows how much of the document is visible, its
 position shows the reader's place, and dragging it navigates the real document scroll range.
@@ -408,6 +416,10 @@ The first integration is the watched file: an external agent changes it and the 
 updates calmly. A quiet update marker may identify changed content temporarily, but it may not turn
 ordinary refresh into a review queue.
 
+The conditional anchored-notes rail is not an exception to that sentence. It carries a human's own
+notes on this document and nothing else — no agent, no model, no run state, no activity feed — and
+it is absent whenever nothing is unresolved.
+
 The following passage interaction is retained only as a later agent-participation design:
 
 Redirect opens the passage conversation in place:
@@ -512,12 +524,22 @@ Mermaid, SVG, KaTeX, tables, Shiki code, typography preferences, open/recent fil
 correction tools required for daily use. Tags, note libraries, backlinks, and multi-pane knowledge
 management are not implied.
 
-### Phase 3 — Optional in-app agent participation
+### A and B — Anchored notes and resolve
 
-Compare scoped, attributed `DocumentSession` transactions against the simpler external-file
-workflow. Proceed only if direct participation is materially faster or safer without making the
+Highlight a passage, capture a note, reopen and find it still there — or find it in the rail saying
+what it was on, rather than slid onto a neighbouring paragraph. Resolving closes a thread and writes
+nothing to the document. No agent, no authority, no participant, and no rail when nothing is
+unresolved. Not gated on the `POC.md` trial, because it puts nobody in the document
+([`ADR-0007`](decisions/0007-annotation-before-participation.md)).
+
+### C0, C and D — Optional in-app agent participation
+
+`ADR-0007` splits what this section used to call Phase 3. **C0** is the unresolved one: a provider,
+model and key without a cockpit. **C** lets an agent answer in a thread without the right to edit.
+**D** compares scoped, attributed `DocumentSession` transactions against the simpler external-file
+workflow — proceed only if direct participation is materially faster or safer without making the
 document feel like an agent cockpit. The existing MCP, fence, Stop, Redirect, and revert designs
-govern this test.
+govern that test.
 
 ### Phase 4 — Multi-client authority decision
 
@@ -570,7 +592,7 @@ Public plugin API and sandbox · handwriting + OCR · iOS/iPad shell · graph vi
 
 | Document | Covers |
 |---|---|
-| [`COLLABORATION.md`](COLLABORATION.md) | **The optional live session** — local `DocumentSession` first, then a gated multi-client authority decision |
+| [`COLLABORATION.md`](COLLABORATION.md) | **The optional live session** — the Conversation layer's human half first, then a local `DocumentSession`, then a gated multi-client authority decision |
 | [`TECH-SPEC.md`](TECH-SPEC.md) | Universal paste — the five-level recognition ladder, the signed renderer catalog, sandboxed execution, and why pasted content may never choose what code runs |
 | [`RENDERERS.md`](RENDERERS.md) | Renderers vs embedded editors, the rule for choosing, and the v1 set: Mermaid, DOT, KaTeX, Shiki, Vega-Lite, Markmap |
 | [`PRODUCT.md`](PRODUCT.md) | **The product authority** — job, user, category difference, default experience, sequencing, and language |

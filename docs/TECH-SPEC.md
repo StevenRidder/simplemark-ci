@@ -520,6 +520,6 @@ load-bearing and never becomes a required provider surface.
 
 ## 11. Open questions
 
-1. **Catalog hosting.** A pinned CDN origin implies a domain, a build pipeline, and a signing key. Could be GitHub Releases with hash pinning for v1 — cheaper, auditable, no infrastructure. Decide before Phase 3.
+1. **Catalog hosting.** A pinned CDN origin implies a domain, a build pipeline, and a signing key. Could be GitHub Releases with hash pinning for v1 — cheaper, auditable, no infrastructure. Decide before any agent may name a renderer kind (sub-project C, `ADR-0007`).
 2. **Converter licensing.** LibreOffice-based conversion (best fidelity for `.pptx`/`.docx`) is LGPL/MPL and heavy; a sidecar keeps it out of the app binary. JS-native converters are lighter and worse. Decide during Phase 4 by testing fidelity on real decks.
 3. **Local model baseline.** Whether a small local classifier (Ollama, a few hundred MB) is good enough for L3 that the cloud path can stay strictly optional.

@@ -38,6 +38,7 @@ import { loadActiveCollection, saveActiveCollection } from './workspace-selectio
 import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
 import { WorkspacePins } from './workspace-pins.js'
 import { NoteWalk } from './note-walk.js'
+import { applySummariesToCatalog } from './note-summary-overlay.js'
 import { APP_ICON_CHOICES, normaliseAppIconId } from './app-icons.js'
 import {
   TauriNoteSummaryPort,
@@ -211,9 +212,25 @@ async function startNative(
   const noteSummaries: NoteSummaryPort = (await summaryTransport.available())
     ? summaryTransport
     : new UnavailableNoteSummaryPort()
+  /**
+   * Summaries that have arrived this session, by note handle.
+   *
+   * Patching the row is not enough on its own. The catalog's `preview` is the
+   * extracted lead sentence, and every reconcile — and every remount, which
+   * happens on each note open — rebuilds the rows from the catalog and so puts
+   * the extracted line straight back. Holding the summary here lets each
+   * render start from it instead.
+   */
+  const arrivedSummaries = new Map<string, string>()
+
+  /** The catalog as the note list should show it: summary where we have one. */
+  const withSummaries = (catalog: WorkspaceCatalog): WorkspaceCatalog =>
+    applySummariesToCatalog(catalog, arrivedSummaries)
+
   // Arrives on a background thread over a second after it was asked for, so
   // the row is patched in place rather than repainting and re-running the sort.
   noteSummaries.onSummary((summary) => {
+    arrivedSummaries.set(summary.handle, summary.summary)
     current.applyNoteSummary(summary.handle, summary.summary)
   })
   /**
@@ -321,7 +338,13 @@ async function startNative(
     // place summaries need asking for. Fire-and-forget: results arrive on an
     // event and never hold up the render.
     requestSummaries(selectedHandle, catalog)
-    return catalogWorkspace(catalog, selectedHandle, pins, workspaceActions(collectionId), draft)
+    return catalogWorkspace(
+      withSummaries(catalog),
+      selectedHandle,
+      pins,
+      workspaceActions(collectionId),
+      draft,
+    )
   }
 
   const reconcileWorkspace = (
@@ -365,7 +388,7 @@ async function startNative(
       onOpenFile: openFromPicker,
       onRenameDocument: renameActiveDocument,
       workspace: catalogWorkspace(
-        catalog,
+        withSummaries(catalog),
         opened.handle,
         pins,
         workspaceActions(activeCollectionId),
@@ -706,7 +729,7 @@ async function startNative(
       pageZoom,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
-      workspace: catalogWorkspace(after, '', pins, workspaceActions(activeCollectionId)),
+      workspace: catalogWorkspace(withSummaries(after), '', pins, workspaceActions(activeCollectionId)),
     })
     current.setStatus('saved', message)
   })

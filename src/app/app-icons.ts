@@ -2,6 +2,8 @@ export const APP_ICON_IDS = [
   'original',
   'live-layers',
   'movable-blocks',
+  'blue-trio',
+  'electric-blocks',
   'midnight',
   'blue-page',
 ] as const
@@ -29,6 +31,16 @@ export const APP_ICON_CHOICES = [
     id: 'movable-blocks',
     label: 'Movable Blocks',
     source: new URL('../../src-tauri/icons/alternates/movable-blocks.svg', import.meta.url).href,
+  },
+  {
+    id: 'blue-trio',
+    label: 'Blue Trio',
+    source: new URL('../../src-tauri/icons/alternates/blue-trio.svg', import.meta.url).href,
+  },
+  {
+    id: 'electric-blocks',
+    label: 'Electric + Black',
+    source: new URL('../../src-tauri/icons/alternates/electric-blocks.svg', import.meta.url).href,
   },
   {
     id: 'midnight',

@@ -231,7 +231,9 @@ test('native App Icon chooser commits successful changes and preserves selection
   })
 
   await expect(page.getByRole('heading', { name: 'App Icon' })).toBeVisible()
-  await expect(page.getByRole('button', { name: /^Use .* app icon$/ })).toHaveCount(5)
+  await expect(page.getByRole('button', { name: /^Use .* app icon$/ })).toHaveCount(7)
+  await expect(page.getByRole('button', { name: 'Use Blue Trio app icon' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Use Electric + Black app icon' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Use Midnight app icon' }))
     .toHaveAttribute('aria-pressed', 'true')
 

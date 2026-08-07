@@ -12,16 +12,20 @@ pub(crate) enum AppIconId {
     Original,
     LiveLayers,
     MovableBlocks,
+    BlueTrio,
+    ElectricBlocks,
     Midnight,
     BluePage,
 }
 
 impl AppIconId {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 5] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::Original,
         Self::LiveLayers,
         Self::MovableBlocks,
+        Self::BlueTrio,
+        Self::ElectricBlocks,
         Self::Midnight,
         Self::BluePage,
     ];
@@ -31,6 +35,8 @@ impl AppIconId {
             "original" => Some(Self::Original),
             "live-layers" => Some(Self::LiveLayers),
             "movable-blocks" => Some(Self::MovableBlocks),
+            "blue-trio" => Some(Self::BlueTrio),
+            "electric-blocks" => Some(Self::ElectricBlocks),
             "midnight" => Some(Self::Midnight),
             "blue-page" => Some(Self::BluePage),
             _ => None,
@@ -42,6 +48,8 @@ impl AppIconId {
             Self::Original => "original",
             Self::LiveLayers => "live-layers",
             Self::MovableBlocks => "movable-blocks",
+            Self::BlueTrio => "blue-trio",
+            Self::ElectricBlocks => "electric-blocks",
             Self::Midnight => "midnight",
             Self::BluePage => "blue-page",
         }
@@ -52,6 +60,8 @@ impl AppIconId {
             Self::Original => include_bytes!("../icons/alternates/png/original.png"),
             Self::LiveLayers => include_bytes!("../icons/alternates/png/live-layers.png"),
             Self::MovableBlocks => include_bytes!("../icons/alternates/png/movable-blocks.png"),
+            Self::BlueTrio => include_bytes!("../icons/alternates/png/blue-trio.png"),
+            Self::ElectricBlocks => include_bytes!("../icons/alternates/png/electric-blocks.png"),
             Self::Midnight => include_bytes!("../icons/alternates/png/midnight.png"),
             Self::BluePage => include_bytes!("../icons/alternates/png/blue-page.png"),
         }
@@ -131,6 +141,11 @@ mod tests {
     #[test]
     fn parses_only_known_icon_ids() {
         assert_eq!(AppIconId::parse("midnight"), Some(AppIconId::Midnight));
+        assert_eq!(AppIconId::parse("blue-trio"), Some(AppIconId::BlueTrio));
+        assert_eq!(
+            AppIconId::parse("electric-blocks"),
+            Some(AppIconId::ElectricBlocks)
+        );
         assert_eq!(AppIconId::parse("unknown"), None);
     }
 

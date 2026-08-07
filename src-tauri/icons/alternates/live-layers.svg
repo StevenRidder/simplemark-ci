@@ -25,7 +25,7 @@
     <rect x="350" y="310" width="330" height="420" rx="58" fill="url(#sky)" fill-opacity=".9" transform="rotate(12 515 520)"/>
     <rect x="190" y="430" width="350" height="430" rx="60" fill="url(#cyan)" fill-opacity=".94" transform="rotate(12 365 645)"/>
   </g>
-  <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="34">
+  <g data-mark-offset-x="-24" transform="translate(-24 0)" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="34">
     <path d="M258 727V600l70 77 70-77v127"/>
     <path d="M478 610v112"/>
     <path d="m438 686 40 40 40-40"/>

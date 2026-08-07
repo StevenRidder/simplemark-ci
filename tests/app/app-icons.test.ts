@@ -7,11 +7,13 @@ import {
 } from '../../src/app/app-icons.js'
 
 describe('app icon catalog', () => {
-  test('offers the five approved choices in Settings order', () => {
+  test('offers the seven approved choices in Settings order', () => {
     expect(APP_ICON_IDS).toEqual([
       'original',
       'live-layers',
       'movable-blocks',
+      'blue-trio',
+      'electric-blocks',
       'midnight',
       'blue-page',
     ])
@@ -19,6 +21,8 @@ describe('app icon catalog', () => {
       'Original',
       'Live Layers',
       'Movable Blocks',
+      'Blue Trio',
+      'Electric + Black',
       'Midnight',
       'Blue Page',
     ])

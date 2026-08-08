@@ -51,7 +51,7 @@ import {
 } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 
-import type { AssetReference, DiagramRenderer } from '../../application/index.js'
+import type { AssetReference, ClipboardPort, DiagramFixPort, DiagramRenderer } from '../../application/index.js'
 import { looksLikeMermaid, looksLikeSvg } from '../../domain/index.js'
 import { AssetImageNodeView } from './asset-image-node-view.js'
 import { DiagramNodeView } from './diagram-node-view.js'
@@ -156,6 +156,10 @@ export interface MilkdownEditorOptions {
   readonly mount: HTMLElement
   readonly initialMarkdown: string
   readonly renderer: DiagramRenderer
+  /** Backs the diagram-error box's Copy button. Absent hides that button. */
+  readonly clipboard?: ClipboardPort
+  /** Backs the diagram-error box's Fix it button. Absent hides that button. */
+  readonly diagramFix?: DiagramFixPort
   /** Called after every user edit, with the serialised document. */
   readonly onMarkdownChanged: (markdown: string) => void
   /** Opens a rendered link through the shell's explicit platform boundary. */
@@ -201,14 +205,14 @@ export class MilkdownEditor {
         if (!options.renderer.languages.includes(language)) {
           return null as unknown as DiagramNodeView
         }
-        return new DiagramNodeView(node, view, getPos, options.renderer)
+        return new DiagramNodeView(node, view, getPos, options.renderer, options.clipboard, options.diagramFix)
       }
     })
     // Display math renders through the same NodeView as a diagram fence: one
     // rendered block, one editable source, one failure surface.
     const mathView = $view(mathBlockSchema.node, () => {
       return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
-        new DiagramNodeView(node, view, getPos, options.renderer)
+        new DiagramNodeView(node, view, getPos, options.renderer, options.clipboard, options.diagramFix)
     })
     const inlineMathView = $view(inlineMathSchema.node, () => {
       return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>

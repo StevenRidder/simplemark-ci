@@ -14,6 +14,9 @@ import { GraphvizRenderer } from '../adapters/renderers/graphviz-renderer.js'
 import { KatexRenderer } from '../adapters/renderers/katex-renderer.js'
 import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
 import { BrowserClipboardPort } from '../adapters/clipboard/browser-clipboard-port.js'
+import { OpenAiCompatibleDiagramFixPort } from '../adapters/ai/openai-compatible-diagram-fix.js'
+import type { ChatCompletionTransport, ModelListTransport } from '../adapters/ai/openai-compatible-diagram-fix.js'
+import { loadAiSettings } from './ai-settings.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import { OpenCancelled, TauriFilePort } from '../adapters/filesystem/tauri-file-port.js'
 import { TauriWorkspaceCatalogPort } from '../adapters/filesystem/tauri-workspace-catalog-port.js'
@@ -24,6 +27,8 @@ import type { FilePort, WorkspaceCatalog } from '../application/index.js'
 import { suggestedMarkdownFileName } from '../domain/index.js'
 import { installNativeMenu } from './ui/native-menu.js'
 import type { MacosTextServiceId } from './ui/native-menu.js'
+import { createSettingsPanel } from './ui/settings-panel.js'
+import type { SettingsPanel } from './ui/settings-panel.js'
 import { isCommit, isRepository, readProvenance } from './build-provenance.js'
 import type { BuildProvenance } from './build-provenance.js'
 import { readComparison, updateStatus } from './update-status.js'
@@ -89,7 +94,14 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     syncTrafficLightPosition: (magnification) => invoke('sync_traffic_lights_to_page_zoom', { magnification }),
   })
   await installNativePageMagnificationTracking(pageZoom)
-  const controller = await startNative(root, pageZoom)
+  // Created once per process, like pageZoom above, and threaded the same way:
+  // mount() reruns on every note switch, but the panel (and anything the user
+  // is mid-typing into it) must not be torn down and rebuilt along with it.
+  const modelListTransport: ModelListTransport = (baseUrl, apiKey) =>
+    invoke('ai_list_models', { baseUrl, apiKey })
+  const settingsPanel = createSettingsPanel({ storage: window.localStorage, listModels: modelListTransport })
+  document.body.append(settingsPanel.element)
+  const controller = await startNative(root, pageZoom, settingsPanel)
   let geometryTimer: ReturnType<typeof setTimeout> | undefined
   const rememberGeometry = (): void => {
     // Wry re-applies its configured traffic-light inset whenever the window
@@ -179,6 +191,7 @@ interface NativeController {
 async function startNative(
   root: HTMLElement,
   pageZoom: PageZoomController,
+  settingsPanel: SettingsPanel,
 ): Promise<NativeController> {
   let current: AppComposition
   let stopWatching: UnlistenFn | undefined
@@ -386,6 +399,7 @@ async function startNative(
     current = await mount(root, port, {
       filePath: opened.handle,
       pageZoom,
+      settingsPanel,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
       onRenameDocument: renameActiveDocument,
@@ -585,6 +599,7 @@ async function startNative(
       current = await mount(root, new FixtureFilePort('Untitled.md', '# \n'), {
         filePath: 'Not saved',
         pageZoom,
+        settingsPanel,
         menuTarget: () => current,
         onOpenFile: openFromPicker,
         onSaveDraft: saveDraft,
@@ -695,6 +710,7 @@ async function startNative(
     current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
       filePath: 'Demo workspace · open a file to work with your own Markdown',
       pageZoom,
+      settingsPanel,
       onOpenFile: openFromPicker,
       workspace: nativeWorkspace(WELCOME_NAME, {
         create: createNote,
@@ -755,6 +771,7 @@ async function startNative(
     current = await mount(root, new FixtureFilePort('No note selected.md', ''), {
       filePath: 'No note selected',
       pageZoom,
+      settingsPanel,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
       workspace: catalogWorkspace(withSummaries(after), '', pins, workspaceActions(activeCollectionId)),
@@ -801,6 +818,7 @@ async function startNative(
     current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
       filePath: 'Demo workspace · open a file to work with your own Markdown',
       pageZoom,
+      settingsPanel,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
       workspace: nativeWorkspace(WELCOME_NAME, {
@@ -876,6 +894,7 @@ async function startNative(
   current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
     filePath: 'Demo workspace · open a file to work with your own Markdown',
     pageZoom,
+    settingsPanel,
     menuTarget: () => current,
     onOpenFile: openFromPicker,
     workspace: nativeWorkspace(WELCOME_NAME, {
@@ -941,6 +960,7 @@ async function startNative(
         current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
           filePath: 'Demo workspace · open a file to work with your own Markdown',
           pageZoom,
+          settingsPanel,
           menuTarget: () => current,
           onOpenFile: openFromPicker,
           workspace: nativeWorkspace(WELCOME_NAME, {
@@ -993,10 +1013,14 @@ async function mount(
      * composition that was showing when the menu was first installed.
      */
     menuTarget?: () => AppComposition | undefined
+    /** The one Settings panel for this process — created in `start()`, survives every remount. */
+    settingsPanel: SettingsPanel
   },
 ): Promise<AppComposition> {
   let app: AppComposition
   const appIcon = normaliseAppIconId(await invoke<string>('get_app_icon'))
+  const chatCompletionTransport: ChatCompletionTransport = (baseUrl, apiKey, model, messages) =>
+    invoke('ai_chat_completion', { baseUrl, apiKey, model, messages })
 
   app = await composeApp({
     ports: {
@@ -1007,6 +1031,7 @@ async function mount(
       assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
       links: new TauriDocumentLinkPort(invoke),
       clipboard: new BrowserClipboardPort(),
+      diagramFix: new OpenAiCompatibleDiagramFixPort(chatCompletionTransport, () => loadAiSettings(window.localStorage)),
       // Lets a save re-emit untouched blocks from the file's own bytes instead
       // of re-serializing the whole document (FIDELITY-1).
       blockBoundaries: new MdastBlockBoundaries(),
@@ -1094,6 +1119,7 @@ async function mount(
   await installNativeMenu({
     run: (command) => menuApp().run(command),
     state: (command) => menuApp().commandState(command),
+    openSettings: () => options.settingsPanel.open(),
     runTextService: (service: MacosTextServiceId) => {
       void invoke('perform_macos_text_service', { service }).catch((error) => {
         app.setStatus('error', `macOS text service unavailable — ${String(error)}`)

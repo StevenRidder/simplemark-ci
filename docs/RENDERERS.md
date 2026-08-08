@@ -287,10 +287,15 @@ absolute paths and `file:` URLs are refused as machine-specific. No containment
 rule was invented here that links do not already have.
 
 `http`/`https` is refused with a message the reader can act on. A link hands a
-remote URL to the system browser; a chart has nowhere to hand it, and this crate
-holds no network permission. Consent-gated remote data — Allow / Ask / Block,
-fetched by the Rust side, the way an email client handles remote images — is a
-separate task and the app's first network permission.
+remote URL to the system browser; a chart has nowhere to hand it, and this
+loader does not follow one itself. The crate does already carry one network
+path — `ai_chat_completion`, the diagram-error "Fix it" button's
+`/chat/completions` call — but it is explicitly user-initiated: unreachable
+until the person has configured an API key in Settings and clicked "Fix it" on
+a broken diagram, never automatic. Consent-gated remote chart data — Allow /
+Ask / Block, fetched by the Rust side, the way an email client handles remote
+images — is a separate task and would be the app's first *implicit*, automatic
+network access.
 
 **Vega swallows a failed load** into its own logger and renders an empty chart
 rather than rejecting. Left alone, a chart pointing at a missing file would draw

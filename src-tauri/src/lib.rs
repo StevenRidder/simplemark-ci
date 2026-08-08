@@ -114,6 +114,107 @@ fn native_capabilities() -> Vec<String> {
     capabilities
 }
 
+/// One message in an OpenAI-compatible chat-completion request.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ChatMessage {
+    role: String,
+    content: String,
+}
+
+fn chat_completion_url(base_url: &str) -> String {
+    format!("{}/chat/completions", base_url.trim_end_matches('/'))
+}
+
+fn chat_completion_body(model: &str, messages: &[ChatMessage]) -> serde_json::Value {
+    serde_json::json!({ "model": model, "messages": messages })
+}
+
+/// One shared, timed-out `reqwest::Client` for the Fix-it network call.
+///
+/// A `Client` is meant to be pooled and reused rather than built per request,
+/// and a fixed timeout means a wedged endpoint fails instead of leaving the
+/// frontend's `await` — and the Fix it button, stuck on "Fixing… (N/3)" —
+/// hanging forever.
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .build()
+            .unwrap_or_default()
+    })
+}
+
+/// The diagram-error "Fix it" button's one network call (EDITOR error-recovery).
+///
+/// This crate is a thin transport everywhere else (module doc, top of this
+/// file) and stays one here too: it knows the OpenAI request/response
+/// envelope only as far as building the URL and the `{model, messages}` body,
+/// and returns the response text unparsed. Everything else — the prompt, the
+/// retry loop, extracting the fixed source from the response — lives in the
+/// shared TypeScript adapter that also drives the browser dev shell's direct
+/// `fetch`, so the two platforms cannot drift.
+///
+/// Going through Rust is not optional: the packaged app's CSP
+/// (`connect-src 'self' ipc: http://ipc.localhost`, tauri.conf.json) silently
+/// blocks a frontend `fetch` to any external host.
+#[tauri::command]
+async fn ai_chat_completion(
+    base_url: String,
+    api_key: String,
+    model: String,
+    messages: Vec<ChatMessage>,
+) -> Result<String, String> {
+    let client = http_client();
+    let url = chat_completion_url(&base_url);
+    let body = chat_completion_body(&model, &messages);
+    let response = client
+        .post(&url)
+        .bearer_auth(&api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach {url}: {error}"))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| format!("Could not read the response from {url}: {error}"))?;
+    if !status.is_success() {
+        return Err(format!("{url} returned {status}: {text}"));
+    }
+    Ok(text)
+}
+
+fn models_url(base_url: &str) -> String {
+    format!("{}/models", base_url.trim_end_matches('/'))
+}
+
+/// The Settings panel's "Load models" button — same thin-transport contract
+/// as `ai_chat_completion`: this returns the response text unparsed. Which
+/// ids are chat-capable, and sorting them, is a TypeScript concern
+/// (`parseModelList` in `openai-compatible-diagram-fix.ts`).
+#[tauri::command]
+async fn ai_list_models(base_url: String, api_key: String) -> Result<String, String> {
+    let client = http_client();
+    let url = models_url(&base_url);
+    let response = client
+        .get(&url)
+        .bearer_auth(&api_key)
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach {url}: {error}"))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| format!("Could not read the response from {url}: {error}"))?;
+    if !status.is_success() {
+        return Err(format!("{url} returned {status}: {text}"));
+    }
+    Ok(text)
+}
+
 /// Seven characters, git's own abbreviation, except for the honest non-SHA
 /// values — truncating `unknown` to `unknow` would read like a real commit.
 fn short_sha(sha: &str) -> String {
@@ -1445,6 +1546,8 @@ pub fn run() {
             app_icons::get_app_icon,
             app_icons::set_app_icon,
             build_provenance,
+            ai_chat_completion,
+            ai_list_models,
             enable_page_magnification,
             set_page_magnification,
             sync_traffic_lights_to_page_zoom,
@@ -1560,6 +1663,42 @@ mod tests {
     fn identical_content_hashes_identically() {
         assert_eq!(content_hash(b"# note\n"), content_hash(b"# note\n"));
         assert_ne!(content_hash(b"# note\n"), content_hash(b"# note"));
+    }
+
+    #[test]
+    fn chat_completion_url_appends_the_endpoint_regardless_of_a_trailing_slash() {
+        assert_eq!(
+            chat_completion_url("https://api.openai.com/v1"),
+            "https://api.openai.com/v1/chat/completions"
+        );
+        assert_eq!(
+            chat_completion_url("https://api.openai.com/v1/"),
+            "https://api.openai.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn models_url_appends_the_endpoint_regardless_of_a_trailing_slash() {
+        assert_eq!(
+            models_url("https://api.openai.com/v1"),
+            "https://api.openai.com/v1/models"
+        );
+        assert_eq!(
+            models_url("https://api.openai.com/v1/"),
+            "https://api.openai.com/v1/models"
+        );
+    }
+
+    #[test]
+    fn chat_completion_body_carries_the_model_and_messages_verbatim() {
+        let messages = vec![ChatMessage {
+            role: "system".to_string(),
+            content: "fix it".to_string(),
+        }];
+        let body = chat_completion_body("gpt-4o", &messages);
+        assert_eq!(body["model"], "gpt-4o");
+        assert_eq!(body["messages"][0]["role"], "system");
+        assert_eq!(body["messages"][0]["content"], "fix it");
     }
 
     /// Chart data resolves exactly the way a Markdown link does — same

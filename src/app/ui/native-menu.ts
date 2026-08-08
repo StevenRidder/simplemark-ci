@@ -37,6 +37,8 @@ export interface NativeMenuOptions {
   readonly provenance?: BuildProvenance
   /** Sends a named action through macOS's focused responder chain. */
   readonly runTextService?: (service: MacosTextServiceId) => void
+  /** Opens the Settings panel. */
+  readonly openSettings?: () => void
 }
 
 export type MacosTextServiceId =
@@ -198,6 +200,12 @@ export async function installNativeMenu(options: NativeMenuOptions): Promise<Men
           },
         },
         text: `About ${appName}`,
+      }),
+      await MenuItem.new({
+        id: 'app:settings',
+        text: 'Settings…',
+        accelerator: 'CmdOrCtrl+,',
+        action: () => options.openSettings?.(),
       }),
       await PredefinedMenuItem.new({ item: 'Separator' }),
       await PredefinedMenuItem.new({ item: 'Services' }),

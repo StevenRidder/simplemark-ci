@@ -209,6 +209,47 @@ export interface NoteSummaryPort {
   onSummary(listener: (summary: NoteSummary) => void): () => void
 }
 
+/** The outcome of asking a model to fix broken diagram source. Failure is a value, never a throw. */
+export type DiagramFixResult =
+  | { readonly ok: true; readonly source: string }
+  | { readonly ok: false; readonly message: string }
+
+/**
+ * Asks a configured LLM to correct diagram source that failed to render.
+ *
+ * A port, for the same reason `DiagramRenderer` is one: the editor adapter
+ * must not depend on a concrete HTTP client, and the packaged app's CSP means
+ * the concrete implementation differs by platform (a Rust command vs. a
+ * direct `fetch`) even though the request/response shape does not.
+ */
+export interface DiagramFixPort {
+  /** Whether a fix attempt can be made right now — false until Settings has a key, base URL, and model. */
+  isConfigured(): boolean
+  /** Never throws; a transport or parsing failure resolves `{ ok: false, message }`. */
+  fix(language: string, source: string, errorMessage: string): Promise<DiagramFixResult>
+}
+
+/**
+ * Credentials and endpoint for the diagram-error "Fix it" button (EDITOR
+ * error-recovery).
+ *
+ * Lives here rather than in `app/ai-settings.ts` because `DiagramFixPort`
+ * implementations (adapters) need the shape too, and adapters may not import
+ * `app` (ADR-0001). `app/ai-settings.ts` still owns storage — loading,
+ * saving, defaulting, and normalising untrusted input — and re-exports this
+ * type so its existing consumers are unaffected.
+ */
+export interface AiSettings {
+  readonly apiKey: string
+  readonly baseUrl: string
+  readonly model: string
+}
+
+/** Whether a fix attempt can be made at all — false until all three fields are filled in. */
+export function isAiConfigured(settings: AiSettings): boolean {
+  return settings.apiKey !== '' && settings.baseUrl !== '' && settings.model !== ''
+}
+
 /**
  * The offset of every top-level block in a Markdown document.
  *

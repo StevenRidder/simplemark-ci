@@ -107,6 +107,7 @@
   .milkdown .ProseMirror .sm-fold-chevron,
   .diagram-label,
   .diagram-source-sheet,
+  .diagram-error-actions,
   .edit-source {
     display: none;
   }

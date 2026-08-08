@@ -2,7 +2,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 
-import type { DiagramRenderer, RenderedDiagram } from '../../application/index.js'
+import type { ClipboardPort, DiagramFixPort, DiagramRenderer, RenderedDiagram } from '../../application/index.js'
 
 /** CSS absolute lengths, in px. The relative ones cannot be resolved here. */
 const CSS_UNITS: Record<string, number> = {
@@ -47,6 +47,11 @@ export function naturalWidth(svg: SVGElement): number | undefined {
   return undefined
 }
 
+/** One pasteable block: language, error, and source together (diagram-error Copy button). */
+export function formatDiagramErrorForCopy(language: string, source: string, errorMessage: string): string {
+  return `Diagram type: ${language}\nError: ${errorMessage}\n\nSource:\n\`\`\`${language}\n${source}\n\`\`\`\n`
+}
+
 /**
  * NodeView for a fenced code block whose language this renderer claims.
  *
@@ -69,6 +74,13 @@ export class DiagramNodeView implements NodeView {
   #showingSource = false
   /** Guards against an out-of-order async render overwriting a newer one. */
   #renderToken = 0
+  /**
+   * The diagram's own last render failure, kept separate from whatever text
+   * `#errorMessage` happens to be showing. A transport/auth failure overwrites
+   * that DOM element with its own message, and `#runFix` must not re-seed a
+   * later retry's prompt from that stale API-error text.
+   */
+  #lastRenderError: string | undefined = undefined
   /** The block's own context menu, while it is open. */
   #menu: HTMLElement | undefined
 
@@ -77,6 +89,9 @@ export class DiagramNodeView implements NodeView {
   readonly #sheetHeader: HTMLElement
   readonly #textarea: HTMLTextAreaElement
   readonly #error: HTMLElement
+  readonly #errorMessage: HTMLElement
+  readonly #copyButton: HTMLButtonElement
+  readonly #fixButton: HTMLButtonElement
   readonly #toggle: HTMLButtonElement
   readonly #close: HTMLButtonElement
 
@@ -85,6 +100,10 @@ export class DiagramNodeView implements NodeView {
     private readonly view: EditorView,
     private readonly getPos: () => number | undefined,
     private readonly renderer: DiagramRenderer,
+    /** Backs the diagram-error box's Copy button. Absent hides that button. */
+    private readonly clipboard?: ClipboardPort,
+    /** Backs the diagram-error box's Fix it button. Absent hides that button. */
+    private readonly diagramFix?: DiagramFixPort,
   ) {
     this.#node = node
 
@@ -144,6 +163,35 @@ export class DiagramNodeView implements NodeView {
     this.#error = document.createElement('div')
     this.#error.className = 'diagram-error'
     this.#error.hidden = true
+
+    const actions = document.createElement('div')
+    actions.className = 'diagram-error-actions'
+
+    this.#copyButton = document.createElement('button')
+    this.#copyButton.type = 'button'
+    this.#copyButton.className = 'diagram-error-copy'
+    this.#copyButton.textContent = 'Copy'
+    this.#copyButton.hidden = this.clipboard === undefined
+    this.#copyButton.addEventListener('click', (event) => {
+      event.preventDefault()
+      void this.#copyError()
+    })
+
+    this.#fixButton = document.createElement('button')
+    this.#fixButton.type = 'button'
+    this.#fixButton.className = 'diagram-error-fix'
+    this.#fixButton.textContent = 'Fix it'
+    this.#fixButton.hidden = this.diagramFix === undefined
+    this.#fixButton.addEventListener('click', (event) => {
+      event.preventDefault()
+      void this.#runFix()
+    })
+
+    this.#errorMessage = document.createElement('div')
+    this.#errorMessage.className = 'diagram-error-message'
+
+    actions.append(this.#copyButton, this.#fixButton)
+    this.#error.append(actions, this.#errorMessage)
 
     this.#sheet.append(this.#sheetHeader, this.#textarea)
     document.body.append(this.#sheet)
@@ -353,15 +401,14 @@ export class DiagramNodeView implements NodeView {
     this.view.focus()
   }
 
-  /** Writes the textarea's content back through ProseMirror, never into the DOM. */
-  #commitSource(): void {
+  /** Writes text back through ProseMirror, never into the DOM. Does not repaint. */
+  #writeSource(text: string): void {
     const pos = this.getPos()
     if (pos === undefined) return
 
     const { state, dispatch } = this.view
     const from = pos + 1
     const to = pos + this.#node.nodeSize - 1
-    const text = this.#textarea.value
 
     const transaction = state.tr.replaceWith(
       from,
@@ -369,6 +416,11 @@ export class DiagramNodeView implements NodeView {
       text === '' ? [] : state.schema.text(text),
     )
     dispatch(transaction)
+  }
+
+  /** The textarea's own edit path: write, then repaint without waiting. */
+  #commitSource(): void {
+    this.#writeSource(this.#textarea.value)
     void this.#paint()
   }
 
@@ -425,10 +477,74 @@ export class DiagramNodeView implements NodeView {
     }
   }
 
-  async #paint(): Promise<void> {
-    const token = (this.#renderToken += 1)
+  static readonly #MAX_FIX_ATTEMPTS = 3
+
+  /** Set in `destroy()`; stops the fix-it loop from writing into a torn-down block. */
+  #destroyed = false
+
+  async #copyError(): Promise<void> {
+    if (this.clipboard === undefined) return
+    const language = (this.#node.attrs['language'] as string | undefined) ?? 'mermaid'
+    const text = formatDiagramErrorForCopy(language, this.#textarea.value, this.#errorMessage.textContent ?? '')
+    const ok = await this.clipboard.write({ 'text/plain': text })
+    this.#copyButton.textContent = ok ? 'Copied' : 'Copy failed'
+    window.setTimeout(() => {
+      if (this.#destroyed) return
+      this.#copyButton.textContent = 'Copy'
+    }, 1500)
+  }
+
+  async #runFix(): Promise<void> {
+    if (this.diagramFix === undefined) return
     const language = (this.#node.attrs['language'] as string | undefined) ?? 'mermaid'
 
+    this.#fixButton.disabled = true
+    this.#copyButton.disabled = true
+    let errorMessage = this.#lastRenderError ?? ''
+
+    for (let attempt = 1; attempt <= DiagramNodeView.#MAX_FIX_ATTEMPTS; attempt += 1) {
+      if (this.#destroyed) return
+      this.#fixButton.textContent = `Fixing… (${attempt}/${DiagramNodeView.#MAX_FIX_ATTEMPTS})`
+
+      const outcome = await this.diagramFix.fix(language, this.#textarea.value, errorMessage)
+      if (this.#destroyed) return
+
+      if (!outcome.ok) {
+        // A transport/auth failure, not a syntax error the model could retry.
+        // Stop immediately rather than spending the remaining attempts on a
+        // request that cannot succeed.
+        this.#errorMessage.textContent = outcome.message
+        break
+      }
+
+      this.#textarea.value = outcome.source
+      this.#writeSource(outcome.source)
+      const rendered = await this.#paint()
+      if (this.#destroyed) return
+
+      if (rendered.ok) {
+        this.#fixButton.disabled = false
+        this.#copyButton.disabled = false
+        this.#fixButton.textContent = 'Fix it'
+        return
+      }
+
+      errorMessage = rendered.message
+      if (attempt === DiagramNodeView.#MAX_FIX_ATTEMPTS) {
+        this.#errorMessage.textContent =
+          `Couldn't auto-fix after ${DiagramNodeView.#MAX_FIX_ATTEMPTS} attempts. Last error: ${rendered.message}`
+      }
+    }
+
+    this.#fixButton.disabled = false
+    this.#copyButton.disabled = false
+    this.#fixButton.textContent = 'Fix it'
+  }
+
+  /** Renders the node's current content and paints the result. Returns it so callers — the fix-it loop — can inspect success without a second render. */
+  async #paint(): Promise<RenderedDiagram> {
+    const token = (this.#renderToken += 1)
+    const language = (this.#node.attrs['language'] as string | undefined) ?? 'mermaid'
     // A renderer that *throws* is a crash, not the `{ok: false}` a parser
     // returns for source it can read but not draw. Every caller invokes this as
     // `void this.#paint()`, so without this the rejection went nowhere: the
@@ -439,20 +555,22 @@ export class DiagramNodeView implements NodeView {
     } catch (error) {
       result = { ok: false, message: error instanceof Error ? error.message : String(error) }
     }
-    if (token !== this.#renderToken) return
+    if (token !== this.#renderToken) return result
 
     if (result.ok) {
       this.#render.innerHTML = result.markup
       this.#error.hidden = true
       this.#fitDiagram()
-      return
+      return result
     }
 
     // Fail visibly and locally: keep the source reachable and show the parser's
     // own message rather than an empty frame.
     this.#render.replaceChildren()
     this.#error.hidden = false
-    this.#error.textContent = result.message
+    this.#errorMessage.textContent = result.message
+    this.#lastRenderError = result.message
+    return result
   }
 
   update(node: ProseNode): boolean {
@@ -477,7 +595,12 @@ export class DiagramNodeView implements NodeView {
 
   /** Inner control activity is ours, not ProseMirror's. */
   stopEvent(event: Event): boolean {
-    return event.target === this.#toggle || this.#sheet.contains(event.target as Node)
+    return (
+      event.target === this.#toggle ||
+      event.target === this.#copyButton ||
+      event.target === this.#fixButton ||
+      this.#sheet.contains(event.target as Node)
+    )
   }
 
   /** The rendered SVG is ours too; ProseMirror must not try to reconcile it. */
@@ -486,6 +609,7 @@ export class DiagramNodeView implements NodeView {
   }
 
   destroy(): void {
+    this.#destroyed = true
     this.#renderToken += 1
     this.#scheme?.removeEventListener('change', this.#onSchemeChange)
     this.#sheetHeader.removeEventListener('pointerdown', this.#beginDrag)

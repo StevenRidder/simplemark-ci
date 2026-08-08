@@ -11,6 +11,9 @@ import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-
 import { BrowserDocumentLinkPort } from '../adapters/filesystem/browser-document-link-port.js'
 import { BrowserUploadFilePort } from '../adapters/filesystem/browser-upload-file-port.js'
 import { BrowserClipboardPort } from '../adapters/clipboard/browser-clipboard-port.js'
+import { OpenAiCompatibleDiagramFixPort } from '../adapters/ai/openai-compatible-diagram-fix.js'
+import type { ChatCompletionTransport } from '../adapters/ai/openai-compatible-diagram-fix.js'
+import { loadAiSettings } from './ai-settings.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import type { FilePort } from '../application/index.js'
 import { composeApp } from './bootstrap.js'
@@ -275,6 +278,17 @@ async function mount(
 ): Promise<AppComposition> {
   const canWriteOriginal = BrowserFilePort.isSupported()
   let app: AppComposition
+  const chatCompletionTransport: ChatCompletionTransport = async (baseUrl, apiKey, model, messages) => {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages }),
+    })
+    const text = await response.text()
+    if (!response.ok) throw new Error(`${baseUrl}/chat/completions returned ${response.status}: ${text}`)
+    return text
+  }
+
   app = await composeApp({
     ports: {
       file,
@@ -282,6 +296,7 @@ async function mount(
       links: new BrowserDocumentLinkPort(window),
       // One port, several renderers. Markmap joins here.
       clipboard: new BrowserClipboardPort(),
+      diagramFix: new OpenAiCompatibleDiagramFixPort(chatCompletionTransport, () => loadAiSettings(window.localStorage)),
       // Lets a save re-emit untouched blocks from the file's own bytes instead
       // of re-serializing the whole document (FIDELITY-1).
       blockBoundaries: new MdastBlockBoundaries(),

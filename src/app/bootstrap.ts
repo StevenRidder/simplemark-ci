@@ -1,6 +1,7 @@
 import type {
   AssetReferencePort,
   ClipboardPort,
+  DiagramFixPort,
   DiagramRenderer,
   DocumentLinkPort,
   FilePort,
@@ -57,6 +58,7 @@ export interface AppPorts {
   readonly links?: DocumentLinkPort
   readonly clipboard?: ClipboardPort
   readonly diagrams: DiagramRenderer
+  readonly diagramFix?: DiagramFixPort
   /**
    * Supplies the top-level block offsets that let a save preserve untouched
    * blocks. Absent means every save re-serializes the whole document, which is
@@ -673,6 +675,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     mount: chrome.editorHost,
     initialMarkdown: session.snapshot().markdown,
     renderer: ports.diagrams,
+    ...(ports.clipboard === undefined ? {} : { clipboard: ports.clipboard }),
+    ...(ports.diagramFix === undefined ? {} : { diagramFix: ports.diagramFix }),
     onCopyDeferredTable: async (source) => {
       try {
         if (options.copyDeferredTable !== undefined) return await options.copyDeferredTable(source)

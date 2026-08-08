@@ -310,7 +310,7 @@ test('a renderer that throws fails visibly instead of leaving stale markup', asy
   await source.pressSequentially('flowchart LR\n  A --> C')
 
   await expect(diagram.locator('.diagram-error')).toBeVisible()
-  await expect(diagram.locator('.diagram-error')).toHaveText('renderer crashed')
+  await expect(diagram.locator('.diagram-error-message')).toHaveText('renderer crashed')
   await expect(diagram.locator('.diagram-render svg')).toHaveCount(0)
   expect(crashes).toEqual([])
 })

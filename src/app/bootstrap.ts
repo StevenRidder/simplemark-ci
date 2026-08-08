@@ -168,6 +168,18 @@ export interface ComposeOptions {
    * payload on its UI thread.
    */
   readonly copyDeferredTable?: (markdown: string) => Promise<boolean>
+  /**
+   * `Copy image`'s shell-level clipboard write (figure-viewer-everywhere
+   * spec §1 ruling 4) — the packaged app's native pasteboard, following the
+   * same deferred-table-copy precedent above. Absent falls back to the web
+   * `ClipboardItem` best-effort path.
+   */
+  readonly copyImage?: (png: Uint8Array) => Promise<boolean>
+  /**
+   * `Save image`'s native save dialog. Absent falls back to a canvas→blob
+   * browser download.
+   */
+  readonly saveImage?: (bytes: Uint8Array, format: 'png' | 'svg', suggestedName: string) => Promise<boolean>
   /** Shown on the disabled open control when onOpenFile is absent. */
   readonly openFileUnavailableReason?: string
   /**
@@ -213,6 +225,7 @@ const WORKSPACE_MODE_KEY = 'simplemark.workspace-mode'
  */
 const DIAGRAM_COMMAND_IDS: ReadonlySet<DocumentCommandId> = new Set([
   'diagramEditSource',
+  'diagramOpenFigure',
   'diagramFloatLeft',
   'diagramFloatRight',
   'diagramFloatInline',
@@ -288,6 +301,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       switch (id) {
         case 'diagramEditSource':
           editor?.diagram.editSource()
+          return
+        case 'diagramOpenFigure':
+          editor?.diagram.openFigure()
           return
         case 'diagramFloatLeft':
           editor?.diagram.setFloat('left')
@@ -772,6 +788,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     ...(ports.clipboard === undefined ? {} : { clipboard: ports.clipboard }),
     ...(ports.diagramFix === undefined ? {} : { diagramFix: ports.diagramFix }),
     ...(options.onSelectionChange === undefined ? {} : { onSelectionChange: options.onSelectionChange }),
+    ...(options.copyImage === undefined ? {} : { copyImage: options.copyImage }),
+    ...(options.saveImage === undefined ? {} : { saveImage: options.saveImage }),
     onCopyDeferredTable: async (source) => {
       try {
         if (options.copyDeferredTable !== undefined) return await options.copyDeferredTable(source)
@@ -990,6 +1008,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       zoomIn: () => editor?.diagram.zoomIn() ?? false,
       zoomOut: () => editor?.diagram.zoomOut() ?? false,
       zoomReset: () => editor?.diagram.zoomReset() ?? false,
+      openFigure: () => editor?.diagram.openFigure() ?? false,
+      copySource: () => editor?.diagram.copySource() ?? Promise.resolve(false),
+      copyImage: () => editor?.diagram.copyImage() ?? Promise.resolve(false),
+      saveImage: (format) => editor?.diagram.saveImage(format) ?? Promise.resolve(false),
+      printFigure: () => editor?.diagram.printFigure() ?? false,
     },
     applyNoteSummary: (handle, summary) => chrome.applyNoteSummary(handle, summary),
     runNativeContextCommand: (command) => {

@@ -6,6 +6,81 @@ import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 import type { ClipboardPort, DiagramFixPort, DiagramRenderer, RenderedDiagram } from '../../application/index.js'
 import { parseFenceLayout, withFenceMetaKey } from '../../domain/index.js'
 import { openFigureViewer } from './figure-viewer.js'
+import type { FigureViewerHandle } from './figure-viewer.js'
+import { rasterizeSvgToPng, serializeSvgForExport } from './figure-export.js'
+
+/**
+ * The paste-exhaust languages (RENDERERS.md's exhaust tier), rendered by
+ * `TextCardRenderer` as HTML text rather than a drawing. §1 ruling 2: these
+ * open the figure viewer as a reading overlay — no zoom chrome, native
+ * two-axis scroll.
+ */
+const TEXT_CARD_LANGUAGES: ReadonlySet<string> = new Set(['ansi', 'diff', 'json', 'tree', 'stacktrace'])
+
+/** True for a language `TextCardRenderer` claims. */
+export function isTextCardLanguage(language: string): boolean {
+  return TEXT_CARD_LANGUAGES.has(language)
+}
+
+/**
+ * Web-clipboard fallback for `Copy source`, mirroring `deferred-tables.ts`'
+ * own `copyWithWebClipboard` — used whenever no `ClipboardPort` was supplied
+ * (a browser host without a shell), so the viewer's Copy source button still
+ * does something rather than silently no-op.
+ */
+async function copyWithWebClipboard(source: string): Promise<boolean> {
+  if (!navigator.clipboard?.writeText) return false
+  try {
+    await navigator.clipboard.writeText(source)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Web-clipboard fallback for `Copy image`, used when no `copyImagePort` was
+ * supplied (a browser host without a shell). §4 of the figure-viewer spec:
+ * "best-effort via ClipboardItem" — WKWebView's implementation is the one
+ * this exists to route *around* (via `copyImagePort`), not the one it needs
+ * to work around, so this stays a plain `ClipboardItem` write.
+ */
+async function copyImageWithWebClipboard(png: Uint8Array): Promise<boolean> {
+  if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return false
+  try {
+    const blob = new Blob([new Uint8Array(png)], { type: 'image/png' })
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Browser-download fallback for `Save image`, used when no `saveImagePort`
+ * was supplied — canvas→blob download per §4: "the browser build degrades
+ * honestly."
+ */
+function saveImageWithBrowserDownload(bytes: Uint8Array, format: 'png' | 'svg', suggestedName: string): boolean {
+  const mediaType = format === 'svg' ? 'image/svg+xml' : 'image/png'
+  const blob = new Blob([new Uint8Array(bytes)], { type: mediaType })
+  const url = URL.createObjectURL(blob)
+  try {
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${suggestedName}.${format}`
+    document.body.append(anchor)
+    anchor.click()
+    anchor.remove()
+    return true
+  } finally {
+    // The download itself is synchronous from the anchor's point of view
+    // (the browser queues the fetch of the blob: URL before this returns),
+    // so revoking on a timer — not immediately — keeps the object alive long
+    // enough for that queued read.
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+}
 
 /** CSS absolute lengths, in px. The relative ones cannot be resolved here. */
 const CSS_UNITS: Record<string, number> = {
@@ -147,7 +222,7 @@ export class DiagramNodeView implements NodeView {
    */
   #expand: HTMLButtonElement | undefined
   /** Closes an open viewer, so tearing down the block takes it along. */
-  #closeViewer: (() => void) | undefined
+  #closeViewer: FigureViewerHandle | undefined
   /** Present on every diagram block (§3) — absent on math, which offers no resize. */
   #grip: HTMLElement | undefined
 
@@ -176,6 +251,17 @@ export class DiagramNodeView implements NodeView {
      * test, say — still constructs a working NodeView.
      */
     private readonly registry?: DiagramViewRegistry,
+    /**
+     * Backs `Copy image` — the shell's native image-clipboard write
+     * (figure-viewer-everywhere spec §1 ruling 4). Absent falls back to the
+     * web `ClipboardItem` best-effort path.
+     */
+    private readonly copyImagePort?: (png: Uint8Array) => Promise<boolean>,
+    /**
+     * Backs `Save image` — the shell's native save dialog. Absent falls back
+     * to a canvas→blob browser download.
+     */
+    private readonly saveImagePort?: (bytes: Uint8Array, format: 'png' | 'svg', suggestedName: string) => Promise<boolean>,
   ) {
     this.#node = node
 
@@ -761,9 +847,12 @@ export class DiagramNodeView implements NodeView {
     // collide on a too-wide figure (final review: chip-chrome vs. wide-figure
     // affordance). A chip keeps `#openViewer` reachable in both states
     // instead of losing the action while selected.
-    if (this.dom.classList.contains('has-wide-figure')) {
-      chips.append(chip('Open figure', '⤢', () => this.#openViewer()))
-    }
+    //
+    // Figure-viewer-everywhere spec §1 ruling 1: the chip drops the
+    // too-wide-only gate entirely — every rendered block offers it,
+    // regardless of width. `#expand` (the standalone corner button) and the
+    // touch tap-to-open keep their own overflow-only gates unchanged.
+    chips.append(chip('Open figure', '⤢', () => this.#openViewer()))
 
     chips.append(
       chip(
@@ -1126,6 +1215,74 @@ export class DiagramNodeView implements NodeView {
     this.#setShowingSource(true)
   }
 
+  /** `DiagramController.openFigure()`'s entry point. */
+  openFigure(): boolean {
+    return this.#openViewer()
+  }
+
+  /**
+   * `DiagramController.copySource()`'s entry point. §1 ruling 5: every verb
+   * acts on the selected block whether or not its viewer is currently open —
+   * this does not require `#openViewer()` first, unlike `printFigure()`
+   * below, because copying source needs no DOM at all.
+   */
+  copySource(): Promise<boolean> {
+    return this.clipboard === undefined
+      ? copyWithWebClipboard(this.#node.textContent)
+      : this.clipboard.write({ 'text/plain': this.#node.textContent })
+  }
+
+  /**
+   * `DiagramController.copyImage()`'s entry point. SVG-rendered kinds only
+   * (§1 ruling 3) — `false` for a text card or math, which render as plain
+   * HTML with no `<svg>` to serialize.
+   */
+  async copyImage(): Promise<boolean> {
+    const svg = this.#renderedSvg()
+    if (svg === undefined) return false
+    const png = await rasterizeSvgToPng(serializeSvgForExport(svg))
+    return this.copyImagePort === undefined ? copyImageWithWebClipboard(png) : this.copyImagePort(png)
+  }
+
+  /**
+   * `DiagramController.saveImage()`'s entry point. PNG by default; the raw
+   * SVG when `format` is `'svg'` — the vector option §1 ruling 3 offers for
+   * an SVG-rendered figure. `false` for a text card or math, same gate as
+   * `copyImage()`.
+   */
+  async saveImage(format: 'png' | 'svg' = 'png'): Promise<boolean> {
+    const svg = this.#renderedSvg()
+    if (svg === undefined) return false
+    const suggestedName = `${this.language() || 'figure'}`
+    const bytes =
+      format === 'svg'
+        ? new TextEncoder().encode(serializeSvgForExport(svg).svgText)
+        : await rasterizeSvgToPng(serializeSvgForExport(svg))
+    return this.saveImagePort === undefined
+      ? saveImageWithBrowserDownload(bytes, format, suggestedName)
+      : this.saveImagePort(bytes, format, suggestedName)
+  }
+
+  /**
+   * `DiagramController.printFigure()`'s entry point. Opens the viewer first
+   * when it is not already open — §1 ruling 5's "acting on the selected
+   * block, opening the viewer not required" is about the *caller* not
+   * needing to call `openFigure()` first, not about skipping the DOM the
+   * print stylesheet scopes to (`figure-viewer.ts`'s `is-printing-figure`
+   * body class targets `.figure-viewer`, so printing needs one mounted).
+   */
+  printFigure(): boolean {
+    if (this.#closeViewer === undefined && !this.#openViewer()) return false
+    this.#closeViewer?.printFigure()
+    return true
+  }
+
+  /** The rendered `<svg>`, or `undefined` for a text card/math render with none. */
+  #renderedSvg(): SVGElement | undefined {
+    const content = this.#render.querySelector('svg') ?? this.#render.firstElementChild
+    return content instanceof SVGElement ? content : undefined
+  }
+
   /** `DiagramController.zoomIn/zoomOut/zoomReset()`'s entry point. */
   zoomBy(step: 'in' | 'out' | 'reset'): boolean {
     if (!isZoomableLanguage(this.language())) return false
@@ -1207,19 +1364,37 @@ export class DiagramNodeView implements NodeView {
     return this.#lastPointerType === 'touch' || this.#lastPointerType === 'pen'
   }
 
-  /** Hands the rendered drawing to the full-screen reader. */
-  #openViewer(): void {
-    const svg = this.#render.querySelector('svg')
-    if (svg === null) return
-    const language = (this.#node.attrs['language'] as string | undefined) ?? 'diagram'
-    this.#closeViewer?.()
-    this.#closeViewer = openFigureViewer(svg, `${language} figure`)
+  /**
+   * Hands the rendered content to the full-screen reader — the drawing for
+   * svg/generated kinds, or the rendered HTML for math and a text card
+   * (neither of which has an `<svg>` to hand over). Returns whether a
+   * viewer opened, so `DiagramController.openFigure()` (milkdown-editor.ts)
+   * can report the honest `false` a prose/failed-render selection gets.
+   */
+  #openViewer(): boolean {
+    const language = this.language()
+    const content: Element | null = this.#render.querySelector('svg') ?? this.#render.firstElementChild
+    if (content === null) return false
+    this.#closeViewer?.dismiss()
+    this.#closeViewer = openFigureViewer(content, `${language} figure`, {
+      isTextCard: isTextCardLanguage(language),
+      source: this.#node.textContent,
+      copySource: this.clipboard === undefined
+        ? copyWithWebClipboard
+        : (text: string) => this.clipboard!.write({ 'text/plain': text }),
+      // §1 ruling 3: SVG-rendered kinds only — omitted entirely for a text
+      // card or math, so the viewer simply does not show the buttons.
+      ...(content instanceof SVGElement
+        ? { copyImage: () => this.copyImage(), saveImage: () => this.saveImage() }
+        : {}),
+    })
+    return true
   }
 
   destroy(): void {
     this.#destroyed = true
     this.registry?.deregister(this)
-    this.#closeViewer?.()
+    this.#closeViewer?.dismiss()
     this.#render.removeEventListener('scroll', this.#markScrollEnd)
     this.#renderToken += 1
     this.#scheme?.removeEventListener('change', this.#onSchemeChange)

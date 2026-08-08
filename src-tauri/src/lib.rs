@@ -800,6 +800,43 @@ fn create_note(workspace_handle: String) -> Result<OpenedNote, String> {
     Err("Could not choose a unique Untitled note name".to_string())
 }
 
+/// Saves a rendered figure (Copy image's Save image sibling) through the
+/// native save dialog — the packaged app's answer to the browser build's
+/// canvas→blob download, per the figure-viewer-everywhere spec §1 ruling 4.
+///
+/// `bytes` arrives base64-encoded (D7 fidelity boundary convention, matching
+/// `save_new_note` above) since PNG/SVG bytes are never valid UTF-8 text.
+/// `extension` selects the save-dialog filter — `png` or `svg`, the only two
+/// formats the viewer offers. Returns `false` when the person cancels the
+/// dialog, mirroring every other verb's honest refusal rather than an error.
+#[tauri::command]
+async fn save_image(
+    app: AppHandle,
+    suggested_name: String,
+    extension: String,
+    bytes: String,
+) -> Result<bool, String> {
+    let decoded = BASE64
+        .decode(bytes.as_bytes())
+        .map_err(|error| format!("Rejected a malformed image payload: {error}"))?;
+    let filter_name = if extension == "svg" { "SVG" } else { "PNG" };
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter(filter_name, &[extension.as_str()])
+        .set_file_name(suggested_name)
+        .blocking_save_file();
+    let Some(picked) = picked else {
+        return Ok(false);
+    };
+    let destination = picked
+        .into_path()
+        .map_err(|error| format!("That destination has no writable path: {error}"))?;
+    fs::write(&destination, &decoded)
+        .map_err(|error| format!("Could not save {}: {error}", destination.display()))?;
+    Ok(true)
+}
+
 /// First save for an in-memory note. The operating system, not a remembered
 /// folder, owns the destination choice; cancelling leaves the draft untouched.
 #[tauri::command]
@@ -1684,6 +1721,7 @@ pub fn run() {
             duplicate_note,
             export_note,
             save_note_as,
+            save_image,
             trash_note,
             reveal_in_finder,
             take_open_note_request,

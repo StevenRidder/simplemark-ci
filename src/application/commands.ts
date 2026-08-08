@@ -70,6 +70,7 @@ export type DocumentCommandId =
   // Diagram block verbs (chip-chrome spec §4) — the Format → Diagram
   // submenu, gated on a diagram block being selected (bootstrap.ts).
   | 'diagramEditSource'
+  | 'diagramOpenFigure'
   | 'diagramFloatLeft'
   | 'diagramFloatRight'
   | 'diagramFloatInline'
@@ -249,6 +250,7 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   // Diagram block verbs (chip-chrome spec §4): no accelerators — reachable
   // from the chips (Task 2), this submenu, and the app API.
   diagramEditSource: { id: 'diagramEditSource', label: 'Edit source', target: 'editor' },
+  diagramOpenFigure: { id: 'diagramOpenFigure', label: 'Open Figure', target: 'editor' },
   diagramFloatLeft: { id: 'diagramFloatLeft', label: 'Float left', target: 'editor' },
   diagramFloatRight: { id: 'diagramFloatRight', label: 'Float right', target: 'editor' },
   diagramFloatInline: { id: 'diagramFloatInline', label: 'Inline', target: 'editor' },
@@ -553,6 +555,7 @@ export const MENUS: readonly MenuSpec[] = [
           label: 'Diagram',
           items: [
             'diagramEditSource',
+            'diagramOpenFigure',
             'diagramFloatLeft',
             'diagramFloatRight',
             'diagramFloatInline',

@@ -2871,6 +2871,22 @@ section.editor::-webkit-scrollbar {
   flex-wrap: wrap;
   gap: 6px;
   animation: diagram-chips-in 0.12s ease-out;
+  /*
+   * Figure-viewer-everywhere adds a chip (Open figure) that is now always
+   * present rather than only on a too-wide figure, so a narrow/floated
+   * figure's toolbar wraps onto more rows than before — enough, on a small
+   * enough render, to sit over the drawing itself for the toolbar's whole
+   * lifetime rather than a first-paint instant. The row's own empty gaps
+   * (not just its buttons) used to intercept pointer events there because
+   * the box, not its content, was the hit target — `none` here plus `auto`
+   * on each `.diagram-chip` below makes only the buttons themselves click
+   * targets, so a click through a gap reaches the drawing underneath.
+   */
+  pointer-events: none;
+}
+
+.diagram-chips .diagram-chip {
+  pointer-events: auto;
 }
 
 @keyframes diagram-chips-in {
@@ -4017,6 +4033,19 @@ section.editor::-webkit-scrollbar {
   background: var(--paper);
 }
 
+/*
+ * The reading overlay (§1 ruling 2): a text card has no natural drawing size
+ * to zoom from, so it renders at a comfortable reading measure instead of
+ * the svg path's own-size-then-scroll — the point is scrolling the card, not
+ * squeezing or scaling its text.
+ */
+.figure-viewer-stage.is-text-card {
+  width: min(100%, 70ch);
+  border-radius: 10px;
+  background: var(--paper);
+  padding: 24px;
+}
+
 .figure-viewer-close {
   position: absolute;
   z-index: 1;
@@ -4024,6 +4053,31 @@ section.editor::-webkit-scrollbar {
   right: 16px;
   min-height: 36px;
   padding: 0 16px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 14px var(--sans);
+  cursor: pointer;
+}
+
+/*
+ * §1 ruling 3: Copy source and Print figure, next to Done — every kind gets
+ * both, so the toolbar does not move around depending on what is open.
+ */
+.figure-viewer-toolbar {
+  position: absolute;
+  z-index: 1;
+  top: calc(14px + env(safe-area-inset-top));
+  right: 108px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.figure-viewer-toolbar-btn {
+  min-height: 36px;
+  padding: 0 14px;
   border: 0;
   border-radius: 9px;
   background: var(--paper);

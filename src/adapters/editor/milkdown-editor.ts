@@ -178,6 +178,10 @@ export interface MilkdownEditorOptions {
   readonly onOpenLink?: (href: string) => Promise<void>
   /** Copies a virtualised table through the shell's clipboard boundary. */
   readonly onCopyDeferredTable?: (source: string) => Promise<boolean>
+  /** Backs `Copy image` through the shell's native image-clipboard write. Absent falls back to the web clipboard. */
+  readonly copyImage?: (png: Uint8Array) => Promise<boolean>
+  /** Backs `Save image` through the shell's native save dialog. Absent falls back to a browser download. */
+  readonly saveImage?: (bytes: Uint8Array, format: 'png' | 'svg', suggestedName: string) => Promise<boolean>
   /**
    * Fires after the live ProseMirror selection changes — a click, an arrow
    * key, Escape, anything that moves it — not after every keystroke
@@ -206,6 +210,24 @@ export interface DiagramController {
   zoomIn(): boolean
   zoomOut(): boolean
   zoomReset(): boolean
+  /**
+   * Figure-viewer-everywhere spec §1 ruling 5: opens the full-screen viewer
+   * for the selected block — every rendered kind, not only svg/generated —
+   * and returns `false` on prose or a non-diagram selection, the same
+   * honest-refusal shape every other verb here already has.
+   */
+  openFigure(): boolean
+  /**
+   * Figure-viewer-everywhere spec §1 ruling 5: viewer-scoped verbs, acting
+   * on the selected block whether or not its viewer is open. `copySource`
+   * works for every kind; `copyImage`/`saveImage` are `false` for a text
+   * card or math (SVG-rendered kinds only); `printFigure` opens the viewer
+   * if needed, then prints.
+   */
+  copySource(): Promise<boolean>
+  copyImage(): Promise<boolean>
+  saveImage(format?: 'png' | 'svg'): Promise<boolean>
+  printFigure(): boolean
   /**
    * `null` off a diagram selection. `'generated'` is the zoomable set
    * (mermaid/dot/graphviz/vega-lite); `'math'` covers a `$$` display block
@@ -302,6 +324,12 @@ export class MilkdownEditor {
     zoomIn: (): boolean => this.#selectedDiagramView()?.zoomBy('in') ?? false,
     zoomOut: (): boolean => this.#selectedDiagramView()?.zoomBy('out') ?? false,
     zoomReset: (): boolean => this.#selectedDiagramView()?.zoomBy('reset') ?? false,
+    openFigure: (): boolean => this.#selectedDiagramView()?.openFigure() ?? false,
+    copySource: (): Promise<boolean> => this.#selectedDiagramView()?.copySource() ?? Promise.resolve(false),
+    copyImage: (): Promise<boolean> => this.#selectedDiagramView()?.copyImage() ?? Promise.resolve(false),
+    saveImage: (format?: 'png' | 'svg'): Promise<boolean> =>
+      this.#selectedDiagramView()?.saveImage(format) ?? Promise.resolve(false),
+    printFigure: (): boolean => this.#selectedDiagramView()?.printFigure() ?? false,
   }
 
   /** The selected block, if it is a diagram (or math) block — `kind()`, the
@@ -401,6 +429,8 @@ export class MilkdownEditor {
           options.clipboard,
           options.diagramFix,
           diagramRegistry,
+          options.copyImage,
+          options.saveImage,
         )
       }
     })
@@ -416,6 +446,8 @@ export class MilkdownEditor {
           options.clipboard,
           options.diagramFix,
           diagramRegistry,
+          options.copyImage,
+          options.saveImage,
         )
     })
     const inlineMathView = $view(inlineMathSchema.node, () => {

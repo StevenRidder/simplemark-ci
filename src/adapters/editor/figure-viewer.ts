@@ -22,50 +22,7 @@
  * top of the same underlying `scale`.
  */
 
-/** CSS absolute lengths, in px — the units an svg's `width`/`height` attribute may carry. */
-const CSS_UNITS: Record<string, number> = {
-  px: 1,
-  pt: 96 / 72,
-  pc: 16,
-  in: 96,
-  cm: 96 / 2.54,
-  mm: 96 / 25.4,
-  q: 96 / 101.6,
-}
-
-function parseLength(raw: string | null): number | undefined {
-  if (raw === null) return undefined
-  const match = /^([\d.]+)\s*([a-z]*)$/i.exec(raw.trim())
-  if (match === null) return undefined
-  const value = Number(match[1])
-  const scale = CSS_UNITS[(match[2] ?? '').toLowerCase() || 'px']
-  return Number.isFinite(value) && value > 0 && scale !== undefined ? value * scale : undefined
-}
-
-/**
- * The drawing's own authored size, in CSS pixels — not the size the document
- * happens to be rendering it at right now (a fill width, a committed
- * `width=`, the block's own zoom). Read from `figure` (the live node) before
- * it is cloned and stripped, the same two sources `naturalWidth()` in
- * `diagram-node-view.ts` reads, kept local here to avoid a viewer ⇄
- * node-view import cycle.
- */
-function naturalSize(svg: SVGElement): { width: number; height: number } | undefined {
-  const width = parseLength(svg.getAttribute('width'))
-  const height = parseLength(svg.getAttribute('height'))
-  if (width !== undefined && height !== undefined) return { width, height }
-
-  const viewBox = svg.getAttribute('viewBox')
-  if (viewBox === null) return undefined
-  const parts = viewBox.split(/[\s,]+/).map(Number)
-  const vbWidth = parts[2] ?? NaN
-  const vbHeight = parts[3] ?? NaN
-  if (!(Number.isFinite(vbWidth) && vbWidth > 0 && Number.isFinite(vbHeight) && vbHeight > 0)) return undefined
-  // A `width` attribute in non-px units (Graphviz writes pt) scales the
-  // aspect-correct viewBox instead of trusting its raw user units as px.
-  if (width !== undefined) return { width, height: width * (vbHeight / vbWidth) }
-  return { width: vbWidth, height: vbHeight }
-}
+import { naturalSize } from './figure-export.js'
 
 /** Beyond this the drawing is bigger than any use for it. Mirrors the block's own chip zoom (§2 chip-chrome). */
 const MAX_SCALE = 4
@@ -92,13 +49,59 @@ function distance(a: Point, b: Point): number {
 }
 
 /**
- * Opens `figure` full screen until dismissed.
- *
- * Returns a function that closes it, so a caller tearing down its own node view
- * can take the viewer with it rather than leaving an overlay above a document
- * that no longer exists.
+ * Copies fence source through the shell's clipboard boundary when a
+ * `ClipboardPort` is available (`DiagramNodeView#openViewer`), or falls back
+ * to the web clipboard directly — the same fallback shape
+ * `deferred-tables.ts`' `copyWithWebClipboard` already uses for its own Copy
+ * button, so a browser host without a shell still gets a working copy.
  */
-export function openFigureViewer(figure: SVGElement, title: string): () => void {
+export type FigureCopySource = (source: string) => Promise<boolean>
+
+export interface FigureViewerOptions {
+  /**
+   * True for the paste-exhaust text cards (ansi/diff/json/tree/stacktrace):
+   * §1 ruling 2 — the viewer becomes a reading overlay for these, at
+   * readable width with native two-axis scroll, and the pinch/wheel zoom
+   * chrome (built for a drawing, not text) is dropped rather than offered
+   * and then not doing anything useful.
+   */
+  readonly isTextCard: boolean
+  /** The fence's own source text — what `Copy source` places on the clipboard. */
+  readonly source: string
+  readonly copySource: FigureCopySource
+  /**
+   * §1 ruling 3: Copy image / Save image are SVG-rendered kinds only — never
+   * offered for a text card, and `DiagramNodeView` only supplies these when
+   * the rendered content was an `<svg>`. Absent hides both buttons.
+   */
+  readonly copyImage?: () => Promise<boolean>
+  readonly saveImage?: () => Promise<boolean>
+}
+
+/**
+ * Opens `content` full screen until dismissed.
+ *
+ * `content` is normally the rendered `<svg>` a diagram produced, but display
+ * math and the text cards render as plain HTML (KaTeX markup, a `.text-card`
+ * `<pre>`/`<div>`) — §1 ruling 1 puts "Open figure" on every rendered block,
+ * so this takes any `Element` rather than assuming an svg. Natural-size
+ * sizing (`naturalSize` below) only ever applies to an `SVGElement`; anything
+ * else renders at whatever size its own layout gives it, scaled by the same
+ * `scale` zoom the svg path uses.
+ *
+ * Returns a handle: `dismiss()` closes the viewer, so a caller tearing down
+ * its own node view can take the viewer with it rather than leaving an
+ * overlay above a document that no longer exists; `printFigure()` triggers
+ * the same print flow as the toolbar button, so `DiagramController.printFigure()`
+ * (a viewer-scoped app-API verb, §1 ruling 5) can print without the person
+ * having clicked the button themselves.
+ */
+export interface FigureViewerHandle {
+  dismiss(): void
+  printFigure(): void
+}
+
+export function openFigureViewer(content: Element, title: string, options: FigureViewerOptions): FigureViewerHandle {
   const overlay = document.createElement('div')
   overlay.className = 'figure-viewer'
   overlay.setAttribute('role', 'dialog')
@@ -113,20 +116,22 @@ export function openFigureViewer(figure: SVGElement, title: string): () => void 
   scroll.className = 'figure-viewer-scroll'
 
   const stage = document.createElement('div')
-  stage.className = 'figure-viewer-stage'
+  stage.className = `figure-viewer-stage${options.isTextCard ? ' is-text-card' : ''}`
 
-  const clone = figure.cloneNode(true) as SVGElement
-  const size = naturalSize(figure)
-  // The document sizes its figures to a column; here the only constraint is
-  // scroll, so whatever inline width the fit logic left behind has to go —
-  // replaced with the drawing's own authored size, scaled by `scale` below.
-  clone.style.removeProperty('width')
-  clone.style.removeProperty('max-width')
-  clone.removeAttribute('width')
-  clone.removeAttribute('height')
-  if (size !== undefined) {
-    clone.style.width = `${size.width}px`
-    clone.style.height = `${size.height}px`
+  const clone = content.cloneNode(true) as Element
+  if (content instanceof SVGElement && clone instanceof SVGElement) {
+    const size = naturalSize(content)
+    // The document sizes its figures to a column; here the only constraint is
+    // scroll, so whatever inline width the fit logic left behind has to go —
+    // replaced with the drawing's own authored size, scaled by `scale` below.
+    clone.style.removeProperty('width')
+    clone.style.removeProperty('max-width')
+    clone.removeAttribute('width')
+    clone.removeAttribute('height')
+    if (size !== undefined) {
+      clone.style.width = `${size.width}px`
+      clone.style.height = `${size.height}px`
+    }
   }
   stage.append(clone)
 
@@ -136,6 +141,96 @@ export function openFigureViewer(figure: SVGElement, title: string): () => void 
   close.textContent = 'Done'
   close.title = 'Close'
   close.setAttribute('aria-label', 'Close figure viewer')
+
+  const toolbar = document.createElement('div')
+  toolbar.className = 'figure-viewer-toolbar'
+
+  const toolbarButton = (label: string, text: string): HTMLButtonElement => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'figure-viewer-toolbar-btn'
+    button.setAttribute('aria-label', label)
+    button.title = label
+    button.textContent = text
+    return button
+  }
+
+  const copyButton = toolbarButton('Copy source', 'Copy source')
+  const printButton = toolbarButton('Print figure', 'Print figure')
+  toolbar.append(copyButton, printButton)
+
+  let copyResetTimer: number | undefined
+  copyButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    window.clearTimeout(copyResetTimer)
+    copyButton.textContent = 'Copying…'
+    void options.copySource(options.source).then((ok) => {
+      copyButton.textContent = ok ? 'Copied' : 'Copy failed'
+      copyResetTimer = window.setTimeout(() => {
+        copyButton.textContent = 'Copy source'
+      }, 1500)
+    })
+  })
+
+  // §1 ruling 3: SVG-rendered kinds only — `options.copyImage`/`saveImage`
+  // are absent for a text card (and for math, which has no `<svg>`), so
+  // these buttons simply do not appear rather than appearing disabled.
+  let copyImageResetTimer: number | undefined
+  let copyImageButton: HTMLButtonElement | undefined
+  if (options.copyImage !== undefined) {
+    copyImageButton = toolbarButton('Copy image', 'Copy image')
+    toolbar.append(copyImageButton)
+    copyImageButton.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const button = copyImageButton
+      if (button === undefined) return
+      window.clearTimeout(copyImageResetTimer)
+      button.textContent = 'Copying…'
+      // §4.4: a refusal is never a silent no-op — the button's own text is
+      // the visible status message, the same shape `copyButton` above uses.
+      void options.copyImage?.().then((ok) => {
+        button.textContent = ok ? 'Copied' : 'Copy failed'
+        copyImageResetTimer = window.setTimeout(() => {
+          button.textContent = 'Copy image'
+        }, 1500)
+      })
+    })
+  }
+
+  let saveImageResetTimer: number | undefined
+  let saveImageButton: HTMLButtonElement | undefined
+  if (options.saveImage !== undefined) {
+    saveImageButton = toolbarButton('Save image', 'Save image')
+    toolbar.append(saveImageButton)
+    saveImageButton.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const button = saveImageButton
+      if (button === undefined) return
+      window.clearTimeout(saveImageResetTimer)
+      button.textContent = 'Saving…'
+      void options.saveImage?.().then((ok) => {
+        button.textContent = ok ? 'Saved' : 'Save failed'
+        saveImageResetTimer = window.setTimeout(() => {
+          button.textContent = 'Save image'
+        }, 1500)
+      })
+    })
+  }
+
+  // §1 ruling 3: a body class plus viewer-scoped `@media print` rules
+  // (print.css) hide everything else, so `window.print()` — an OS service,
+  // not something this code can control the output of — prints only the
+  // figure that is currently open.
+  const onAfterPrint = (): void => document.body.classList.remove('is-printing-figure')
+  const triggerPrint = (): void => {
+    document.body.classList.add('is-printing-figure')
+    window.addEventListener('afterprint', onAfterPrint, { once: true })
+    window.print()
+  }
+  printButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    triggerPrint()
+  })
 
   const zoomBar = document.createElement('div')
   zoomBar.className = 'figure-viewer-zoom'
@@ -159,7 +254,12 @@ export function openFigureViewer(figure: SVGElement, title: string): () => void 
   hint.className = 'figure-viewer-hint'
   hint.textContent = 'Pinch to zoom · drag to move · double-tap to fit'
 
-  overlay.append(scroll, close, zoomBar, hint)
+  overlay.append(scroll, close, toolbar)
+  // §1 ruling 2: font scaling for a text card is not free (`transform: scale`
+  // on an html block would blur/reflow text unpredictably rather than a
+  // drawing's crisp vector zoom), so the zoom chip row and its touch hint —
+  // built for a drawing — are dropped for a text card. Scrolling is the point.
+  if (!options.isTextCard) overlay.append(zoomBar, hint)
   scroll.append(stage)
   document.body.append(overlay)
 
@@ -200,7 +300,7 @@ export function openFigureViewer(figure: SVGElement, title: string): () => void 
   let lastTapAt = 0
 
   const isChrome = (target: EventTarget | null): boolean =>
-    close.contains(target as Node) || zoomBar.contains(target as Node)
+    close.contains(target as Node) || zoomBar.contains(target as Node) || toolbar.contains(target as Node)
 
   const onPointerDown = (event: PointerEvent): void => {
     if (isChrome(event.target)) return
@@ -264,6 +364,11 @@ export function openFigureViewer(figure: SVGElement, title: string): () => void 
     overlay.removeEventListener('pointercancel', onPointerUp)
     overlay.removeEventListener('click', onClick)
     document.removeEventListener('keydown', onKeyDown)
+    window.removeEventListener('afterprint', onAfterPrint)
+    window.clearTimeout(copyResetTimer)
+    window.clearTimeout(copyImageResetTimer)
+    window.clearTimeout(saveImageResetTimer)
+    document.body.classList.remove('is-printing-figure')
     overlay.remove()
   }
 
@@ -277,5 +382,5 @@ export function openFigureViewer(figure: SVGElement, title: string): () => void 
 
   paint()
   close.focus()
-  return dismiss
+  return { dismiss, printFigure: triggerPrint }
 }

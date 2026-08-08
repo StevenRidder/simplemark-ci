@@ -3,7 +3,8 @@ import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
+import { writeImage, writeText } from '@tauri-apps/plugin-clipboard-manager'
+import { Image } from '@tauri-apps/api/image'
 
 import { MdastBlockBoundaries } from '../adapters/editor/mdast-block-boundaries.js'
 import { CompositeRenderer } from '../adapters/renderers/composite-renderer.js'
@@ -1128,6 +1129,33 @@ async function mount(
       } catch {
         return false
       }
+    },
+    // §1 ruling 4: image clipboard writes go through the shell's native
+    // pasteboard, following the same reasoning as `copyDeferredTable` above —
+    // WKWebView's `ClipboardItem` support is not to be trusted for anything
+    // beyond plain text (the Graphviz class of packaged-only failure).
+    copyImage: async (png) => {
+      try {
+        const image = await Image.fromBytes(png)
+        await writeImage(image)
+        return true
+      } catch {
+        return false
+      }
+    },
+    // `Save image`'s native save dialog, through the same `save_image`
+    // command `save_note_as` (Rust side) already mirrors for the note itself.
+    // Bytes cross base64-encoded — the D7 fidelity boundary convention this
+    // codebase already uses for `save_new_note`'s payload.
+    saveImage: async (bytes, format, suggestedName) => {
+      let binary = ''
+      for (const byte of bytes) binary += String.fromCharCode(byte)
+      const encoded = btoa(binary)
+      return await invoke<boolean>('save_image', {
+        suggestedName: `${suggestedName}.${format}`,
+        extension: format,
+        bytes: encoded,
+      })
     },
     // WKWebView never answers the webview's own `window.print()`, so the panel
     // has to be raised from the native side. What lands on paper is still the

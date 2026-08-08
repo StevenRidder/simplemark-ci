@@ -223,4 +223,41 @@
   .milkdown .ProseMirror thead {
     display: table-header-group;
   }
+
+  /*
+   * §1 ruling 3, "Print figure": while the viewer is open,
+   * `document.body.is-printing-figure` (figure-viewer.ts) narrows the
+   * printable subtree to the viewer's own content — everything else the
+   * app renders (which normally covers the whole sheet: the surrounding
+   * rules above) is workspace behind a modal, not part of what was asked
+   * for. `.figure-viewer` sits directly on `<body>`, so hiding every other
+   * direct child is enough; its own chrome (Done, the toolbar, the zoom
+   * row, the touch hint) is not the figure either.
+   */
+  body.is-printing-figure > :not(.figure-viewer) {
+    display: none !important;
+  }
+
+  body.is-printing-figure .figure-viewer {
+    position: static;
+    background: #ffffff;
+  }
+
+  body.is-printing-figure .figure-viewer-close,
+  body.is-printing-figure .figure-viewer-toolbar,
+  body.is-printing-figure .figure-viewer-zoom,
+  body.is-printing-figure .figure-viewer-hint {
+    display: none !important;
+  }
+
+  body.is-printing-figure .figure-viewer-scroll {
+    position: static;
+    display: block;
+    overflow: visible;
+  }
+
+  body.is-printing-figure .figure-viewer-stage {
+    transform: none !important;
+    padding: 0;
+  }
 }

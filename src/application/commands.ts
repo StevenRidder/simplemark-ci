@@ -266,7 +266,14 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   print: { id: 'print', label: 'Print…', target: 'shell', accelerator: 'CmdOrCtrl+P' },
   find: { id: 'find', label: 'Find in Document…', target: 'shell', accelerator: 'CmdOrCtrl+F' },
   togglePinned: { id: 'togglePinned', label: 'Pin to Top', target: 'shell', checkable: true },
-  moveToTrash: { id: 'moveToTrash', label: 'Move to Trash', target: 'shell', accelerator: 'CmdOrCtrl+Delete' },
+  // CmdOrCtrl+Alt+Delete, not CmdOrCtrl+Delete: the editor's ProseMirror base
+  // keymap already owns Mod-Backspace/Mod-Delete for text deletion, the same
+  // reason historyBack/historyForward/previousNote/nextNote above use ⌘⌥
+  // instead of plain ⌘-arrows. On Windows this specific chord is also the
+  // OS's own reserved secure-attention sequence — native-menu.ts omits the
+  // accelerator there entirely (see trashAcceleratorIsSafe) rather than
+  // registering a shortcut the operating system would swallow anyway.
+  moveToTrash: { id: 'moveToTrash', label: 'Move to Trash', target: 'shell', accelerator: 'CmdOrCtrl+Alt+Delete' },
 
   // Moving between notes, on ⌘⌥ plus the arrows.
   //

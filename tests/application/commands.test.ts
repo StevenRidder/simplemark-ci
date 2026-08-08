@@ -255,7 +255,7 @@ describe('the command registry', () => {
     // The shell owns both: printing is an OS service and trashing is a
     // filesystem operation, neither an editor transaction.
     expect(COMMANDS.print.target).toBe('shell')
-    expect(COMMANDS.moveToTrash.accelerator).toBe('CmdOrCtrl+Delete')
+    expect(COMMANDS.moveToTrash.accelerator).toBe('CmdOrCtrl+Alt+Delete')
     expect(COMMANDS.moveToTrash.target).toBe('shell')
   })
 

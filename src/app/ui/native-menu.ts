@@ -41,6 +41,20 @@ export interface NativeMenuOptions {
   readonly openSettings?: () => void
 }
 
+/**
+ * Whether `moveToTrash`'s accelerator is safe to register on this platform.
+ *
+ * `CmdOrCtrl+Alt+Delete` is Windows' own reserved secure-attention sequence —
+ * the operating system intercepts it before any application, including this
+ * one, ever sees the keystroke. Cmd+Option+Delete only ever reaches the app
+ * on macOS, so the accelerator must not be registered anywhere else; the menu
+ * item still exists there, just without a shortcut (the same fallback this
+ * registry already uses for `openFolder`).
+ */
+export function trashAcceleratorIsSafe(platform: string): boolean {
+  return platform.toLowerCase().includes('mac')
+}
+
 export type MacosTextServiceId =
   | 'show_spelling_and_grammar'
   | 'check_spelling'
@@ -126,10 +140,13 @@ async function buildEntry(
 
   const definition = COMMANDS[entry]
   const state = options.state(definition.id)
+  const accelerator = definition.id === 'moveToTrash' && !trashAcceleratorIsSafe(navigator.platform)
+    ? undefined
+    : definition.accelerator
   const shared = {
     id: definition.id,
     text: definition.label,
-    ...(definition.accelerator === undefined ? {} : { accelerator: definition.accelerator }),
+    ...(accelerator === undefined ? {} : { accelerator }),
     enabled: state.enabled,
   }
   const activate = (): void => {

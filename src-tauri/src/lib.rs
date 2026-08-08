@@ -25,9 +25,9 @@ use std::path::{Component, Path, PathBuf};
 // capabilities: iOS forbids spawning processes and offers no `notify` backend.
 #[cfg(desktop)]
 use std::process::Command;
+use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 #[cfg(desktop)]
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, TryRecvError};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{Arc, Mutex};
 // Not desktop-only: the watcher was its first user, but the AI request timeout
 // needs it on every platform. Gating it broke the iOS build the moment that
@@ -277,24 +277,18 @@ pub struct WriteLedger(Arc<Mutex<HashMap<PathBuf, u64>>>);
 pub struct NoteWatchControl(Mutex<Option<ActiveNoteWatch>>);
 
 struct ActiveNoteWatch {
-    /// Only the desktop watcher compares paths; iOS keeps the registry so the
-    /// managed state and the stop/replace commands stay one shape.
-    #[cfg_attr(mobile, allow(dead_code))]
     path: PathBuf,
     stop: Sender<()>,
 }
 
-#[cfg(desktop)]
 fn watcher_was_stopped(stop: &Receiver<()>) -> bool {
     matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected))
 }
 
-#[cfg(desktop)]
 fn active_note_watch_matches(active: &Option<ActiveNoteWatch>, path: &Path) -> bool {
     active.as_ref().is_some_and(|watch| watch.path == path)
 }
 
-#[cfg(desktop)]
 fn replace_active_note_watch(
     active: &mut Option<ActiveNoteWatch>,
     path: PathBuf,
@@ -378,10 +372,8 @@ async fn default_workspace() -> Result<Option<WorkspaceCatalog>, String> {
 fn icloud_documents() -> Option<PathBuf> {
     use objc2_foundation::NSFileManager;
 
-    // SAFETY: a Foundation call with no arguments beyond a null identifier,
-    // which asks for the app's default container as declared in entitlements.
-    let container = unsafe { NSFileManager::defaultManager().URLForUbiquityContainerIdentifier(None) }?;
-    let path = unsafe { container.path() }?;
+    let container = NSFileManager::defaultManager().URLForUbiquityContainerIdentifier(None)?;
+    let path = container.path()?;
     // `Documents` is the one subdirectory iCloud Drive shows to a person; the
     // rest of a ubiquity container stays private to the application.
     let documents = PathBuf::from(path.to_string()).join("Documents");
@@ -1380,20 +1372,137 @@ fn watch_workspace_folder(app: AppHandle, handle: String) -> Result<(), String> 
 /// device are not detected on iOS**, which means ADR-0006's external-bytes
 /// adapter currently has no mobile input. This is a known, named gap, not a
 /// working watcher.
+/// How often iOS looks for somebody else's write.
+///
+/// `notify` has no iOS backend, and the push alternatives do not fit what this
+/// has to watch: a `dispatch` vnode source dies when an atomic save replaces
+/// the inode, and `NSMetadataQuery` only ever sees the iCloud container, not
+/// the on-device folder the app falls back to. So this asks, on an interval
+/// slow enough to be invisible on a battery and quick enough that a note edited
+/// on a Mac appears while you are still looking at the phone.
+///
+/// It is a poll, and the comment says so rather than the name pretending
+/// otherwise. `NSFilePresenter` would replace the trigger without touching any
+/// of the meaning below — same ledger comparison, same coalescing, same event.
+#[cfg(mobile)]
+const MOBILE_WATCH_INTERVAL: Duration = Duration::from_millis(1500);
+
+/// Reports when somebody other than this process writes the open note.
+///
+/// Deliberately the same shape as the desktop watcher, because the difference
+/// between them must stay in how a change is noticed and never in what a change
+/// means: content is hashed and compared against the write ledger so this app's
+/// own saves are silent, and the event carries only the path — the shared
+/// application layer decides what a change implies.
 #[cfg(mobile)]
 #[tauri::command]
 fn watch_note(
-    _app: AppHandle,
-    _handle: String,
-    _ledger: State<'_, WriteLedger>,
-    _control: State<'_, NoteWatchControl>,
+    app: AppHandle,
+    handle: String,
+    ledger: State<'_, WriteLedger>,
+    control: State<'_, NoteWatchControl>,
 ) -> Result<(), String> {
+    let path = PathBuf::from(&handle);
+
+    let mut active = control
+        .0
+        .lock()
+        .map_err(|_| "The note watcher registry was poisoned by an earlier panic".to_string())?;
+    if active_note_watch_matches(&active, &path) {
+        return Ok(());
+    }
+
+    let (stop_sender, stop_receiver) = channel::<()>();
+    replace_active_note_watch(&mut active, path.clone(), stop_sender);
+    drop(active);
+
+    let ledger = ledger.inner().clone();
+    std::thread::spawn(move || {
+        // Whatever is on disk when watching starts is the baseline, not a
+        // change. Reading it here means the first poll cannot mistake the file
+        // you just opened for somebody else's edit.
+        let mut seen = fs::read(&path).ok().map(|bytes| content_hash(&bytes));
+
+        loop {
+            std::thread::sleep(MOBILE_WATCH_INTERVAL);
+            if watcher_was_stopped(&stop_receiver) {
+                break;
+            }
+
+            // iCloud materialises lazily, so a file can exist as a placeholder
+            // before its bytes arrive. A failed read is that state, not a
+            // deletion, and waiting is the honest response.
+            let Ok(current) = fs::read(&path) else {
+                continue;
+            };
+            let hash = content_hash(&current);
+            if seen == Some(hash) {
+                continue;
+            }
+            seen = Some(hash);
+
+            let ours = ledger
+                .0
+                .lock()
+                .map(|ledger| ledger.get(&path).copied() == Some(hash))
+                .unwrap_or(false);
+            if ours {
+                continue;
+            }
+
+            if let Some(summaries) = app.try_state::<note_summaries::SummaryState>() {
+                note_summaries::note_changed_externally(&summaries, &handle);
+            }
+
+            let _ = app.emit("note-changed-externally", handle.clone());
+        }
+    });
+
     Ok(())
 }
 
+/// Reports when the adopted folder gains or loses a Markdown file.
+///
+/// Membership only. The event names the folder and TypeScript re-lists it
+/// through the catalog port, which keeps filesystem observation out of the
+/// shared application model exactly as it is on desktop.
 #[cfg(mobile)]
 #[tauri::command]
-fn watch_workspace_folder(_app: AppHandle, _handle: String) -> Result<(), String> {
+fn watch_workspace_folder(app: AppHandle, handle: String) -> Result<(), String> {
+    let directory = PathBuf::from(&handle);
+    if !directory.is_dir() {
+        return Err(format!("{handle} is not a readable folder"));
+    }
+
+    // Names rather than a count: a note renamed, or one swapped for another
+    // between polls, leaves the count identical and the folder different.
+    let membership = |directory: &Path| -> Vec<String> {
+        let Ok(entries) = fs::read_dir(directory) else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| is_markdown(path))
+            .filter_map(|path| path.file_name().map(|name| name.to_string_lossy().into_owned()))
+            .collect();
+        names.sort();
+        names
+    };
+
+    std::thread::spawn(move || {
+        let mut seen = membership(&directory);
+        loop {
+            std::thread::sleep(MOBILE_WATCH_INTERVAL);
+            let current = membership(&directory);
+            if current == seen {
+                continue;
+            }
+            seen = current;
+            let _ = app.emit("workspace-folder-changed", directory.display().to_string());
+        }
+    });
+
     Ok(())
 }
 

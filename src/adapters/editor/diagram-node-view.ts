@@ -262,6 +262,7 @@ export class DiagramNodeView implements NodeView {
     this.#expand.className = 'diagram-expand'
     this.#expand.type = 'button'
     this.#expand.textContent = 'Open figure'
+    this.#expand.title = 'Open figure'
     this.#expand.addEventListener('click', (event) => {
       event.preventDefault()
       event.stopPropagation()
@@ -275,6 +276,7 @@ export class DiagramNodeView implements NodeView {
       this.#grip = document.createElement('div')
       this.#grip.className = 'diagram-resize-grip'
       this.#grip.setAttribute('aria-label', 'Resize chart')
+      this.#grip.title = 'Drag to resize'
       this.#grip.addEventListener('pointerdown', this.#beginResize)
       this.dom.append(this.#grip)
     }
@@ -691,6 +693,7 @@ export class DiagramNodeView implements NodeView {
       button.type = 'button'
       button.className = `diagram-chip${extra === undefined ? '' : ` ${extra}`}`
       button.setAttribute('aria-label', label)
+      button.title = label
       button.innerHTML = icon
       button.addEventListener('click', (event) => {
         event.preventDefault()
@@ -736,6 +739,15 @@ export class DiagramNodeView implements NodeView {
         if (value !== null && !roomToWrap) button.disabled = true
         chips.append(button)
       }
+    }
+
+    // The always-visible `.diagram-expand` button hides while selected — it
+    // shares the top-right corner with this very toolbar and the two
+    // collide on a too-wide figure (final review: chip-chrome vs. wide-figure
+    // affordance). A chip keeps `#openViewer` reachable in both states
+    // instead of losing the action while selected.
+    if (this.dom.classList.contains('has-wide-figure')) {
+      chips.append(chip('Open figure', '⤢', () => this.#openViewer()))
     }
 
     chips.append(

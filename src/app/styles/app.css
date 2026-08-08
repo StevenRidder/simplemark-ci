@@ -2739,6 +2739,30 @@ section.editor::-webkit-scrollbar {
 }
 
 /*
+ * A `NodeSelection` leaves a real DOM Range spanning the whole figure, so
+ * without this the browser's native text-selection highlight washes across
+ * the rendered svg, its labels, and every chip — nothing else in the app
+ * imports `prosemirror-view`'s own `*::selection { background: transparent }`
+ * reset. Scoped to `.is-selected` so a diagram's text stays normally
+ * copyable — and keeps its native highlight — the rest of the time.
+ */
+.diagram.is-selected ::selection {
+  background: transparent;
+}
+
+/*
+ * The label, chips, resize grip, and Open-figure button are controls, never
+ * copy-text — `user-select: none` keeps a stray drag from starting a text
+ * selection on them at all, selected or not.
+ */
+.diagram-label,
+.diagram-chips,
+.diagram-resize-grip,
+.diagram-expand {
+  user-select: none;
+}
+
+/*
  * The grip appears only on a selected svg figure: selection is the mode in
  * which the block is an object rather than a drawing. Bottom-right, the
  * macOS-native corner.
@@ -3935,6 +3959,19 @@ section.editor::-webkit-scrollbar {
   display: block;
 }
 
+/*
+ * Selecting a too-wide figure puts `.diagram-chips` in the same top-right
+ * corner `.diagram-expand` already occupies — both anchor `top`/`right` (§2
+ * chip-chrome vs. the wide-figure affordance above), and collide. The chips
+ * are the active mode's controls; `.diagram-expand` steps aside rather than
+ * fight them for the corner. The action is not lost: `#buildChips`
+ * (diagram-node-view.ts) adds an "Open figure" chip to this very toolbar
+ * whenever `.has-wide-figure` is set, so `#openViewer` stays reachable.
+ */
+.diagram.has-wide-figure.is-selected .diagram-expand {
+  display: none;
+}
+
 .diagram-expand:hover {
   color: var(--ink);
 }
@@ -3945,40 +3982,44 @@ section.editor::-webkit-scrollbar {
   position: fixed;
   z-index: 200;
   inset: 0;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
   background: color-mix(in srgb, var(--ink) 92%, transparent);
-  /* The browser's own pan and zoom would fight the gesture handling below. */
-  touch-action: none;
-  overscroll-behavior: contain;
+}
+
+/*
+ * The drawing renders at its own natural size (set inline on the cloned svg
+ * by figure-viewer.ts), so anything bigger than the screen has to scroll
+ * rather than shrink to fit — the same "scroll beats shrink" rule
+ * `.diagram-render.is-wide` already follows in the document. `pan-x pan-y`
+ * (rather than the default `auto`) keeps a single-finger touch swipe as a
+ * plain scroll while still letting pointer events reach the pinch-to-zoom
+ * handling in figure-viewer.ts for a second finger.
+ */
+.figure-viewer-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: pan-x pan-y;
 }
 
 .figure-viewer-stage {
   /* Transformed on every gesture frame, so it must not also be laying out. */
   will-change: transform;
   transform-origin: center center;
-  max-width: 100vw;
   padding: 24px;
 }
 
 .figure-viewer-stage svg {
   display: block;
-  /*
-   * A definite width, not `auto`. The clone arrives stripped of the width the
-   * document gave it so that the screen decides instead — but an SVG with only
-   * a `viewBox` has no intrinsic size, so `auto` inside a centred grid item
-   * collapsed it to nothing. The viewBox then scales the drawing to this width
-   * and the aspect ratio follows.
-   */
-  width: calc(100vw - 48px);
-  height: auto;
   border-radius: 10px;
   background: var(--paper);
 }
 
 .figure-viewer-close {
   position: absolute;
+  z-index: 1;
   top: calc(14px + env(safe-area-inset-top));
   right: 16px;
   min-height: 36px;
@@ -3989,6 +4030,38 @@ section.editor::-webkit-scrollbar {
   color: var(--ink);
   font: 500 14px var(--sans);
   cursor: pointer;
+}
+
+/*
+ * Same −/%/+ pattern as `.diagram-chips`' own zoom segment (§2 chip-chrome),
+ * transplanted here: this scale is local to the viewer and never touches the
+ * block's own `#zoom`, so leaving the viewer never changes how the diagram
+ * sits in the document.
+ */
+.figure-viewer-zoom {
+  position: absolute;
+  z-index: 1;
+  top: calc(14px + env(safe-area-inset-top));
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.figure-viewer-zoom-btn {
+  min-height: 36px;
+  min-width: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 14px var(--sans);
+  cursor: pointer;
+}
+
+.figure-viewer-zoom-level {
+  font-variant-numeric: tabular-nums;
 }
 
 .figure-viewer-hint {

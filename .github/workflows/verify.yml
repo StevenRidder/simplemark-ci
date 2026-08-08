@@ -25,10 +25,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The browser suite is the long pole on the hosted runner. Spread the suite
-  # across eight independent runners with a light two-worker pool; this preserves
-  # the required `gate` context while keeping each hosted runner's Vite server
-  # and Chromium processes below its CPU ceiling.
+  # The browser suite is the long pole on the hosted runner. Spread the ordinary
+  # specs across eight independent runners with a light two-worker pool; the
+  # styles-bar file gets its own test-level-parallel job below because Playwright
+  # cannot split one file when fullyParallel is false.
   browser:
     if: github.event_name == 'merge_group'
     name: browser (${{ matrix.shard }}/8)
@@ -56,7 +56,12 @@ jobs:
       - name: Run browser shard
         env:
           PLAYWRIGHT_WORKERS: '2'
-        run: npm run test:ui -- --shard=${{ matrix.shard }}/8
+        run: |
+          specs=()
+          while IFS= read -r spec; do
+            specs+=("$spec")
+          done < <(find tests/ui -maxdepth 1 -name '*.spec.ts' ! -name 'styles-bar.spec.ts' -print | sort)
+          npx playwright test "${specs[@]}" --shard=${{ matrix.shard }}/8
 
       - name: Upload Playwright receipt
         if: ${{ always() }}
@@ -66,8 +71,41 @@ jobs:
           path: .artifacts/ui-playwright-receipt.json
           if-no-files-found: warn
 
+  styles:
+    if: github.event_name == 'merge_group'
+    name: browser (styles-bar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies and Chromium
+        run: npm ci && npx playwright install --with-deps chromium
+
+      - name: Run styles-bar tests in parallel
+        env:
+          PLAYWRIGHT_WORKERS: '2'
+        run: npm run test:ui -- tests/ui/styles-bar.spec.ts --fully-parallel
+
+      - name: Upload Playwright receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: ui-playwright-${{ github.sha }}-styles-bar
+          path: .artifacts/ui-playwright-receipt.json
+          if-no-files-found: warn
+
   gate:
-    needs: [browser]
+    needs: [browser, styles]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     # The merge-group browser suite runs in the shard matrix above. Ten minutes
@@ -111,9 +149,9 @@ jobs:
         run: npm ci && if [ "$GITHUB_EVENT_NAME" != "merge_group" ]; then npx playwright install --with-deps chromium; fi
 
       - name: Verify browser shard matrix
-        if: github.event_name == 'merge_group' && needs.browser.result != 'success'
+        if: github.event_name == 'merge_group' && (needs.browser.result != 'success' || needs.styles.result != 'success')
         run: |
-          echo "The merge-group browser shard matrix did not pass: ${{ needs.browser.result }}" >&2
+          echo "The merge-group browser suite did not pass: shards=${{ needs.browser.result }}, styles=${{ needs.styles.result }}" >&2
           exit 1
 
       - name: Run the SimpleMark ${{ github.event_name == 'pull_request' && 'admission gate' || 'merge-group gate' }}

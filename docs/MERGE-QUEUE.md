@@ -14,7 +14,8 @@ GitHub owns the queue, rebase, squash merge, and resulting merge commit.
 The required check keeps the same name in both places so branch protection and the
 queue have one stable contract. The full run is triggered by GitHub's `merge_group`
 event, not by an agent or a second queue service. Its browser suite runs as eight
-independent shards (two Playwright workers per shard), then the required `gate`
+independent two-worker shards, with the styles-bar file isolated into a ninth
+two-worker job that can use test-level parallelism safely. The required `gate`
 job aggregates those results with the non-UI checks.
 
 ## Operator flow

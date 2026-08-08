@@ -16,6 +16,12 @@ and technical material live inline on one calm page. Untouched source is preserv
 session. It is not the canonical product demo; that watched-file demo is specified in
 [`docs/PRODUCT.md`](docs/PRODUCT.md). Regenerate with `npm run demo` while `npm run dev` is up.*
 
+![Project Tanoa: a fictional Fulaga microgrid commissioning field report rendering a sourced map, live reserve forecast, battery Sankey, terminal evidence, and a fault tree, with a contextual source correction, all in one unbroken take](docs/assets/project-tanoa-showcase.gif)
+
+*The flagship showcase: [Project Tanoa](docs/showcase/project-tanoa.md), a fictional 2032 field
+report, opened in the native shell, corrected in place, and re-opened — the same renderer set under
+one continuous narrative rather than isolated snippets. Recorded with `npm run showcase:tanoa`.*
+
 In practice: Codex, Claude, or another tool writes `plan.md`; SimpleMark opens that exact file as a
 beautiful technical document and refreshes it cleanly as the file changes. Raw Mermaid, a raw
 `<svg>`, DOT, LaTeX, Vega-Lite, tables, code, charts, and ANSI captures render natively. The source
@@ -35,6 +41,18 @@ Cross-platform test builds and the release-trust gate are in review.
 Not done: the renderer-first product proof end to end, the one-real-day dogfood that picks the
 default workflow, and the multi-client authority decision.
 
+### iOS — first working prototype
+
+![The same note, Project Tanoa's storm atlas, open side by side in the macOS app and the first iOS prototype](docs/assets/ios-prototype-storm-atlas.png)
+
+Tapping a note on iPhone used to do nothing. A single unguarded `await` in the native-menu setup
+was silently killing the app's mount before the operation queue existed to report it. That is
+fixed, along with the synthetic welcome row that had no real note behind it. The document above —
+[Project Tanoa](docs/showcase/project-tanoa.md), rendering its checklist and Sankey diagram — is
+the same file, open and reading correctly on both. iOS is still the weak spot: no menubar, no
+conflict or error frames yet, and external file changes made on the Mac aren't detected there. See
+[`docs/DESIGN.md`](docs/DESIGN.md) for the platform's open questions.
+
 ## What works today
 
 ### The document canvas
@@ -53,7 +71,9 @@ Vega-Lite charts from inline data *or* note-relative data files · ANSI terminal
 syntax-highlighted code via lowlight · text cards · a composite renderer that combines them.
 
 Large Markdown tables render under a budget with deferral, so a huge table stays responsive instead
-of freezing the page. Diagrams size to their column and their detail sheet closes itself.
+of freezing the page. Diagrams size to their column and their detail sheet closes itself. A diagram
+that fails to render shows its error inline with a **Copy** button and an **AI Fix-it** action,
+instead of leaving stale or blank markup behind.
 
 ### Paste
 
@@ -64,8 +84,11 @@ The sniffers are deliberately bounded so they cannot swallow a whole Markdown do
 ### Files and workspace
 
 - Open any `.md` file directly — no import, no vault, no workspace choice.
-- Folder and note browsing with collections, pins, and selection state.
-- Native draft save and rename; **Show in Finder** for notes and folders.
+- Folder and note browsing with collections, pins, selection state, and an extracted preview on
+  every row instead of a placeholder — a deterministic summary everywhere, upgraded to Apple's
+  on-device Foundation Models on macOS 26+ Apple silicon.
+- Native draft save, **Save As**, and rename; a **Move to Trash** keyboard shortcut; **Show in
+  Finder** for notes and folders.
 - Note-relative asset and document-link resolution, so images and cross-links work from the file's
   own location.
 - External-change watching (`watch_note`) with a superseding operation queue, so a burst of agent
@@ -79,8 +102,9 @@ bar, and temporary reader navigation.
 ### Portable document commands
 
 Clipboard exports in portable formats and structural corrections that survive the round trip, both
-reachable from a right-click. Native macOS menus, menu services, and context menu are preserved
-rather than replaced.
+reachable from a right-click, including a **Paragraph** command that lifts a list item fully out of
+every enclosing list back to plain text. Native macOS menus, menu services, and context menu are
+preserved rather than replaced.
 
 ### Desktop and release
 

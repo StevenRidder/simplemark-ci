@@ -29,9 +29,10 @@ use std::process::Command;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
-#[cfg(desktop)]
-use std::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
+// Not desktop-only: the watcher was its first user, but the AI request timeout
+// needs it on every platform. Gating it broke the iOS build the moment that
+// timeout landed.
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;

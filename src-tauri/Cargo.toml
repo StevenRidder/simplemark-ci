@@ -37,6 +37,12 @@ notify = "6"
 trash = "5"
 tauri-plugin-single-instance = "2"
 
+# The ubiquity container is a Foundation call with no Tauri equivalent, so iOS
+# needs the same objc2 bridge macOS already uses — a much smaller slice of it.
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSFileManager", "NSString", "NSURL"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSApplication", "NSEvent", "NSMenu", "NSMenuItem", "NSResponder", "NSUserInterfaceItemIdentification", "NSButton", "NSControl", "NSImage", "NSView", "NSWindow"] }

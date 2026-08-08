@@ -364,13 +364,50 @@ async fn default_workspace() -> Result<Option<WorkspaceCatalog>, String> {
     Ok(None)
 }
 
+/// The app's folder in iCloud Drive, when the platform will grant one.
+///
+/// `URLForUbiquityContainerIdentifier` answers `nil` for every honest reason a
+/// person might have — signed out of iCloud, iCloud Drive switched off, the
+/// entitlement not granted to this build — and none of them is an error worth
+/// reporting. The caller falls back to the on-device folder, which is a smaller
+/// promise that still works.
+///
+/// It can block while the daemon sets the container up, which is why this is
+/// only ever reached from an async command rather than the UI thread.
+#[cfg(target_os = "ios")]
+fn icloud_documents() -> Option<PathBuf> {
+    use objc2_foundation::NSFileManager;
+
+    // SAFETY: a Foundation call with no arguments beyond a null identifier,
+    // which asks for the app's default container as declared in entitlements.
+    let container = unsafe { NSFileManager::defaultManager().URLForUbiquityContainerIdentifier(None) }?;
+    let path = unsafe { container.path() }?;
+    // `Documents` is the one subdirectory iCloud Drive shows to a person; the
+    // rest of a ubiquity container stays private to the application.
+    let documents = PathBuf::from(path.to_string()).join("Documents");
+    fs::create_dir_all(&documents).ok()?;
+    Some(documents)
+}
+
+#[cfg(all(mobile, not(target_os = "ios")))]
+fn icloud_documents() -> Option<PathBuf> {
+    None
+}
+
 #[cfg(mobile)]
 #[tauri::command]
 async fn default_workspace(app: AppHandle) -> Result<Option<WorkspaceCatalog>, String> {
-    let directory = app
-        .path()
-        .document_dir()
-        .map_err(|error| format!("This device exposed no documents directory: {error}"))?;
+    // iCloud first, because the same notes on a phone and a Mac is the whole
+    // point of the folder; on-device second, because a person without iCloud
+    // still has notes. Whichever answers, the shell receives one ordinary
+    // folder of Markdown and cannot tell the difference.
+    let directory = match icloud_documents() {
+        Some(icloud) => icloud,
+        None => app
+            .path()
+            .document_dir()
+            .map_err(|error| format!("This device exposed no documents directory: {error}"))?,
+    };
     workspace_catalog_for_directory(&directory).map(Some)
 }
 

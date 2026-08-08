@@ -1,0 +1,32 @@
+# CI for the public mirror.
+#
+# This is a standalone check for this clean, curated snapshot — it has no
+# native build, no signing, and no merge queue of its own. It exists so a
+# visitor sees a green badge and a fork gets a real gate, not so this repo
+# tracks the private canonical's release pipeline.
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run check:boundaries

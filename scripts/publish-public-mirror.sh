@@ -59,6 +59,7 @@ REQUIRED_PATHS=(
   src/adapters/editor/milkdown-editor.ts
   src/app/browser.ts
   tests/fixtures/01-hostile-markdown.md
+  .github/workflows/verify.yml
 )
 
 die() {
@@ -78,7 +79,11 @@ scan_tree() {
 
   rel_files="$(cd "$tree_dir" && find . -type f -not -path './.git/*' | sed 's#^\./##' | LC_ALL=C sort)"
 
-  if hits="$(printf '%s\n' "$rel_files" | grep -En "$HIDDEN_PATH_RE" || true)"; [ -n "$hits" ]; then
+  # .github/ is hidden wholesale by HIDDEN_PATH_RE because the private
+  # workflows reference signing and CI-sandbox mechanics. sanitize_export puts
+  # back exactly one file at that path — the mirror's own, unrelated CI — so
+  # the path check must not flag its own reintroduction.
+  if hits="$(printf '%s\n' "$rel_files" | grep -v '^\.github/workflows/verify\.yml$' | grep -En "$HIDDEN_PATH_RE" || true)"; [ -n "$hits" ]; then
     printf '%s\n' "$hits" >&2
     die "[$label] hidden private paths are present in export"
   fi
@@ -126,6 +131,13 @@ sanitize_export() {
   # The internal README links eight private documents; the mirror gets its own.
   cp "${ROOT}/scripts/mirror/README.public.md" "${dir}/README.md"
   cp "${ROOT}/scripts/mirror/LICENSE" "${dir}/LICENSE"
+
+  # The private workflows were just stripped wholesale with the rest of
+  # .github/ — they build signed native artifacts this repo cannot and never
+  # should. The mirror gets its own small, standalone gate instead of no CI
+  # at all.
+  mkdir -p "${dir}/.github/workflows"
+  cp "${ROOT}/scripts/mirror/verify.yml" "${dir}/.github/workflows/verify.yml"
 
   # Fixture 01 is a real internal document naming another product's modules.
   # Swap in a neutral file that exercises the same adversarial Markdown, and

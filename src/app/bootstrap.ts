@@ -245,8 +245,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       case 'save':
         void save(true)
         return
+      case 'saveAs':
+        void options.workspace?.onSaveNoteAs?.(options.workspace?.activeNoteId ?? '')
+        return
       case 'print':
         options.onPrint?.()
+        return
+      case 'moveToTrash':
+        void options.workspace?.onTrashNote?.(options.workspace?.activeNoteId ?? '')
         return
       case 'insertAsset':
         void insertAsset()
@@ -418,6 +424,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         enabled: options.workspace?.onTogglePinned !== undefined && active !== undefined,
         checked: active === undefined ? false : chrome.isPinned(active.id),
       }
+    }
+    if (id === 'saveAs') {
+      const active = options.workspace?.notes.find((note) => note.id === options.workspace?.activeNoteId)
+      return { enabled: options.workspace?.onSaveNoteAs !== undefined && active !== undefined, checked: false }
+    }
+    if (id === 'moveToTrash') {
+      const active = options.workspace?.notes.find((note) => note.id === options.workspace?.activeNoteId)
+      return { enabled: options.workspace?.onTrashNote !== undefined && active !== undefined, checked: false }
     }
     // A greyed-out Back is the honest answer when there is nowhere behind you,
     // and the menubar is where most people will discover these exist at all.

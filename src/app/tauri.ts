@@ -315,6 +315,7 @@ async function startNative(
     copyMarkdown,
     duplicateNote,
     exportNote,
+    saveNoteAs,
     closeNote,
     trashNote,
     revealInFinder,
@@ -640,6 +641,27 @@ async function startNative(
     if (handle === activeHandle && !(await flush())) return
     const exported = await invoke<boolean>('export_note', { handle })
     if (exported) current.setStatus('saved', 'Exported')
+  })
+
+  const saveNoteAs = (handle: string): Promise<void> => enqueue(async () => {
+    if (handle === DRAFT_NOTE_ID) {
+      current.setStatus('error', 'Save this note before using Save As')
+      return
+    }
+    if (handle === activeHandle && !(await flush())) return
+    const saved = await invoke<{ readonly handle: string } | null>('save_note_as', { handle })
+    if (saved === null) return
+    let destinationCollectionId = activeCollectionId
+    if (activeCollectionId !== 'recent') {
+      const refreshed = await catalogPort.listFolder(activeCollectionId)
+      collections.addFolder(refreshed)
+      if (!refreshed.notes.some((note) => note.handle === saved.handle)) {
+        destinationCollectionId = 'recent'
+      }
+    }
+    const port = new TauriFilePort(invoke)
+    const opened = await port.openAt(saved.handle)
+    await install(port, opened, destinationCollectionId)
   })
 
   const revealInFinder = async (handle: string): Promise<void> => {
@@ -1177,6 +1199,7 @@ interface CatalogActions {
   readonly copyMarkdown: (id: string) => Promise<void>
   readonly duplicateNote: (id: string) => Promise<void>
   readonly exportNote: (id: string) => Promise<void>
+  readonly saveNoteAs: (id: string) => Promise<void>
   readonly closeNote: (id: string) => Promise<void>
   readonly trashNote: (id: string) => Promise<void>
   readonly revealInFinder: (id: string) => Promise<void>
@@ -1218,6 +1241,7 @@ function catalogWorkspace(
     onCopyMarkdown: actions.copyMarkdown,
     onDuplicateNote: actions.duplicateNote,
     onExportNote: actions.exportNote,
+    onSaveNoteAs: actions.saveNoteAs,
     onCloseNote: actions.closeNote,
     onTrashNote: actions.trashNote,
     onRevealInFinder: actions.revealInFinder,

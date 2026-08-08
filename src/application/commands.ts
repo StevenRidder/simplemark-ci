@@ -90,9 +90,11 @@ export type DocumentCommandId =
   | 'openFolder'
   | 'newNote'
   | 'save'
+  | 'saveAs'
   | 'print'
   | 'find'
   | 'togglePinned'
+  | 'moveToTrash'
   // Go — moving between notes rather than within one
   | 'historyBack'
   | 'historyForward'
@@ -258,9 +260,11 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   openFolder: { id: 'openFolder', label: 'Open Folder…', target: 'shell' },
   newNote: { id: 'newNote', label: 'New Note', target: 'shell', accelerator: 'CmdOrCtrl+N' },
   save: { id: 'save', label: 'Save', target: 'shell', accelerator: 'CmdOrCtrl+S' },
+  saveAs: { id: 'saveAs', label: 'Save As…', target: 'shell', accelerator: 'CmdOrCtrl+Shift+S' },
   print: { id: 'print', label: 'Print…', target: 'shell', accelerator: 'CmdOrCtrl+P' },
   find: { id: 'find', label: 'Find in Document…', target: 'shell', accelerator: 'CmdOrCtrl+F' },
   togglePinned: { id: 'togglePinned', label: 'Pin to Top', target: 'shell', checkable: true },
+  moveToTrash: { id: 'moveToTrash', label: 'Move to Trash', target: 'shell', accelerator: 'CmdOrCtrl+Delete' },
 
   // Moving between notes, on ⌘⌥ plus the arrows.
   //
@@ -460,8 +464,9 @@ export interface MenuSpec {
 export const MENUS: readonly MenuSpec[] = [
   {
     label: 'File',
-    // Print sits alone at the bottom, the place every macOS File menu puts it.
-    sections: [['newNote'], ['openFolder', 'openFile'], ['save'], ['print']],
+    // Print and Move to Trash each sit alone, the destructive action kept
+    // apart from the rest of File the way macOS convention keeps it.
+    sections: [['newNote'], ['openFolder', 'openFile'], ['save', 'saveAs'], ['print'], ['moveToTrash']],
   },
   {
     label: 'Edit',

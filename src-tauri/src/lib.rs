@@ -807,6 +807,51 @@ async fn export_note(app: AppHandle, handle: String) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Copies `source`'s exact bytes to `destination` and reads the result back.
+///
+/// A destination equal to the source is not copied — `fs::copy` opens the
+/// destination for writing before it has finished reading the source, so
+/// copying a file onto itself risks truncating it mid-read.
+fn copy_note_to(source: &Path, destination: &Path) -> Result<OpenedNote, String> {
+    if destination == source {
+        return read_note(source);
+    }
+    fs::copy(source, destination).map_err(|error| {
+        format!(
+            "Could not save {} to {}: {error}",
+            source.display(),
+            destination.display()
+        )
+    })?;
+    read_note(destination)
+}
+
+/// Prompts for a new name/location and switches the document to the copy.
+///
+/// Unlike `duplicate_note`, the destination is the person's own choice, not
+/// an auto-generated "copy" name — the traditional desktop Save As.
+#[tauri::command]
+async fn save_note_as(app: AppHandle, handle: String) -> Result<Option<OpenedNote>, String> {
+    let source = PathBuf::from(&handle);
+    let name = source
+        .file_name()
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "note.md".to_string());
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter("Markdown", &["md", "markdown"])
+        .set_file_name(name)
+        .blocking_save_file();
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let destination = picked
+        .into_path()
+        .map_err(|error| format!("That destination has no writable path: {error}"))?;
+    copy_note_to(&source, &destination).map(Some)
+}
+
 #[cfg(desktop)]
 #[tauri::command]
 async fn trash_note(handle: String) -> Result<(), String> {
@@ -1389,6 +1434,7 @@ pub fn run() {
             rename_note,
             duplicate_note,
             export_note,
+            save_note_as,
             trash_note,
             reveal_in_finder,
             take_open_note_request,
@@ -1880,6 +1926,35 @@ mod tests {
             fs::read(directory.path().join("idea copy.md")).unwrap(),
             b"keep me"
         );
+    }
+
+    #[test]
+    fn copy_note_to_copies_bytes_to_a_new_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("idea.md");
+        fs::write(&source, b"# Exact\r\n\r\nbytes").unwrap();
+        let destination = directory.path().join("renamed idea.md");
+
+        let saved = copy_note_to(&source, &destination).unwrap();
+
+        assert_eq!(saved.name, "renamed idea.md");
+        assert_eq!(fs::read(&destination).unwrap(), b"# Exact\r\n\r\nbytes");
+        assert_eq!(fs::read(&source).unwrap(), b"# Exact\r\n\r\nbytes");
+    }
+
+    #[test]
+    fn copy_note_to_the_same_path_reads_without_copying() {
+        // fs::copy opens the destination for writing before it has finished
+        // reading the source, so copying a file onto itself risks truncating
+        // it mid-read. The same path must short-circuit instead.
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("idea.md");
+        fs::write(&source, b"# Exact\r\n\r\nbytes").unwrap();
+
+        let saved = copy_note_to(&source, &source).unwrap();
+
+        assert_eq!(saved.name, "idea.md");
+        assert_eq!(fs::read(&source).unwrap(), b"# Exact\r\n\r\nbytes");
     }
 
     #[cfg(target_os = "macos")]

@@ -194,6 +194,7 @@ export interface WorkspaceOptions {
   readonly onCopyMarkdown?: (id: string) => Promise<void>
   readonly onDuplicateNote?: (id: string) => Promise<void>
   readonly onExportNote?: (id: string) => Promise<void>
+  readonly onSaveNoteAs?: (id: string) => Promise<void>
   /** Removes a note from Recent Notes without touching its file. */
   readonly onCloseNote?: (id: string) => Promise<void>
   readonly onTrashNote?: (id: string) => Promise<void>

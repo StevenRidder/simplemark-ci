@@ -230,14 +230,26 @@ describe('the command registry', () => {
     expect(COMMANDS.zoomIn.accelerator).not.toContain('Plus')
   })
 
-  it('ends File with Print alone, where macOS puts it', () => {
-    // Its own section, so the menu renders a rule above it. Print grouped with
-    // Save reads as a second way to keep the file rather than a way out of it.
+  it('keeps Print its own section, and ends File with Move to Trash apart from it', () => {
+    // Print and Move to Trash each render their own rule. Print grouped with
+    // Save would read as a second way to keep the file rather than a way out
+    // of it; Move to Trash grouped with Print would read as a routine action
+    // rather than the destructive one macOS convention sets apart.
     const file = MENUS.find((menu) => menu.label === 'File')
-    expect(file!.sections.at(-1)).toEqual(['print'])
+    expect(file!.sections.at(-2)).toEqual(['print'])
+    expect(file!.sections.at(-1)).toEqual(['moveToTrash'])
     expect(COMMANDS.print.accelerator).toBe('CmdOrCtrl+P')
-    // The shell owns it: printing is an OS service, not an editor transaction,
-    // and nothing about it may reach the document.
+    // The shell owns both: printing is an OS service and trashing is a
+    // filesystem operation, neither an editor transaction.
     expect(COMMANDS.print.target).toBe('shell')
+    expect(COMMANDS.moveToTrash.accelerator).toBe('CmdOrCtrl+Delete')
+    expect(COMMANDS.moveToTrash.target).toBe('shell')
+  })
+
+  it('places Save As beside Save, with its own shortcut', () => {
+    const file = MENUS.find((menu) => menu.label === 'File')
+    expect(file!.sections).toContainEqual(['save', 'saveAs'])
+    expect(COMMANDS.saveAs.accelerator).toBe('CmdOrCtrl+Shift+S')
+    expect(COMMANDS.saveAs.target).toBe('shell')
   })
 })

@@ -726,6 +726,7 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
       command('Ordered List', 'orderedList'),
       command('Indent', 'indentListItem'),
       command('Outdent', 'outdentListItem'),
+      command('Paragraph', 'paragraph'),
       command('Block Quote', 'quote'),
       nestedMenu('Todo', (todo) => {
         todo.append(

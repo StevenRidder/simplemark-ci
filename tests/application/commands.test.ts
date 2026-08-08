@@ -68,6 +68,19 @@ describe('the command registry', () => {
     expect(first).toContain('link')
   })
 
+  it('adds Paragraph to the Structure group, alongside Indent and Outdent', () => {
+    expect(COMMANDS.paragraph).toBeDefined()
+    expect(COMMANDS.paragraph.label).toBe('Paragraph')
+    expect(COMMANDS.paragraph.target).toBe('editor')
+
+    const format = MENUS.find((menu) => menu.label === 'Format')!
+    const structure = format.sections.flat().find(
+      (entry): entry is { label: string; items: readonly DocumentCommandId[] } =>
+        typeof entry === 'object' && entry.label === 'Structure',
+    )!
+    expect(structure.items).toEqual(['indentListItem', 'outdentListItem', 'paragraph'])
+  })
+
   it('keeps the optional styles bar in View, not Format', () => {
     // It is a view preference, not a formatting authority.
     const view = MENUS.find((menu) => menu.label === 'View')

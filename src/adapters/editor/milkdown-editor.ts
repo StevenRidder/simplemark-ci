@@ -136,6 +136,7 @@ export type EditorCommandName =
   | 'moveCompletedTasks'
   | 'indentListItem'
   | 'outdentListItem'
+  | 'paragraph'
   | 'uppercase'
   | 'lowercase'
   | 'titleCase'
@@ -479,6 +480,9 @@ export class MilkdownEditor {
         return
       case 'outdentListItem':
         this.editor.action(callCommand(liftListItemCommand.key))
+        return
+      case 'paragraph':
+        this.liftListItemToParagraph()
         return
       case 'uppercase':
         this.transformSelectedText('uppercase')
@@ -1329,6 +1333,31 @@ export class MilkdownEditor {
         return
       }
     })
+  }
+
+  /**
+   * Lifts the current list item out of every enclosing list, regardless of
+   * nesting depth, leaving a plain paragraph. `liftListItemCommand` (also
+   * used by Outdent) only lifts one level per call — this keeps calling it
+   * until the selection is no longer inside a list_item at all, which is
+   * what Outdent alone does not do for nested items.
+   */
+  private liftListItemToParagraph(): void {
+    const inListItem = (): boolean =>
+      this.editor.action((ctx) => {
+        const { $from } = ctx.get(editorViewCtx).state.selection
+        for (let depth = $from.depth; depth > 0; depth -= 1) {
+          if ($from.node(depth).type.name === 'list_item') return true
+        }
+        return false
+      })
+
+    // A safety bound, not a meaningful limit: guards against looping forever
+    // if a malformed document keeps reporting "still in a list_item".
+    for (let guard = 0; guard < 50 && inListItem(); guard += 1) {
+      const lifted = this.editor.action(callCommand(liftListItemCommand.key))
+      if (!lifted) break
+    }
   }
 
   /** Applies a persistent highlight colour using readable `=={colour}text==` source. */

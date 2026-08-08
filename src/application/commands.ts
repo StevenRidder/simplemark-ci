@@ -54,6 +54,7 @@ export type DocumentCommandId =
   | 'moveCompletedTasks'
   | 'indentListItem'
   | 'outdentListItem'
+  | 'paragraph'
   | 'uppercase'
   | 'lowercase'
   | 'titleCase'
@@ -221,6 +222,7 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   moveCompletedTasks: { id: 'moveCompletedTasks', label: 'Move Completed to Bottom', target: 'editor' },
   indentListItem: { id: 'indentListItem', label: 'Indent', target: 'editor', accelerator: 'CmdOrCtrl+BracketRight' },
   outdentListItem: { id: 'outdentListItem', label: 'Outdent', target: 'editor', accelerator: 'CmdOrCtrl+BracketLeft' },
+  paragraph: { id: 'paragraph', label: 'Paragraph', target: 'editor' },
   uppercase: { id: 'uppercase', label: 'Upper Case', target: 'editor' },
   lowercase: { id: 'lowercase', label: 'Lower Case', target: 'editor' },
   titleCase: { id: 'titleCase', label: 'Title Case', target: 'editor' },
@@ -511,7 +513,7 @@ export const MENUS: readonly MenuSpec[] = [
         'divider',
       ],
       [
-        { label: 'Structure', items: ['indentListItem', 'outdentListItem'] },
+        { label: 'Structure', items: ['indentListItem', 'outdentListItem', 'paragraph'] },
         { label: 'Transform', items: ['uppercase', 'lowercase', 'titleCase'] },
         { label: 'Current Date', items: ['insertCurrentDate', 'insertLongDate', 'insertCurrentDateTime'] },
       ],

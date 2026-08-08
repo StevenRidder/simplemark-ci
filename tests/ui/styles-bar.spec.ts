@@ -107,7 +107,7 @@ test('every styles-bar menu mirrors Bear and every visible command is available'
   await bar.getByRole('button', { name: 'Lists', exact: true }).click()
   const lists = bar.locator('.styles-menu.open')
   await expect(lists.locator(':scope > .styles-control, :scope > .styles-nested-group > .styles-nested-trigger').allTextContents())
-    .resolves.toEqual(['List', 'Ordered List', 'Indent', 'Outdent', 'Block Quote', 'Todo›', 'Callout›', 'Separator'])
+    .resolves.toEqual(['List', 'Ordered List', 'Indent', 'Outdent', 'Paragraph', 'Block Quote', 'Todo›', 'Callout›', 'Separator'])
   await lists.locator('.styles-nested-trigger').filter({ hasText: 'Todo' }).hover()
   await expect(lists.getByRole('button', { name: 'Todo', exact: true })).toHaveCount(2)
   await expect(lists.getByRole('button', { name: 'Mark as Completed' })).toBeEnabled()
@@ -163,6 +163,9 @@ test('portable structure corrections survive as ordinary Markdown', async ({ pag
   await expect.poll(() => markdown(page)).toMatch(/[*-] parent\n\s{2,}[*-] child/)
   await listCommand('Outdent')
   await expect.poll(() => markdown(page)).toMatch(/[*-] parent\n[*-] child/)
+  await listCommand('Paragraph')
+  await expect.poll(() => markdown(page)).toMatch(/^child$/m)
+  await expect.poll(() => markdown(page)).not.toMatch(/[*-]\s*child/)
 
   await page.evaluate(() => window.simplemark!.editor.focusEnd())
   await page.keyboard.press('Enter')
@@ -178,6 +181,67 @@ test('portable structure corrections survive as ordinary Markdown', async ({ pag
   await page.keyboard.press('Enter')
   await moreNested('Current Date', 'Current Date')
   await expect.poll(() => markdown(page)).toMatch(/\d{4}-\d{2}-\d{2}/)
+})
+
+test('Paragraph lifts a list item out of every enclosing list, no matter how deep', async ({ page }) => {
+  // A top-level item, mid-list: the list splits around it into two lists
+  // with a bare paragraph in between.
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('alpha')
+  await page.evaluate(() => window.simplemark!.run('bulletList' as never))
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('beta')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('gamma')
+  await expect.poll(() => markdown(page)).toMatch(/[*-] alpha\n[*-] beta\n[*-] gamma/)
+
+  // Click directly on "beta" rather than navigating there with Home+ArrowUp:
+  // a relative keyboard move depends on ProseMirror's layout being fully
+  // settled, which is not guaranteed under load, where a stale position can
+  // leave the cursor on "gamma" instead. A click targets real coordinates
+  // and Playwright auto-waits for the element to be actionable first.
+  await page.locator(editor).getByText('beta', { exact: true }).click()
+  // The click resolves once the browser has dispatched it, not once
+  // ProseMirror has finished folding the resulting selection change into its
+  // own state — under load that fold can lag. Poll the real DOM selection
+  // (not an app-internal API) until it has actually settled on "beta" before
+  // running a command that reads the current selection.
+  await expect.poll(() =>
+    page.evaluate(() => window.getSelection()?.anchorNode?.textContent ?? null),
+  ).toContain('beta')
+  await page.evaluate(() => window.simplemark!.run('paragraph' as never))
+  await expect.poll(() => markdown(page)).toMatch(/[*-] alpha\n+beta\n+[*-] gamma/)
+
+  // A nested item, two levels deep: fully exits every enclosing list, not
+  // just one — unlike Outdent, which would only move it up one level.
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('top')
+  await page.evaluate(() => window.simplemark!.run('bulletList' as never))
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('mid')
+  await page.evaluate(() => window.simplemark!.run('indentListItem' as never))
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('bottom')
+  await page.evaluate(() => window.simplemark!.run('indentListItem' as never))
+  await page.evaluate(() => window.simplemark!.run('indentListItem' as never))
+  await expect.poll(() => markdown(page)).toMatch(/[*-] top\n\s{2,}[*-] mid\n\s{4,}[*-] bottom/)
+
+  await page.evaluate(() => window.simplemark!.run('paragraph' as never))
+  await expect.poll(() => markdown(page)).toMatch(/^bottom$/m)
+  await expect.poll(() => markdown(page)).not.toMatch(/[*-]\s*bottom/)
+
+  // A task-list item: becomes a plain paragraph and loses its checkbox.
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('finish task')
+  await page.evaluate(() => window.simplemark!.run('taskList' as never))
+  await expect.poll(() => markdown(page)).toMatch(/[*-] \[ \] finish task/)
+
+  await page.evaluate(() => window.simplemark!.run('paragraph' as never))
+  await expect.poll(() => markdown(page)).toMatch(/^finish task$/m)
+  await expect.poll(() => markdown(page)).not.toMatch(/\[ \]/)
 })
 
 test('Todo, Callout, and every highlighter item perform persistent edits', async ({ page }) => {

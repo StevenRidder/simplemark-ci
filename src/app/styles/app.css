@@ -3831,3 +3831,41 @@ section.editor::-webkit-scrollbar {
     display: none;
   }
 }
+
+/* The paste-trim offer (DESIGN.md §4.2). Calm, non-modal, and ignorable:
+   the faithful paste is already on the page and costs one ⌘Z.
+   `--soft`, `--line` and `--ink-2` are this file's surface/rule/muted-text
+   tokens (tokens.css) — there is no `--surface-raised` / `--rule` /
+   `--text-muted` here, so those are what `.diagram-error`'s neighbours
+   (`.note-item:hover`, `.info-outline button:hover`) already use for the
+   same roles. */
+.page-trim-offer {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0 0 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+.page-trim-offer-label {
+  flex: 1;
+  color: var(--ink-2);
+}
+
+.page-trim-offer button {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.page-trim-offer button:hover {
+  background: var(--line);
+}

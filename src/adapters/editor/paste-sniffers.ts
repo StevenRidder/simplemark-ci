@@ -25,7 +25,10 @@ import {
   svgToCodeFenceHtml,
   tsvToMarkdownTable,
 } from '../../domain/index.js'
-import type { DiagramRenderer } from '../../application/index.js'
+import type { DiagramRenderer, NoteImageStore } from '../../application/index.js'
+import { captureRemoteImages, remoteImageSources } from './image-capture.js'
+import { looksLikeFullPagePaste } from './page-trim.js'
+import { offerPageTrim } from './page-trim-offer.js'
 
 /**
  * The DESIGN.md §4 paste pipeline.
@@ -155,6 +158,8 @@ export function claimPaste(
 
 export interface PasteSnifferOptions {
   readonly renderer: DiagramRenderer
+  /** Absent in hosts that cannot keep images beside the note. */
+  readonly images?: NoteImageStore
 }
 
 export const pasteSniffers = (options: PasteSnifferOptions) =>
@@ -234,7 +239,23 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
           if (language !== undefined) code.parentElement?.setAttribute('data-language', language)
         })
         const slice = ProseDOMParser.fromSchema(view.state.schema).parseSlice(dom.body)
-        view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView())
+
+        const from = view.state.selection.from
+        let tr = view.state.tr.replaceSelection(slice).scrollIntoView()
+        // A whole web page keeps its faithful shape and is offered a trim
+        // (§4.2). The offer rides on the paste transaction so it appears with
+        // the content rather than a frame later.
+        if (looksLikeFullPagePaste(html)) {
+          tr = offerPageTrim(tr, { from, to: tr.selection.from, html })
+        }
+        view.dispatch(tr)
+
+        // Pictures follow the paste (ADR-0008). Sources are collected from what
+        // was inserted, and each rewrite finds its own node again by src.
+        const sources = remoteImageSources(slice.content)
+        if (options.images !== undefined && sources.length > 0) {
+          void captureRemoteImages(view, options.images, sources)
+        }
         return true
       } catch {
         return false

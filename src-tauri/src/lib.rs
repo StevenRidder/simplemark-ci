@@ -56,6 +56,7 @@ mod macos_traffic_lights;
 #[cfg(target_os = "macos")]
 mod macos_zoom;
 
+pub mod note_images;
 pub mod note_preview;
 pub mod note_summaries;
 
@@ -1702,7 +1703,9 @@ pub fn run() {
             stop_watching_note,
             watch_workspace_folder,
             note_summaries::note_summaries_available,
-            note_summaries::request_note_summaries
+            note_summaries::request_note_summaries,
+            note_images::download_note_image,
+            note_images::read_note_asset
         ])
         .build(tauri::generate_context!())
         .expect("SimpleMark failed to start");

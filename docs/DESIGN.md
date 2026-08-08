@@ -208,6 +208,8 @@ A sniffer may convert **only** when all four hold:
 |---|---|
 | Clipboard has `text/html` wrapping an `<svg>` | `svg-in-html` claims it. HTML path is not consulted. |
 | Clipboard `text/html` carries document structure (a heading, list, table, two or more paragraphs, or any mark) | **HTML path.** Real headings, marks, lists and tables. An inline `<svg>` becomes an `svg` block in place. |
+| Clipboard `text/html` references remote images | **HTML path, then local.** The faithful paste lands with its remote URLs; each image is downloaded into `assets/` beside the note and its reference rewritten to `![alt](assets/<hash>.<ext>)` by a later transaction, outside undo history ([`ADR-0008`](decisions/0008-pasted-images-become-local-files.md)). A download that fails or is declined keeps the remote URL, visibly unchanged. |
+| Clipboard `text/html` is a whole web page wrapped around an article | **HTML path, unchanged, plus an explicit offer.** A dismissible "trim page chrome?" bar appears; accepting replaces the pasted range in one undoable step with the extracted article, and a source URL detected in the clipboard is prepended as `> Source: …`. Never automatic, and declining leaves the faithful paste. |
 | Clipboard `text/html` is only a wrapper, or absent | Markdown path on `text/plain`. A plain-text copy of Markdown source must still parse as Markdown (BUG-1). |
 | Multi-block paste (prose + a ```mermaid fence + a table) | Markdown path. Fences convert per-block after parsing. Bare unfenced diagram source inside a larger paste stays text. |
 | Prose beginning with the word "graph" | `mermaid.parse()` rejects it; stays text. |

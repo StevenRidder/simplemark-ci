@@ -5,6 +5,7 @@ import type {
   DiagramRenderer,
   DocumentLinkPort,
   FilePort,
+  ImageStorePort,
 } from '../application/index.js'
 import {
   codeFenceContent,
@@ -65,6 +66,8 @@ export interface AppPorts {
    * what happened before FIDELITY-1 and remains the honest fallback.
    */
   readonly blockBoundaries?: BlockBoundaryPort
+  /** Absent in hosts that cannot keep images beside the note. */
+  readonly images?: ImageStorePort
 }
 
 export interface AppComposition {
@@ -694,6 +697,15 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
             chrome.setStatus('error', `Could not open link — ${message}`)
           }
         },
+    }),
+    // The document handle is bound at call time, not at construction: the open
+    // note changes under a long-lived port, and a handle captured once would
+    // resolve every later capture against whichever note was open at startup.
+    ...(ports.images === undefined ? {} : {
+      images: {
+        store: (url: string) => ports.images!.store(session.documentHandle(), url),
+        read: (href: string) => ports.images!.read(session.documentHandle(), href),
+      },
     }),
     onMarkdownChanged: (markdown) => {
       const before = session.snapshot()

@@ -158,6 +158,49 @@ export interface ChartDataReader {
   read(href: string): Promise<string>
 }
 
+/** An image stored beside the open note, as the reference written into Markdown. */
+export interface StoredImage {
+  /** Always a note-relative path such as `assets/3f9a1c2b7d4e5f60.png`. */
+  readonly src: string
+}
+
+/** Bytes of a note-relative image, for display only — never written to Markdown. */
+export interface LoadedImage {
+  readonly bytes: Uint8Array
+  readonly mediaType: string
+}
+
+/**
+ * Stores remote images beside the open note and reads them back for display
+ * (ADR-0008).
+ *
+ * The packaged app's content policy blocks both a remote `<img>` and a webview
+ * `fetch`, so a pasted article's pictures can only work if the shell downloads
+ * them and the note references them relatively. A port rather than a direct
+ * call because the halves live in different adapters — the editor decides which
+ * sources to capture, the native side fetches and writes — and adapters do not
+ * import one another (ADR-0001 §Enforcement 3).
+ *
+ * The document handle travels per call, as it does for `DocumentLinkPort`: the
+ * open note changes under a long-lived port, and a handle captured at
+ * construction would resolve against whichever note was open at startup.
+ *
+ * Absent in hosts that cannot write next to the document. A paste there keeps
+ * the remote URL it arrived with, unchanged and visible.
+ */
+export interface ImageStorePort {
+  /** Download `url` into the note's `assets/` folder. `null` declines — keep the remote URL. */
+  store(documentHandle: string, url: string): Promise<StoredImage | null>
+  /** Read a note-relative image for rendering. `null` when it is not available. */
+  read(documentHandle: string, href: string): Promise<LoadedImage | null>
+}
+
+/** The same capability with the open note already bound, as the editor sees it. */
+export interface NoteImageStore {
+  store(url: string): Promise<StoredImage | null>
+  read(href: string): Promise<LoadedImage | null>
+}
+
 /** What a copy places on the clipboard, keyed by MIME type. */
 export interface ClipboardPayload {
   readonly 'text/plain': string

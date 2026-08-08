@@ -33,7 +33,7 @@ import {
   footnoteDefinitionSchema,
   footnoteReferenceSchema,
 } from '@milkdown/kit/preset/gfm'
-import { $useKeymap, $view, callCommand, getMarkdown } from '@milkdown/kit/utils'
+import { $prose, $useKeymap, $view, callCommand, getMarkdown } from '@milkdown/kit/utils'
 import { DOMSerializer, Fragment } from '@milkdown/kit/prose/model'
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { toggleMark } from '@milkdown/kit/prose/commands'
@@ -51,7 +51,13 @@ import {
 } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 
-import type { AssetReference, ClipboardPort, DiagramFixPort, DiagramRenderer } from '../../application/index.js'
+import type {
+  AssetReference,
+  ClipboardPort,
+  DiagramFixPort,
+  DiagramRenderer,
+  NoteImageStore,
+} from '../../application/index.js'
 import { looksLikeMermaid, looksLikeSvg } from '../../domain/index.js'
 import { AssetImageNodeView } from './asset-image-node-view.js'
 import { codeBlockMetaSchema } from './code-fence-meta.js'
@@ -75,6 +81,7 @@ import { inlineMathSchema, InlineMathNodeView } from './inline-math.js'
 import { toggleUnderlineCommand, underlineRemark, underlineSchema } from './underline-mark.js'
 import { wikiLinkSchema, wikiRemark } from './wiki-link.js'
 import { pasteSniffers } from './paste-sniffers.js'
+import { pageTrimOfferPlugin } from './page-trim-offer.js'
 import {
   DEFERRED_TABLE_LANGUAGE,
   DeferredTableNodeView,
@@ -168,6 +175,8 @@ export interface MilkdownEditorOptions {
   readonly onOpenLink?: (href: string) => Promise<void>
   /** Copies a virtualised table through the shell's clipboard boundary. */
   readonly onCopyDeferredTable?: (source: string) => Promise<boolean>
+  /** Absent in hosts that cannot keep images beside the note. */
+  readonly images?: NoteImageStore
 }
 
 export class MilkdownEditor {
@@ -222,7 +231,7 @@ export class MilkdownEditor {
     })
     const imageView = $view(imageSchema.node, () => {
       return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
-        new AssetImageNodeView(node, view, getPos)
+        new AssetImageNodeView(node, view, getPos, options.images)
     })
 
     /**
@@ -283,7 +292,16 @@ export class MilkdownEditor {
       // Registered BEFORE clipboard. ProseMirror runs handlePaste in plugin
       // order and the first handler to return true wins, so the sniffer chain
       // must precede the clipboard plugin to see the payload at all.
-      .use(pasteSniffers({ renderer: options.renderer }))
+      .use(pasteSniffers({
+        renderer: options.renderer,
+        ...(options.images === undefined ? {} : { images: options.images }),
+      }))
+      // Rides on the same paste transaction as the sniffer chain's HTML path
+      // (§4.2): the trim offer bar decorates whatever that plugin marked.
+      // Gets the same bound image store as the sniffers: an accepted trim
+      // rebuilds content from the raw clipboard HTML, whose image sources are
+      // remote again, so it must be able to re-issue capture for them.
+      .use($prose(() => pageTrimOfferPlugin(options.images)))
       .use(clipboard)
       .use(listener)
       // Quiet gutter folding (EDITOR-3). View state only: a fold hides content

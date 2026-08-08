@@ -71,6 +71,7 @@ test('the recorder correction changes only the JSON floor and persists through s
   await openFile(page)
 
   const json = page.locator('.diagram').filter({ has: page.locator('.diagram-label', { hasText: 'json' }) })
+  await json.locator('.diagram-render').click()
   await json.getByRole('button', { name: 'Edit source' }).click()
   const source = page.locator('.diagram-source-sheet:not([hidden]) .diagram-source')
   await expect(source).toHaveValue(/"reserve_floor": 0\.35/u)

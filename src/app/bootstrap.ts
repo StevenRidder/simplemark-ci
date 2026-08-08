@@ -15,6 +15,7 @@ import {
 } from '../domain/index.js'
 import { DocumentSession } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
+import type { DiagramController } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
 import { createFindBar } from './ui/find-bar.js'
 import type { EditorCommand } from './ui/window-chrome.js'
@@ -74,6 +75,13 @@ export interface AppComposition {
   readonly element: HTMLElement
   readonly session: DocumentSession
   readonly editor: MilkdownEditor
+  /**
+   * §4 of the chip-chrome spec: the diagram verb surface, delegating to the
+   * editor. Every verb answers `false` (or `null` for `kind()`) before the
+   * editor mounts, the same honest-before-ready shape `run`/`commandState`
+   * already keep.
+   */
+  readonly diagram: DiagramController
   /** Tears down the editor and presentation observers before remounting. */
   destroy(): Promise<void>
   /** Flushes any pending debounced save. `false` leaves the current document in place. */
@@ -184,11 +192,45 @@ export interface ComposeOptions {
   readonly onNativeContextMenu?: (
     shape: { readonly inTable: boolean; readonly inCode: boolean },
   ) => void
+  /**
+   * Passed straight through to `MilkdownEditor.mount` — see its own doc for
+   * what "selection change" covers. The native shell is the one caller today:
+   * the Format → Diagram submenu needs to repaint on this, not only on its
+   * own commands running (final review Finding 1).
+   */
+  readonly onSelectionChange?: () => void
 }
 
 const STYLES_BAR_KEY = 'simplemark.styles-bar-visible'
 const STYLES_BAR_POSITION_KEY = 'simplemark.styles-bar-position'
 const WORKSPACE_MODE_KEY = 'simplemark.workspace-mode'
+
+/**
+ * §4 of the chip-chrome spec: the Format → Diagram submenu ids, and the two
+ * refinements past "a diagram block is selected" that `commandState` applies
+ * — float needs `svg` or a `generated` diagram (refused on `math` and the
+ * paste-exhaust `text` kind alike), zoom needs a `generated` diagram.
+ */
+const DIAGRAM_COMMAND_IDS: ReadonlySet<DocumentCommandId> = new Set([
+  'diagramEditSource',
+  'diagramFloatLeft',
+  'diagramFloatRight',
+  'diagramFloatInline',
+  'diagramDelete',
+  'diagramZoomIn',
+  'diagramZoomOut',
+  'diagramZoomReset',
+])
+const DIAGRAM_FLOAT_COMMAND_IDS: ReadonlySet<DocumentCommandId> = new Set([
+  'diagramFloatLeft',
+  'diagramFloatRight',
+  'diagramFloatInline',
+])
+const DIAGRAM_ZOOM_COMMAND_IDS: ReadonlySet<DocumentCommandId> = new Set([
+  'diagramZoomIn',
+  'diagramZoomOut',
+  'diagramZoomReset',
+])
 
 export async function composeApp(options: ComposeOptions): Promise<AppComposition> {
   const { ports } = options
@@ -239,6 +281,35 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
           },
         )
         return
+      }
+      // §4 of the chip-chrome spec: these route to the diagram controller —
+      // the one behavior surface the chips and the app API also call —
+      // rather than the editor's own EditorCommandName switch.
+      switch (id) {
+        case 'diagramEditSource':
+          editor?.diagram.editSource()
+          return
+        case 'diagramFloatLeft':
+          editor?.diagram.setFloat('left')
+          return
+        case 'diagramFloatRight':
+          editor?.diagram.setFloat('right')
+          return
+        case 'diagramFloatInline':
+          editor?.diagram.setFloat(null)
+          return
+        case 'diagramDelete':
+          editor?.diagram.delete()
+          return
+        case 'diagramZoomIn':
+          editor?.diagram.zoomIn()
+          return
+        case 'diagramZoomOut':
+          editor?.diagram.zoomOut()
+          return
+        case 'diagramZoomReset':
+          editor?.diagram.zoomReset()
+          return
       }
       editor?.runCommand(id as Parameters<MilkdownEditor['runCommand']>[0])
       return
@@ -465,6 +536,26 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       return { enabled: true, checked: chrome.historyNavigationVisible() }
     }
 
+    // §4 of the chip-chrome spec: enabled only while a diagram block is
+    // selected, refined by which verbs that diagram's kind supports — float
+    // is unavailable on `math`, zoom needs a `generated` diagram.
+    if (DIAGRAM_COMMAND_IDS.has(id)) {
+      const kind = editor?.diagram.kind() ?? null
+      if (kind === null) return { enabled: false, checked: false }
+      // Final review Finding 2: float (and, by the identical rule,
+      // `MilkdownEditor#diagram.setWidth`) only ever acts on svg or a
+      // zoomable generated diagram. `kind === 'math'` alone used to be the
+      // whole check, back when 'math' was the only kind besides those two —
+      // now that a paste-exhaust text card (json, ansi, …) is its own 'text'
+      // kind rather than falling through to 'generated', it needs the same
+      // refusal math already got.
+      if (DIAGRAM_FLOAT_COMMAND_IDS.has(id) && kind !== 'svg' && kind !== 'generated') {
+        return { enabled: false, checked: false }
+      }
+      if (DIAGRAM_ZOOM_COMMAND_IDS.has(id) && kind !== 'generated') return { enabled: false, checked: false }
+      return { enabled: true, checked: false }
+    }
+
     // Reader typography: always available, since the document is always there.
     // Each entry is a thunk rather than a value — building the whole table
     // eagerly would read note-list state on the way to answering about `bold`,
@@ -680,6 +771,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     renderer: ports.diagrams,
     ...(ports.clipboard === undefined ? {} : { clipboard: ports.clipboard }),
     ...(ports.diagramFix === undefined ? {} : { diagramFix: ports.diagramFix }),
+    ...(options.onSelectionChange === undefined ? {} : { onSelectionChange: options.onSelectionChange }),
     onCopyDeferredTable: async (source) => {
       try {
         if (options.copyDeferredTable !== undefined) return await options.copyDeferredTable(source)
@@ -889,6 +981,16 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   return {
     element: chrome.element,
     run: runCommand,
+    diagram: {
+      kind: () => editor?.diagram.kind() ?? null,
+      setWidth: (px: number | null) => editor?.diagram.setWidth(px) ?? false,
+      setFloat: (side: 'left' | 'right' | null) => editor?.diagram.setFloat(side) ?? false,
+      delete: () => editor?.diagram.delete() ?? false,
+      editSource: () => editor?.diagram.editSource() ?? false,
+      zoomIn: () => editor?.diagram.zoomIn() ?? false,
+      zoomOut: () => editor?.diagram.zoomOut() ?? false,
+      zoomReset: () => editor?.diagram.zoomReset() ?? false,
+    },
     applyNoteSummary: (handle, summary) => chrome.applyNoteSummary(handle, summary),
     runNativeContextCommand: (command) => {
       void copySelection(command, nativeContextSelection)

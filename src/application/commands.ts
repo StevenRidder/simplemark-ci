@@ -67,6 +67,16 @@ export type DocumentCommandId =
   | 'table'
   | 'insertAsset'
   | 'convertToDiagram'
+  // Diagram block verbs (chip-chrome spec §4) — the Format → Diagram
+  // submenu, gated on a diagram block being selected (bootstrap.ts).
+  | 'diagramEditSource'
+  | 'diagramFloatLeft'
+  | 'diagramFloatRight'
+  | 'diagramFloatInline'
+  | 'diagramDelete'
+  | 'diagramZoomIn'
+  | 'diagramZoomOut'
+  | 'diagramZoomReset'
   | 'moveBlockUp'
   | 'moveBlockDown'
   | 'insertCurrentDate'
@@ -235,6 +245,18 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   table: { id: 'table', label: 'Table', target: 'editor' },
   insertAsset: { id: 'insertAsset', label: 'Insert Image…', target: 'shell' },
   convertToDiagram: { id: 'convertToDiagram', label: 'Convert to Diagram', target: 'editor' },
+
+  // Diagram block verbs (chip-chrome spec §4): no accelerators — reachable
+  // from the chips (Task 2), this submenu, and the app API.
+  diagramEditSource: { id: 'diagramEditSource', label: 'Edit source', target: 'editor' },
+  diagramFloatLeft: { id: 'diagramFloatLeft', label: 'Float left', target: 'editor' },
+  diagramFloatRight: { id: 'diagramFloatRight', label: 'Float right', target: 'editor' },
+  diagramFloatInline: { id: 'diagramFloatInline', label: 'Inline', target: 'editor' },
+  diagramDelete: { id: 'diagramDelete', label: 'Delete diagram', target: 'editor' },
+  diagramZoomIn: { id: 'diagramZoomIn', label: 'Zoom in', target: 'editor' },
+  diagramZoomOut: { id: 'diagramZoomOut', label: 'Zoom out', target: 'editor' },
+  diagramZoomReset: { id: 'diagramZoomReset', label: 'Reset zoom', target: 'editor' },
+
   moveBlockUp: { id: 'moveBlockUp', label: 'Move Block Up', target: 'editor', accelerator: 'CmdOrCtrl+Shift+Up' },
   moveBlockDown: {
     id: 'moveBlockDown',
@@ -524,7 +546,23 @@ export const MENUS: readonly MenuSpec[] = [
         { label: 'Transform', items: ['uppercase', 'lowercase', 'titleCase'] },
         { label: 'Current Date', items: ['insertCurrentDate', 'insertLongDate', 'insertCurrentDateTime'] },
       ],
-      ['insertAsset', 'convertToDiagram'],
+      [
+        'insertAsset',
+        'convertToDiagram',
+        {
+          label: 'Diagram',
+          items: [
+            'diagramEditSource',
+            'diagramFloatLeft',
+            'diagramFloatRight',
+            'diagramFloatInline',
+            'diagramDelete',
+            'diagramZoomIn',
+            'diagramZoomOut',
+            'diagramZoomReset',
+          ],
+        },
+      ],
       ['moveBlockUp', 'moveBlockDown'],
     ],
   },

@@ -27,6 +27,7 @@ import { VegaLiteRenderer } from '../adapters/renderers/vega-lite-renderer.js'
 import type { FilePort, WorkspaceCatalog } from '../application/index.js'
 import { suggestedMarkdownFileName } from '../domain/index.js'
 import { installNativeMenu } from './ui/native-menu.js'
+import type { NativeMenuHandle } from './ui/native-menu.js'
 import type { MacosTextServiceId } from './ui/native-menu.js'
 import { createSettingsPanel } from './ui/settings-panel.js'
 import type { SettingsPanel } from './ui/settings-panel.js'
@@ -1042,6 +1043,41 @@ async function mount(
   const chatCompletionTransport: ChatCompletionTransport = (baseUrl, apiKey, model, messages) =>
     invoke('ai_chat_completion', { baseUrl, apiKey, model, messages })
 
+  // Final review Finding 1: the native menubar's Format → Diagram ids only
+  // ever repainted from inside a menu action's own `activate` — a bare
+  // selection change (a click, an arrow key) never touched it, so those 8
+  // ids sat permanently disabled, or stale-enabled from whatever the last
+  // menu click happened to leave behind. `nativeMenu` is assigned once
+  // `installNativeMenu` resolves, below; `onSelectionChange` closes over the
+  // variable rather than a snapshot, since the menu does not exist yet at
+  // this point in `mount`. Debounced because a selection changes on every
+  // keystroke too (the caret moves) — this keeps a fast run of typing to one
+  // native round trip, not one per character.
+  //
+  // Fix-wave review: `mount` runs once per opened note, each preceded by
+  // `await current.destroy()` — so a timer armed just before a note switch
+  // can fire after this composition's editor is torn down. `repaint()` reads
+  // `commandState` → `editor.diagram.kind()` → the Milkdown ctx, which
+  // throws once that ctx is destroyed. Two belts: `compositionTornDown` is
+  // this composition's own liveness flag, set the moment its `destroy()`
+  // runs (wrapped below), where belt 1 also cancels whatever timer is
+  // currently pending — between the two, the ordinary case never reaches the
+  // callback at all. Belt 2 is the flag itself, checked inside the callback:
+  // it is what catches a timer `scheduleMenuRepaint` arms *after* `destroy()`
+  // has already run — a late, out-of-order selection-change event, say —
+  // which belt 1's one-time `clearTimeout` cannot have seen coming.
+  let nativeMenu: NativeMenuHandle | undefined
+  let menuRepaintTimer: ReturnType<typeof setTimeout> | undefined
+  let compositionTornDown = false
+  const scheduleMenuRepaint = (): void => {
+    if (menuRepaintTimer !== undefined) clearTimeout(menuRepaintTimer)
+    menuRepaintTimer = setTimeout(() => {
+      menuRepaintTimer = undefined
+      if (compositionTornDown) return
+      nativeMenu?.repaint()
+    }, 50)
+  }
+
   app = await composeApp({
     ports: {
       file,
@@ -1100,6 +1136,7 @@ async function mount(
     onNativeContextMenu: (shape) => {
       void invoke('set_native_context_menu_shape', { shape })
     },
+    onSelectionChange: scheduleMenuRepaint,
     // Phase 1 hands over the documented install rather than performing it
     // (docs/UPDATE-NOTIFICATION.md §6). One-click needs a signing key, a
     // published feed, and notarization; none of them exist, and an app that
@@ -1112,6 +1149,22 @@ async function mount(
         .catch(() => app.setStatus('error', 'Run: bash scripts/install-main.sh'))
     },
   })
+
+  // Belt 1 of the fix-wave review fix, above: cancel the pending repaint
+  // timer in the same place this composition is torn down, mirroring
+  // `composeApp`'s own `saveTimer`/`destroy()` convention (bootstrap.ts) —
+  // done here rather than inside `composeApp` itself since the timer is a
+  // native-shell-only concern `composeApp` (shared with the browser build)
+  // has no reason to know about.
+  const composedDestroy = app.destroy.bind(app)
+  app.destroy = async () => {
+    compositionTornDown = true
+    if (menuRepaintTimer !== undefined) {
+      clearTimeout(menuRepaintTimer)
+      menuRepaintTimer = undefined
+    }
+    await composedDestroy()
+  }
 
   root.replaceChildren(app.element)
   window.simplemark = app
@@ -1146,7 +1199,7 @@ async function mount(
   // Losing the menubar must cost exactly the menubar, the same way losing
   // provenance does just above.
   try {
-    await installNativeMenu({
+    nativeMenu = await installNativeMenu({
       run: (command) => menuApp().run(command),
       state: (command) => menuApp().commandState(command),
       openSettings: () => options.settingsPanel.open(),

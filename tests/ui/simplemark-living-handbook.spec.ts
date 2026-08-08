@@ -54,6 +54,10 @@ async function replaceSource(
   before: string,
   after: string,
 ): Promise<void> {
+  // §2 of the chip-chrome spec: Edit source lives on the selection-triggered
+  // chip toolbar, not always in the DOM — select the block first, the same
+  // way diagram-frame.spec.ts and project-tanoa-showcase.spec.ts already do.
+  await block.locator('.diagram-render').click()
   await block.getByRole('button', { name: 'Edit source' }).click()
   const source = page.locator('.diagram-source-sheet:not([hidden]) .diagram-source')
   await source.fill((await source.inputValue()).replace(before, after))

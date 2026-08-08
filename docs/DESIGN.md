@@ -451,13 +451,13 @@ Every extension-rendered block shares one frame, so a future third-party block i
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ ⟨type⟩ · ⟨provenance⟩              [Edit source] [⧉] │  ← block bar, on hover
-├─────────────────────────────────────────────────────┤
-│              rendered output (NodeView)             │  ← extension owns this rect
+│ ⟨type⟩                                               │  ← language label, on hover
+│                               [Edit source] [Delete] │  ← chip toolbar, on selection
+│              rendered output (NodeView)              │  ← extension owns this rect
 └─────────────────────────────────────────────────────┘
 ```
 
-**Resolved by [`ADR-0003`](decisions/0003-rendered-block-frame.md)** during the first UI pass (EDITOR-1): the frame stays, and the block bar's controls fade in on hover or focus rather than sitting there permanently.
+**Resolved by [`ADR-0003`](decisions/0003-rendered-block-frame.md)** during the first UI pass (EDITOR-1): the frame stays. Hover now reveals only the language label in the corner; the block's own controls are a chip toolbar that appears once the block takes the selection, not a bar that fades in on hover. A diagram-capable block (svg or a generated chart) adds a zoom pill and a float segment to the same row, plus a resize grip at the corner, while it is selected — nothing sits in the frame permanently.
 
 ### 10.3 Block movement and continuation
 

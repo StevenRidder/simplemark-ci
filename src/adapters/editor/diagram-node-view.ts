@@ -1,3 +1,4 @@
+import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
@@ -55,6 +56,51 @@ export function formatDiagramErrorForCopy(language: string, source: string, erro
 }
 
 /**
+ * §6: zoom lives on generated renders only. Pasted SVGs resize instead.
+ *
+ * `graphviz` sits beside `dot` — `graphviz-renderer.ts`'s `languages: ['dot',
+ * 'graphviz']` are the same renderer, and this set had only ever grown `dot`.
+ * Final review, Minor 8: spec errata, fixed alongside the `kind()` rework
+ * below since both read this set.
+ */
+const ZOOMABLE_LANGUAGES: ReadonlySet<string> = new Set(['mermaid', 'dot', 'graphviz', 'vega-lite'])
+
+/**
+ * True for every language this NodeView treats as "zoomable" (§6). Exported
+ * so `MilkdownEditor#diagram.kind()` (milkdown-editor.ts) classifies through
+ * this same set instead of keeping its own copy that can drift from it —
+ * final review Finding 2.
+ */
+export function isZoomableLanguage(language: string): boolean {
+  return ZOOMABLE_LANGUAGES.has(language)
+}
+
+/**
+ * §2/§3 of the chip-chrome spec: "every diagram block" — svg plus every
+ * zoomable generated language — gets the grip, the float segment, and the
+ * context menu's float items. Math (and the paste-exhaust text cards that
+ * happen to share this NodeView: ansi/diff/json/tree/stacktrace) fall
+ * outside both sets and get neither, matching the minimal-chrome rule. One
+ * predicate for all three call sites so they cannot drift onto different
+ * sets, the same reasoning as `#floatRoomToWrap`.
+ */
+export function isDiagramLanguage(language: string): boolean {
+  return language === 'svg' || isZoomableLanguage(language)
+}
+
+/**
+ * Live NodeView handles, so view-state verbs (edit source, zoom) can reach
+ * the instance that owns the sheet and the transient zoom — state that lives
+ * only on the DOM/NodeView, never in the document `MilkdownEditor` can read
+ * with a transaction. `MilkdownEditor` holds the registry; each NodeView
+ * registers itself on construction and deregisters on `destroy()`.
+ */
+export interface DiagramViewRegistry {
+  register(view: DiagramNodeView): void
+  deregister(view: DiagramNodeView): void
+}
+
+/**
  * NodeView for a fenced code block whose language this renderer claims.
  *
  * The block renders as a picture and reveals its source on click — one frame,
@@ -87,9 +133,14 @@ export class DiagramNodeView implements NodeView {
   #menu: HTMLElement | undefined
   /** Transient reader state, like folding — never written to the document. */
   #zoom = 1
+  /** Lives inside `#chips`; rebuilt with it, so this is `undefined` whenever the block is not selected. */
   #zoomLevel: HTMLButtonElement | undefined
-  /** Cached so the click-guard and `stopEvent` don't re-query `.diagram-zoom` by string. */
-  #zoomControls: HTMLElement | undefined
+  /**
+   * §2 of the chip-chrome spec: the selection-triggered toolbar. Built in
+   * `selectNode()`, torn down in `deselectNode()`/`destroy()` — it exists only
+   * while the block is the current `NodeSelection`.
+   */
+  #chips: HTMLElement | undefined
   /**
    * Opens the figure full screen. Offered only on a figure too wide for its
    * column, because on one that already fits there is nothing to go and see.
@@ -97,7 +148,7 @@ export class DiagramNodeView implements NodeView {
   #expand: HTMLButtonElement | undefined
   /** Closes an open viewer, so tearing down the block takes it along. */
   #closeViewer: (() => void) | undefined
-  /** Present only on an `svg` block — resize is not offered for generated diagrams. */
+  /** Present on every diagram block (§3) — absent on math, which offers no resize. */
   #grip: HTMLElement | undefined
 
   readonly #render: HTMLElement
@@ -108,7 +159,6 @@ export class DiagramNodeView implements NodeView {
   readonly #errorMessage: HTMLElement
   readonly #copyButton: HTMLButtonElement
   readonly #fixButton: HTMLButtonElement
-  readonly #toggle: HTMLButtonElement
   readonly #close: HTMLButtonElement
 
   constructor(
@@ -120,6 +170,12 @@ export class DiagramNodeView implements NodeView {
     private readonly clipboard?: ClipboardPort,
     /** Backs the diagram-error box's Fix it button. Absent hides that button. */
     private readonly diagramFix?: DiagramFixPort,
+    /**
+     * Lets the `DiagramController` (milkdown-editor.ts) reach this instance's
+     * view-state verbs. Optional so a caller with no such registry — a future
+     * test, say — still constructs a working NodeView.
+     */
+    private readonly registry?: DiagramViewRegistry,
   ) {
     this.#node = node
 
@@ -129,15 +185,6 @@ export class DiagramNodeView implements NodeView {
     const label = document.createElement('span')
     label.className = 'diagram-label'
     label.textContent = node.attrs['language'] ?? 'diagram'
-
-    this.#toggle = document.createElement('button')
-    this.#toggle.className = 'edit-source'
-    this.#toggle.type = 'button'
-    this.#toggle.textContent = 'Edit source'
-    this.#toggle.addEventListener('click', (event) => {
-      event.preventDefault()
-      this.#setShowingSource(!this.#showingSource)
-    })
 
     this.#render = document.createElement('div')
     this.#render.className = 'diagram-render'
@@ -221,15 +268,10 @@ export class DiagramNodeView implements NodeView {
       this.#openViewer()
     })
 
-    this.dom.append(label, this.#toggle, this.#expand, this.#render, this.#error)
+    this.dom.append(label, this.#expand, this.#render, this.#error)
 
     const language = (node.attrs['language'] as string | undefined) ?? ''
-    if (DiagramNodeView.#ZOOMABLE.has(language)) {
-      this.#zoomControls = this.#buildZoomControls()
-      this.dom.append(this.#zoomControls)
-    }
-
-    if (language === 'svg') {
+    if (isDiagramLanguage(language)) {
       this.#grip = document.createElement('div')
       this.#grip.className = 'diagram-resize-grip'
       this.#grip.setAttribute('aria-label', 'Resize chart')
@@ -239,13 +281,14 @@ export class DiagramNodeView implements NodeView {
 
     this.#applyFloat()
 
-    // A click anywhere on the figure selects the block. The Edit-source button
-    // and the source sheet are excluded — `stopEvent` already treats those as
-    // ours, and selecting the block from them would fight the textarea.
+    // A click anywhere on the figure selects the block. The source sheet and
+    // the chip toolbar are excluded — `stopEvent` already treats those as
+    // ours, and selecting the block from them would fight the textarea or
+    // double-handle a chip's own click (Delete, say, which has already torn
+    // the block down by the time this bubbles up).
     this.dom.addEventListener('click', (event) => {
-      if (this.#toggle.contains(event.target as Node)) return
       if (this.#sheet.contains(event.target as Node)) return
-      if (this.#zoomControls?.contains(event.target as Node) === true) return
+      if (this.#chips?.contains(event.target as Node) === true) return
       if (this.#expand?.contains(event.target as Node) === true) return
       this.#selectBlock()
     })
@@ -264,10 +307,14 @@ export class DiagramNodeView implements NodeView {
     // to be answered again whenever the column changes: opening the sidebar,
     // resizing the window, changing text size. It also answers the first one —
     // the initial paint runs before layout, when there is no width to measure.
-    this.#resize = new ResizeObserver(() => this.#fitDiagram())
+    this.#resize = new ResizeObserver(() => {
+      this.#fitDiagram()
+      this.#refreshNarrow()
+    })
     this.#resize.observe(this.#render)
 
     void this.#paint()
+    this.registry?.register(this)
   }
 
   readonly #scheme: MediaQueryList | undefined
@@ -287,10 +334,22 @@ export class DiagramNodeView implements NodeView {
     this.#setShowingSource(false)
   }
 
+  /**
+   * §2 of the chip-chrome spec: "Escape or clicking prose deselects; chrome
+   * vanishes." Document-scoped and only while selected, same pattern as
+   * `#onEscape` above — the click-to-deselect half is ProseMirror's own
+   * default (any click on ordinary prose replaces the `NodeSelection`), so
+   * this only has to cover the keyboard half.
+   */
+  readonly #onSelectionEscape = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    this.#focusAfterBlock()
+  }
+
   #setShowingSource(showing: boolean): void {
     this.#showingSource = showing
     this.#sheet.hidden = !showing
-    this.#toggle.textContent = showing ? 'Done' : 'Edit source'
     if (showing) {
       document.addEventListener('keydown', this.#onEscape)
       this.#placeSheet()
@@ -383,6 +442,25 @@ export class DiagramNodeView implements NodeView {
   }
 
   /**
+   * §5: float is only offered while the rendered content leaves the prose
+   * real room — wrapping a sliver of text beside a wide chart reads as a bug.
+   * Shared by the context menu and the chip toolbar's float segment, so the
+   * two thresholds cannot drift apart.
+   *
+   * Fix round 2, Finding 1: measured against the column (`#columnWidth()`),
+   * not the figure's own render box — a floated figure is `width:
+   * fit-content`, so once already floated, `#render.clientWidth` had
+   * collapsed to ≈ the drawing's own width and this was never true again.
+   * Float left/right read as permanently disabled the moment a chart floated
+   * once.
+   */
+  #floatRoomToWrap(): boolean {
+    const svg = this.#render.querySelector('svg')
+    const effective = svg?.getBoundingClientRect().width ?? 0
+    return effective > 0 && effective <= this.#columnWidth() * 0.6
+  }
+
+  /**
    * The block's own context menu.
    *
    * `.note-context-menu` is the sidebar's menu styling, reused so this looks
@@ -418,19 +496,9 @@ export class DiagramNodeView implements NodeView {
     )
 
     const language = (this.#node.attrs['language'] as string | undefined) ?? ''
-    if (language === 'svg') {
+    if (isDiagramLanguage(language)) {
       const separator = document.createElement('hr')
-      const svg = this.#render.querySelector('svg')
-      const effective = svg?.getBoundingClientRect().width ?? 0
-      // §5: wrapping a sliver of text beside a wide chart reads as a bug, so
-      // float is only offered while the chart leaves the prose real room.
-      //
-      // Fix round 2, Finding 1: measured against the column, not the figure's
-      // own render box — a floated figure is `width: fit-content`, so once
-      // already floated, `#render.clientWidth` had collapsed to ≈ the
-      // drawing's own width and this was never true again. Float left/right
-      // read as permanently disabled the moment a chart floated once.
-      const roomToWrap = effective > 0 && effective <= this.#columnWidth() * 0.6
+      const roomToWrap = this.#floatRoomToWrap()
       const floatItem = (text: string, value: string | null): HTMLButtonElement => {
         const button = item(text, () => this.#commitLayout('float', value))
         if (value !== null && !roomToWrap) button.disabled = true
@@ -474,14 +542,24 @@ export class DiagramNodeView implements NodeView {
     if (event.key === 'Escape') this.#closeMenu()
   }
 
-  /** Selects the block, then removes it. */
+  /**
+   * Selects the block, then removes it.
+   *
+   * `closeHistory` stops this delete from being folded into whatever the
+   * user was just doing — e.g. the block's own conversion-from-paste — into
+   * one merged undo step. `prosemirror-history` groups transactions inside
+   * its `newGroupDelay` (500ms) by default, which a real reader's paste-then-
+   * decide-to-delete rarely beats but a script (a test, an agent) routinely
+   * does; deleting a block is a deliberate, distinct action and undoing it
+   * must not also revert the paste that created it.
+   */
   #deleteBlock(): void {
     const pos = this.getPos()
     if (pos === undefined) return
     const { state } = this.view
     const node = state.doc.nodeAt(pos)
     if (node === null) return
-    this.view.dispatch(state.tr.delete(pos, pos + node.nodeSize))
+    this.view.dispatch(closeHistory(state.tr.delete(pos, pos + node.nodeSize)))
     this.view.focus()
   }
 
@@ -557,7 +635,18 @@ export class DiagramNodeView implements NodeView {
     grip.addEventListener('pointerup', stop, { once: true })
   }
 
-  /** Rewrites one layout key in the fence meta through the editor. */
+  /**
+   * Rewrites one layout key in the fence meta through the editor.
+   *
+   * `setNodeMarkup` replaces the node's opening/closing "tag" as a structural
+   * step, so ProseMirror's default selection mapping reports the
+   * `NodeSelection`'s anchor deleted and strands the caret after the block —
+   * which would deselect the block, and with it the whole chip toolbar (§2:
+   * chips exist only while selected), the instant a layout chip was clicked.
+   * The node's size is unchanged, so `pos` is still valid in the
+   * post-transaction doc and the same transaction can restore the selection
+   * to it directly. Same bug, same fix, as `MilkdownEditor#layoutKey`.
+   */
   #commitLayout(key: string, value: string | null): void {
     const pos = this.getPos()
     if (pos === undefined) return
@@ -565,9 +654,9 @@ export class DiagramNodeView implements NodeView {
     const node = state.doc.nodeAt(pos)
     if (node === null) return
     const meta = withFenceMetaKey((node.attrs['meta'] as string | undefined) ?? '', key, value)
-    this.view.dispatch(
-      state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, meta }),
-    )
+    const transaction = state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, meta })
+    this.view.dispatch(transaction.setSelection(NodeSelection.create(transaction.doc, pos)))
+    this.view.focus()
   }
 
   /** float= drives layout classes; the stylesheet does the rest. */
@@ -577,30 +666,154 @@ export class DiagramNodeView implements NodeView {
     this.dom.classList.toggle('diagram--float-right', layout.float === 'right')
   }
 
-  #buildZoomControls(): HTMLElement {
-    const zoom = document.createElement('div')
-    zoom.className = 'diagram-zoom'
+  /**
+   * §2 of the chip-chrome spec: the selection-triggered toolbar. Built fresh
+   * in `selectNode()`, torn down in `deselectNode()`/`destroy()` — it exists
+   * only while the block is the current `NodeSelection`.
+   *
+   * Every action calls the same private methods `DiagramController`
+   * (milkdown-editor.ts) reaches (`#setShowingSource`, `#setZoom`,
+   * `#commitLayout`, `#deleteBlock`), so a chip click and an app-API call run
+   * identical code and cannot drift apart.
+   */
+  #buildChips(): HTMLElement {
+    const chips = document.createElement('div')
+    chips.className = 'diagram-chips'
+    const language = this.language()
+    const zoomable = isZoomableLanguage(language)
+    // §2's table: float is offered on every diagram block — svg and every
+    // zoomable generated language — and withheld only from the minimal-chrome
+    // set (math, and the paste-exhaust text cards: ansi/diff/json/tree/stacktrace).
+    const floatable = isDiagramLanguage(language)
 
-    const button = (label: string, text: string, run: () => void): HTMLButtonElement => {
-      const el = document.createElement('button')
-      el.type = 'button'
-      el.setAttribute('aria-label', label)
-      el.textContent = text
-      el.addEventListener('click', (event) => {
+    const chip = (label: string, icon: string, run: () => void, extra?: string): HTMLButtonElement => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = `diagram-chip${extra === undefined ? '' : ` ${extra}`}`
+      button.setAttribute('aria-label', label)
+      button.innerHTML = icon
+      button.addEventListener('click', (event) => {
         event.preventDefault()
         run()
       })
-      return el
+      return button
     }
 
-    this.#zoomLevel = button('Reset zoom', '100%', () => this.#setZoom(1))
-    this.#zoomLevel.className = 'diagram-zoom-level'
-    zoom.append(
-      button('Zoom out', '−', () => this.#setZoom(this.#zoom / DiagramNodeView.#ZOOM_STEP)),
-      this.#zoomLevel,
-      button('Zoom in', '+', () => this.#setZoom(this.#zoom * DiagramNodeView.#ZOOM_STEP)),
+    chips.append(
+      chip(
+        'Edit source',
+        '<span class="chip-glyph" aria-hidden="true">&lt;/&gt;</span><span class="chip-label">Edit source</span>',
+        () => this.#setShowingSource(true),
+      ),
     )
-    return zoom
+
+    if (zoomable) {
+      chips.append(chip('Zoom out', '−', () => this.#setZoom(this.#zoom / DiagramNodeView.#ZOOM_STEP)))
+      this.#zoomLevel = chip(
+        'Reset zoom',
+        `${Math.round(this.#zoom * 100)}%`,
+        () => this.#setZoom(1),
+        'diagram-zoom-level',
+      )
+      chips.append(this.#zoomLevel)
+      chips.append(chip('Zoom in', '+', () => this.#setZoom(this.#zoom * DiagramNodeView.#ZOOM_STEP)))
+    }
+
+    if (floatable) {
+      const layout = parseFenceLayout((this.#node.attrs['meta'] as string | undefined) ?? '')
+      const roomToWrap = this.#floatRoomToWrap()
+      const floatEntries: ReadonlyArray<readonly [string, string, 'left' | 'right' | null]> = [
+        ['Float left', '⇤', 'left'],
+        ['Inline', '▭', null],
+        ['Float right', '⇥', 'right'],
+      ]
+      for (const [floatLabel, icon, value] of floatEntries) {
+        const active = (layout.float ?? null) === value
+        const button = chip(floatLabel, icon, () => this.#commitLayout('float', value), active ? 'is-active' : undefined)
+        // Lets `#refreshChipState` find these again after a rebuild-free
+        // `update()` without re-deriving each button's own meaning by index.
+        button.dataset['floatValue'] = value ?? ''
+        if (value !== null && !roomToWrap) button.disabled = true
+        chips.append(button)
+      }
+    }
+
+    chips.append(
+      chip(
+        'Delete diagram',
+        '<span class="chip-glyph" aria-hidden="true">✕</span><span class="chip-label">Delete</span>',
+        () => this.#deleteBlock(),
+        'diagram-chip-danger',
+      ),
+    )
+
+    // Task 4 §2: a chart already rendering under 420px (a small pasted svg,
+    // say) starts collapsed rather than waiting for the next render or
+    // resize to notice.
+    chips.classList.toggle('is-narrow', this.#isNarrow())
+
+    return chips
+  }
+
+  /**
+   * Re-syncs the parts of `#chips` that can go stale without a full rebuild:
+   * the active float segment and the zoom readout. Called from `#paint()`'s
+   * two outcomes — an undo, an API call, another chip's own commit all flow
+   * through `update()`, which always repaints — so a toolbar left standing
+   * across one keeps agreeing with the document instead of showing whatever
+   * was true when it was first built.
+   *
+   * Deliberately not called from `update()` itself: `#floatRoomToWrap()`
+   * reads the rendered svg's own box, which `#paint()` has not redrawn yet
+   * at that point (`void this.#paint()` is fire-and-forget) — a synchronous
+   * call there was re-syncing the float segment's disabled state against
+   * the *previous* render, one update behind, and never got another chance
+   * to correct itself once the new render actually landed. Found via TDD: a
+   * generated diagram resized narrow enough to float still reported its
+   * chip Float button disabled.
+   */
+  #refreshChipState(): void {
+    if (this.#chips === undefined) return
+    if (this.#zoomLevel !== undefined) {
+      this.#zoomLevel.textContent = `${Math.round(this.#zoom * 100)}%`
+    }
+    const layout = parseFenceLayout((this.#node.attrs['meta'] as string | undefined) ?? '')
+    const active = layout.float ?? null
+    const roomToWrap = this.#floatRoomToWrap()
+    for (const button of this.#chips.querySelectorAll<HTMLButtonElement>('[data-float-value]')) {
+      const raw = button.dataset['floatValue'] ?? ''
+      const value: 'left' | 'right' | null = raw === '' ? null : (raw as 'left' | 'right')
+      button.classList.toggle('is-active', active === value)
+      button.disabled = value !== null && !roomToWrap
+    }
+  }
+
+  /**
+   * Task 4 §2: how small "too small to spare the words" means — measured
+   * the same way `#floatRoomToWrap` measures room to wrap, the rendered
+   * drawing's own box, not the figure's or `#render`'s (both stay
+   * column-width whenever the block isn't floated, regardless of how
+   * narrow the chart inside them actually renders). Falls back to the
+   * render box for the non-svg text cards, which have no drawing of their
+   * own to measure — those only go narrow with the reading column itself.
+   */
+  #isNarrow(): boolean {
+    const svg = this.#render.querySelector('svg')
+    const effective = svg?.getBoundingClientRect().width ?? this.#render.clientWidth
+    return effective > 0 && effective < DiagramNodeView.#NARROW_BELOW
+  }
+
+  /**
+   * Re-syncs `.diagram-chips`' `is-narrow` class against the current render.
+   * Called from every path that can change the diagram's own rendered width
+   * — the ResizeObserver (the column resizing), `#setZoom`, and `#paint`'s
+   * two outcomes (a committed width, an undo, any other node update) — so a
+   * toolbar left standing across one of those keeps agreeing with what's
+   * actually on screen.
+   */
+  #refreshNarrow(): void {
+    if (this.#chips === undefined) return
+    this.#chips.classList.toggle('is-narrow', this.#isNarrow())
   }
 
   #setZoom(next: number): void {
@@ -616,10 +829,9 @@ export class DiagramNodeView implements NodeView {
       this.#zoomLevel.textContent = `${Math.round(this.#zoom * 100)}%`
     }
     this.#fitDiagram()
+    this.#refreshNarrow()
   }
 
-  /** §6: zoom lives on generated renders only. Pasted SVGs resize instead. */
-  static readonly #ZOOMABLE = new Set(['mermaid', 'dot', 'vega-lite'])
   static readonly #ZOOM_STEP = 1.25
   static readonly #ZOOM_MIN = 0.5
   static readonly #ZOOM_MAX = 4
@@ -650,6 +862,9 @@ export class DiagramNodeView implements NodeView {
   /** §4: the floor a drag (or a hand-typed `width=`) may shrink an svg block to. */
   static readonly #MIN_WIDTH = 120
 
+  /** Task 4 §2: below this rendered width, chip labels collapse to icons. */
+  static readonly #NARROW_BELOW = 420
+
   /**
    * Decides between filling the column and keeping natural size.
    *
@@ -679,6 +894,16 @@ export class DiagramNodeView implements NodeView {
 
     const language = (this.#node.attrs['language'] as string | undefined) ?? ''
 
+    // §3 of the chip-chrome spec: width= means the same thing on any diagram
+    // block now, not just svg — the fill base a generated diagram zooms from
+    // becomes its committed width once one exists, floored the same way a
+    // drag already floors it. Hoisted so both branches below (and the svg
+    // tail further down) read one parse of the meta, not three.
+    const layout = parseFenceLayout((this.#node.attrs['meta'] as string | undefined) ?? '')
+    const base = layout.width !== undefined
+      ? Math.max(layout.width, DiagramNodeView.#MIN_WIDTH)
+      : Math.min(available, DiagramNodeView.#FILL_CAP)
+
     // An explicit zoom is the reader's own choice and wins over the
     // natural-width "wide" default below — a dense diagram that already
     // trips `#WIDEST_SQUEEZE` is exactly the one a reader reaches for zoom
@@ -689,15 +914,14 @@ export class DiagramNodeView implements NodeView {
     // `zoom === 1` skips this and falls through to today's wide/svg/fill
     // ruling unchanged. Zooming out can un-wide a diagram that was wide by
     // default; zooming in can push one wide that wasn't.
-    if (this.#zoom !== 1 && DiagramNodeView.#ZOOMABLE.has(language)) {
-      // The base is the resting fill width — `min(available, #FILL_CAP)` —
-      // not `natural`: §2 of the design ruling has generated diagrams fill
-      // the column regardless of natural size, so the un-zoomed (100%)
-      // width already *is* this value. Scaling from `natural` instead
-      // would, for any diagram smaller than its column — the common case —
-      // make the first "Zoom in" click shrink the drawing below its resting
-      // size.
-      const base = Math.min(available, DiagramNodeView.#FILL_CAP)
+    if (this.#zoom !== 1 && isZoomableLanguage(language)) {
+      // The base is the resting fill width — `metaWidth ?? min(available,
+      // #FILL_CAP)` — not `natural`: §2 of the design ruling has generated
+      // diagrams fill the column (or honor a committed width) regardless of
+      // natural size, so the un-zoomed (100%) width already *is* this value.
+      // Scaling from `natural` instead would, for any diagram smaller than
+      // its column — the common case — make the first "Zoom in" click
+      // shrink the drawing below its resting size.
       const scaled = base * this.#zoom
       this.#render.classList.toggle('is-wide', scaled > available)
       svg.style.width = `${scaled}px`
@@ -707,23 +931,20 @@ export class DiagramNodeView implements NodeView {
     // Fix round 1, Finding 1: a committed width (a drag, or a hand-typed
     // fence meta) is the reader's own explicit choice and wins over the
     // natural-width "wide" default below — the same way zoom, just above,
-    // already wins over wide for generated diagrams. Without this check
-    // first, the wide branch ran unconditionally for an oversized natural
-    // width and returned before the meta was ever read: a drag to 400px on
-    // an svg whose natural width trips `#WIDEST_SQUEEZE` would commit
-    // `width=400` correctly and then get overwritten straight back to
-    // natural (e.g. 1200px) on the very next paint.
-    if (language === 'svg') {
-      const layout = parseFenceLayout((this.#node.attrs['meta'] as string | undefined) ?? '')
-      if (layout.width !== undefined) {
-        this.#render.classList.remove('is-wide')
-        const wanted = Math.max(layout.width, DiagramNodeView.#MIN_WIDTH)
-        // Floated figures self-size (fit-content): capping at the container
-        // would chase our own shadow. The stylesheet clamps to 60% instead.
-        const chosen = layout.float !== undefined ? wanted : Math.min(wanted, available)
-        svg.style.width = `${chosen}px`
-        return
-      }
+    // already wins over wide. Without this check first, the wide branch ran
+    // unconditionally for an oversized natural width and returned before the
+    // meta was ever read: a drag to 400px on an svg whose natural width
+    // trips `#WIDEST_SQUEEZE` would commit `width=400` correctly and then
+    // get overwritten straight back to natural (e.g. 1200px) on the very
+    // next paint. §3 extends this from svg-only to every diagram block, the
+    // same base the zoom branch above now shares.
+    if (layout.width !== undefined) {
+      this.#render.classList.toggle('is-wide', false)
+      // Floated figures self-size (fit-content): capping at the container
+      // would chase our own shadow. The stylesheet clamps to 60% instead.
+      const chosen = layout.float !== undefined ? base : Math.min(base, available)
+      svg.style.width = `${chosen}px`
+      return
     }
 
     const wide = natural > available * DiagramNodeView.#WIDEST_SQUEEZE
@@ -751,7 +972,6 @@ export class DiagramNodeView implements NodeView {
       // case returned above). Cap at the column, but never inflate —
       // inflating is for renders whose size the engine invented, not for a
       // drawing that arrived with one.
-      const layout = parseFenceLayout((this.#node.attrs['meta'] as string | undefined) ?? '')
       this.#render.classList.remove('is-wide')
       // Floated figures self-size (fit-content): capping at the container
       // would chase our own shadow. The stylesheet clamps to 60% instead.
@@ -849,6 +1069,8 @@ export class DiagramNodeView implements NodeView {
       this.#render.innerHTML = result.markup
       this.#error.hidden = true
       this.#fitDiagram()
+      this.#refreshChipState()
+      this.#refreshNarrow()
       return result
     }
 
@@ -858,7 +1080,32 @@ export class DiagramNodeView implements NodeView {
     this.#error.hidden = false
     this.#errorMessage.textContent = result.message
     this.#lastRenderError = result.message
+    this.#refreshChipState()
+    this.#refreshNarrow()
     return result
+  }
+
+  /** The block's position, for registry lookups. */
+  blockPos(): number | undefined {
+    return this.getPos()
+  }
+
+  language(): string {
+    return (this.#node.attrs['language'] as string | undefined) ?? ''
+  }
+
+  /** `DiagramController.editSource()`'s entry point: opens the source sheet. */
+  openSource(): void {
+    this.#setShowingSource(true)
+  }
+
+  /** `DiagramController.zoomIn/zoomOut/zoomReset()`'s entry point. */
+  zoomBy(step: 'in' | 'out' | 'reset'): boolean {
+    if (!isZoomableLanguage(this.language())) return false
+    if (step === 'reset') this.#setZoom(1)
+    else if (step === 'in') this.#setZoom(this.#zoom * DiagramNodeView.#ZOOM_STEP)
+    else this.#setZoom(this.#zoom / DiagramNodeView.#ZOOM_STEP)
+    return true
   }
 
   update(node: ProseNode): boolean {
@@ -876,20 +1123,26 @@ export class DiagramNodeView implements NodeView {
   /** ProseMirror tells us when the block is the selection; show it. */
   selectNode(): void {
     this.dom.classList.add('is-selected')
+    this.#chips = this.#buildChips()
+    this.dom.append(this.#chips)
+    document.addEventListener('keydown', this.#onSelectionEscape)
   }
 
   deselectNode(): void {
     this.dom.classList.remove('is-selected')
+    this.#chips?.remove()
+    this.#chips = undefined
+    this.#zoomLevel = undefined
+    document.removeEventListener('keydown', this.#onSelectionEscape)
   }
 
   /** Inner control activity is ours, not ProseMirror's. */
   stopEvent(event: Event): boolean {
     return (
-      event.target === this.#toggle ||
       event.target === this.#copyButton ||
       event.target === this.#fixButton ||
       this.#sheet.contains(event.target as Node) ||
-      (event.target instanceof Node && this.#zoomControls?.contains(event.target) === true) ||
+      (this.#chips !== undefined && event.target instanceof Node && this.#chips.contains(event.target)) ||
       (this.#grip !== undefined && event.target instanceof Node && this.#grip.contains(event.target))
     )
   }
@@ -922,6 +1175,7 @@ export class DiagramNodeView implements NodeView {
 
   destroy(): void {
     this.#destroyed = true
+    this.registry?.deregister(this)
     this.#closeViewer?.()
     this.#render.removeEventListener('scroll', this.#markScrollEnd)
     this.#renderToken += 1
@@ -930,10 +1184,14 @@ export class DiagramNodeView implements NodeView {
     // The sheet lives on <body>, so this listener would outlive the block that
     // owns it if the node is destroyed while the sheet is open.
     document.removeEventListener('keydown', this.#onEscape)
+    // Same reasoning, for the selection-Escape listener: destroyed while
+    // selected (e.g. the whole editor unmounts) must not leak it onto <body>.
+    document.removeEventListener('keydown', this.#onSelectionEscape)
     this.#resize.disconnect()
     this.#sheet.remove()
     // The menu lives on <body> too, so it would outlive its block just the same.
     this.#closeMenu()
+    this.#chips?.remove()
     this.dom.removeEventListener('contextmenu', this.#openMenu)
   }
 }

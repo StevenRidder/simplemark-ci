@@ -2818,68 +2818,91 @@ section.editor::-webkit-scrollbar {
   transition: opacity 0.15s;
 }
 
-.edit-source {
-  position: absolute;
-  top: 8px;
-  right: 9px;
-  border: 0;
-  background: transparent;
-  color: var(--ink-3);
-  font-size: 10px;
-  padding: 4px 6px;
-  border-radius: 5px;
-  opacity: 0;
-  transition: opacity 0.15s;
+.diagram:hover .diagram-label,
+.diagram:focus-within .diagram-label {
+  opacity: 1;
 }
 
 /*
- * Zoom sits with Edit source in the figure's hover chrome: invisible until
- * the reader is over the block, so a document of diagrams doesn't read as a
- * toolbar. Transient state — nothing here writes to the note.
+ * §2 chip-chrome: selection is the mode switch — no chrome while reading.
+ * Appears in `selectNode()`, gone in `deselectNode()`. `.note-context-menu`
+ * family styling (surface, 0.5px strong border, 8px radius), so a block's own
+ * controls read as the same app as its right-click menu.
+ *
+ * `left` alongside `right` constrains the row to the figure's own box.
+ * Without it, a right-anchored row with no left edge sizes to its own content
+ * and can extend past a narrow floated figure's left boundary — `width:
+ * fit-content` once floated (§5) — straight into `.diagram`'s `overflow:
+ * hidden` and out of reach (final review Finding 5). `flex-wrap` lets a row
+ * that still doesn't fit spill onto a second line instead of clipping.
  */
-.diagram-zoom {
+.diagram-chips {
   position: absolute;
   top: 8px;
-  right: 86px;
+  left: 8px;
+  right: 8px;
   display: flex;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.15s;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  animation: diagram-chips-in 0.12s ease-out;
 }
 
-.diagram:hover .diagram-zoom,
-.diagram:focus-within .diagram-zoom {
-  opacity: 1;
+@keyframes diagram-chips-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
 }
 
-.diagram-zoom button {
-  border: 0;
-  background: transparent;
-  color: var(--ink-3);
-  font-size: 10px;
-  padding: 4px 5px;
-  border-radius: 5px;
-}
-
-.diagram-zoom button:hover {
-  color: var(--ink);
-}
-
-.diagram:hover .diagram-label,
-.diagram:focus-within .diagram-label,
-.diagram:hover .edit-source,
-.diagram:focus-within .edit-source {
-  opacity: 1;
-}
-
-.edit-source:focus-visible {
-  opacity: 1;
-  outline: 2px solid var(--accent);
-}
-
-.edit-source:hover {
+.diagram-chip {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  border: 0.5px solid var(--line);
+  border-radius: 8px;
   background: var(--paper);
   color: var(--ink);
+}
+
+.diagram-chip:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.diagram-chip.is-active {
+  background: var(--accent-soft);
+}
+
+.diagram-chip.diagram-chip-danger:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/*
+ * Task 4 §2: a figure rendering under 420px collapses chip labels to icons —
+ * Edit source and Delete lose their (only) visible text; the zoom pill and
+ * float segment were already icon-only, so they are unaffected. Every chip's
+ * `aria-label` carries its name regardless, so nothing here changes what a
+ * screen reader, or a `getByRole('button', { name })` lookup, sees.
+ */
+.diagram-chips.is-narrow .chip-label {
+  display: none;
+}
+
+/*
+ * Final review Finding 4: without this, a narrow Edit source/Delete chip
+ * collapsed to a blank pill — `.chip-label` hides above, and neither chip had
+ * anything else in its markup to show. `.chip-glyph` is the icon half of the
+ * same label/glyph swap the zoom and float segments already do implicitly
+ * (they were icon-only from the start); it stays hidden at rest so a chip
+ * with room to spare keeps reading as a word, not a cryptic symbol.
+ */
+.diagram-chips .chip-glyph {
+  display: none;
+}
+
+.diagram-chips.is-narrow .chip-glyph {
+  display: inline;
 }
 
 .diagram-render {

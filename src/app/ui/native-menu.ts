@@ -114,6 +114,8 @@ async function buildTextServiceMenu(
   return Submenu.new({ text: spec.label, items })
 }
 
+type Repaint = () => void
+
 /**
  * Repaints every built item from current shell state.
  *
@@ -124,8 +126,20 @@ async function buildTextServiceMenu(
  * accumulates checkmarks and stops describing the application. Repainting the
  * whole menubar after every action costs a few dozen property writes and makes
  * the checkmark state correct by construction instead of by bookkeeping.
+ *
+ * Exported, and factored out of `activate` where it used to live inline
+ * (final review Finding 1): `activate` — a menu item actually being clicked —
+ * was the *only* thing that ever ran this. A selection change with no menu
+ * click in it (picking a diagram block, say) left every item's enabled state
+ * exactly as stale as it was when the menu was built, since nothing else
+ * called back in here. `installNativeMenu`'s returned handle exposes this
+ * same function bound to its own built items, so a caller with another
+ * reason state may have changed — the live editor selection, not a menu
+ * action — can ask for the repaint directly.
  */
-type Repaint = () => void
+export function repaintAll(repaints: readonly Repaint[]): void {
+  for (const repaint of repaints) repaint()
+}
 
 async function buildEntry(
   entry: MenuEntry,
@@ -151,7 +165,7 @@ async function buildEntry(
   }
   const activate = (): void => {
     options.run(definition.id)
-    for (const repaint of repaints) repaint()
+    repaintAll(repaints)
   }
 
   if (definition.checkable === true) {
@@ -188,8 +202,20 @@ async function buildMenu(
   return Submenu.new({ text: spec.label, items })
 }
 
+export interface NativeMenuHandle {
+  /** The installed menu, already set as the application menu. */
+  readonly menu: Menu
+  /**
+   * Repaints every item's enabled/checked state from current shell state —
+   * the same repaint `activate` already runs after every click, exposed so a
+   * caller with another reason state changed (the live editor selection, not
+   * a menu action) can ask for it too (final review Finding 1).
+   */
+  readonly repaint: Repaint
+}
+
 /** Builds the menubar and installs it as the application menu. */
-export async function installNativeMenu(options: NativeMenuOptions): Promise<Menu> {
+export async function installNativeMenu(options: NativeMenuOptions): Promise<NativeMenuHandle> {
   const appName = options.appName ?? 'SimpleMark'
 
   const appMenu = await Submenu.new({
@@ -277,5 +303,5 @@ export async function installNativeMenu(options: NativeMenuOptions): Promise<Men
 
   const menu = await Menu.new({ items: [appMenu, ...owned, windowMenu] })
   await menu.setAsAppMenu()
-  return menu
+  return { menu, repaint: () => repaintAll(repaints) }
 }

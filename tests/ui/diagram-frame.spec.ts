@@ -20,9 +20,19 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator(`${render} svg`).first()).toBeVisible()
 })
 
+/**
+ * §2 of the chip-chrome spec: the Edit source button lives on the
+ * selection-triggered chip toolbar now, not always in the DOM — select the
+ * first diagram, then reach for its "Edit source" chip.
+ */
+async function openFirstDiagramSource(page: import('@playwright/test').Page): Promise<void> {
+  await page.locator(render).first().click()
+  await page.locator('.diagram-chips').first().getByRole('button', { name: 'Edit source' }).click()
+}
+
 /** Replaces the first diagram's source the way the sheet's textarea does. */
 async function setSource(page: import('@playwright/test').Page, source: string) {
-  await page.locator('button.edit-source').first().click()
+  await openFirstDiagramSource(page)
   const textarea = page.locator('textarea.diagram-source').first()
   await textarea.fill(source)
   // Mermaid re-renders asynchronously; the viewBox is what settles last.
@@ -85,7 +95,7 @@ test('a diagram too wide to squeeze keeps its size and scrolls inside its own bo
 
 test('the source sheet can be closed from the sheet itself', async ({ page }) => {
   const sheet = page.locator('.diagram-source-sheet')
-  await page.locator('button.edit-source').first().click()
+  await openFirstDiagramSource(page)
   await expect(sheet).toBeVisible()
 
   await page.locator('.diagram-source-close').first().click()
@@ -94,7 +104,7 @@ test('the source sheet can be closed from the sheet itself', async ({ page }) =>
 
 test('Escape still closes the sheet after the header has been dragged', async ({ page }) => {
   const sheet = page.locator('.diagram-source-sheet')
-  await page.locator('button.edit-source').first().click()
+  await openFirstDiagramSource(page)
   await expect(sheet).toBeVisible()
 
   // Dragging moves focus off the textarea. Escape used to be bound there, so
@@ -114,7 +124,7 @@ test('Escape still closes the sheet after the header has been dragged', async ({
 
 test('pressing the close button does not drag the sheet out from under the pointer', async ({ page }) => {
   const sheet = page.locator('.diagram-source-sheet')
-  await page.locator('button.edit-source').first().click()
+  await openFirstDiagramSource(page)
   await expect(sheet).toBeVisible()
 
   const before = await sheet.evaluate((el) => (el as HTMLElement).style.left)

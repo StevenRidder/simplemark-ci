@@ -34,10 +34,12 @@ import {
   footnoteReferenceSchema,
 } from '@milkdown/kit/preset/gfm'
 import { $prose, $useKeymap, $view, callCommand, getMarkdown } from '@milkdown/kit/utils'
+import { closeHistory } from '@milkdown/kit/prose/history'
 import { DOMSerializer, Fragment } from '@milkdown/kit/prose/model'
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { toggleMark } from '@milkdown/kit/prose/commands'
-import { Selection, TextSelection } from '@milkdown/kit/prose/state'
+import { NodeSelection, Plugin, Selection, TextSelection } from '@milkdown/kit/prose/state'
+import type { EditorState } from '@milkdown/kit/prose/state'
 import {
   addRowAfter,
   CellSelection,
@@ -58,10 +60,11 @@ import type {
   DiagramRenderer,
   NoteImageStore,
 } from '../../application/index.js'
-import { looksLikeMermaid, looksLikeSvg } from '../../domain/index.js'
+import { looksLikeMermaid, looksLikeSvg, withFenceMetaKey } from '../../domain/index.js'
 import { AssetImageNodeView } from './asset-image-node-view.js'
 import { codeBlockMetaSchema } from './code-fence-meta.js'
-import { DiagramNodeView } from './diagram-node-view.js'
+import { DiagramNodeView, isZoomableLanguage } from './diagram-node-view.js'
+import type { DiagramViewRegistry } from './diagram-node-view.js'
 import {
   HIGHLIGHT_COLOURS,
   type HighlightColour,
@@ -175,8 +178,42 @@ export interface MilkdownEditorOptions {
   readonly onOpenLink?: (href: string) => Promise<void>
   /** Copies a virtualised table through the shell's clipboard boundary. */
   readonly onCopyDeferredTable?: (source: string) => Promise<boolean>
+  /**
+   * Fires after the live ProseMirror selection changes — a click, an arrow
+   * key, Escape, anything that moves it — not after every keystroke
+   * (`onMarkdownChanged` already covers those, on its own debounce). The
+   * native menubar is what needs this today: `Format → Diagram`'s ids only
+   * read fresh `commandState` when something repaints the menu, and nothing
+   * did that on a bare selection change before this (final review Finding 1).
+   */
+  readonly onSelectionChange?: () => void
   /** Absent in hosts that cannot keep images beside the note. */
   readonly images?: NoteImageStore
+}
+
+/**
+ * §4 of the chip-chrome spec: every diagram-block action as a command an
+ * agent can call — the one behavior surface chips (Task 2), the Format →
+ * Diagram submenu (bootstrap.ts), and this app API all call into. Every verb
+ * acts on the current selection and returns `false` when it does not apply
+ * (no diagram selected, or the selected kind does not support the verb).
+ */
+export interface DiagramController {
+  setWidth(px: number | null): boolean
+  setFloat(side: 'left' | 'right' | null): boolean
+  delete(): boolean
+  editSource(): boolean
+  zoomIn(): boolean
+  zoomOut(): boolean
+  zoomReset(): boolean
+  /**
+   * `null` off a diagram selection. `'generated'` is the zoomable set
+   * (mermaid/dot/graphviz/vega-lite); `'math'` covers a `$$` display block
+   * and a latex/tex fence alike; `'text'` is everything else this renderer
+   * claims — the paste-exhaust cards (json/ansi/diff/tree/stacktrace) —
+   * where only Edit source and Delete apply (final review Finding 2).
+   */
+  kind(): 'svg' | 'generated' | 'math' | 'text' | null
 }
 
 export class MilkdownEditor {
@@ -185,19 +222,159 @@ export class MilkdownEditor {
   #tableControlsOpen = false
   #activeTable: HTMLTableElement | undefined
   #activeTableCell: HTMLTableCellElement | undefined
+  /**
+   * Fence languages this editor's renderer claims — the same test the
+   * codeBlockView NodeView factory runs (`options.renderer.languages`),
+   * cached as a Set for `#selectedDiagram`'s membership check.
+   */
+  readonly #renderLanguages: ReadonlySet<string>
 
   private constructor(
     private readonly editor: Editor,
     private readonly renderer: DiagramRenderer,
     /** The single exit every document change leaves through. */
     private readonly emitMarkdown: (editorMarkdown: string) => void,
-  ) {}
+    /** Live diagram/math NodeViews, keyed by nothing but membership — the
+     * controller finds the one it wants by matching `blockPos()` against the
+     * current selection. */
+    private readonly diagramViews: ReadonlySet<DiagramNodeView>,
+  ) {
+    this.#renderLanguages = new Set(renderer.languages)
+  }
+
+  /** §4 of the chip-chrome spec: the one behavior surface under chips, menu
+   * items, and (later, gated) agents. Doc-state verbs are transactions; view
+   * verbs go through the live NodeView registry. */
+  readonly diagram: DiagramController = {
+    kind: (): 'svg' | 'generated' | 'math' | 'text' | null => {
+      const found = this.#selectedDiagram()
+      if (found === null) return null
+      const language = (found.node.attrs['language'] as string | undefined) ?? ''
+      if (language === 'svg') return 'svg'
+      if (
+        found.node.type.name === 'math_block' ||
+        language === 'math' ||
+        language === 'latex' ||
+        language === 'tex'
+      ) {
+        return 'math'
+      }
+      // Everything else this renderer claims that is not zoomable is a
+      // paste-exhaust text card (json/ansi/diff/tree/stacktrace) — 'text',
+      // not 'generated'. Classifying through the same predicate `#buildChips`
+      // and the grip already use keeps this from drifting onto its own,
+      // wider set the way it used to (final review Finding 2).
+      return isZoomableLanguage(language) ? 'generated' : 'text'
+    },
+    setWidth: (px: number | null): boolean => {
+      const kind = this.diagram.kind()
+      if (kind !== 'svg' && kind !== 'generated') return false
+      // Finding 6: a non-finite or sub-pixel width is refused outright,
+      // before rounding — never silently clamped or coerced. The API stays
+      // unclamped above 1px; the resize grip keeps its own ceiling.
+      if (px !== null && (!Number.isFinite(px) || px < 1)) return false
+      return this.#layoutKey('width', px === null ? null : String(Math.round(px)))
+    },
+    setFloat: (side: 'left' | 'right' | null): boolean => {
+      const kind = this.diagram.kind()
+      if (kind !== 'svg' && kind !== 'generated') return false
+      return this.#layoutKey('float', side)
+    },
+    delete: (): boolean => {
+      const found = this.#selectedDiagram()
+      if (found === null) return false
+      const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+      // closeHistory: the identical fix `DiagramNodeView#deleteBlock` (the
+      // chip's own delete path) already applies — a scripted delete through
+      // this API is one undo step, not folded into whatever transaction
+      // (a paste conversion, say) happened to precede it within
+      // prosemirror-history's grouping window (final review Finding 3).
+      view.dispatch(closeHistory(view.state.tr.delete(found.pos, found.pos + found.node.nodeSize)))
+      view.focus()
+      return true
+    },
+    editSource: (): boolean => {
+      const nodeView = this.#selectedDiagramView()
+      if (nodeView === undefined) return false
+      nodeView.openSource()
+      return true
+    },
+    zoomIn: (): boolean => this.#selectedDiagramView()?.zoomBy('in') ?? false,
+    zoomOut: (): boolean => this.#selectedDiagramView()?.zoomBy('out') ?? false,
+    zoomReset: (): boolean => this.#selectedDiagramView()?.zoomBy('reset') ?? false,
+  }
+
+  /** The selected block, if it is a diagram (or math) block — `kind()`, the
+   * layout verbs, and delete all start here. */
+  #selectedDiagram(): { pos: number; node: ProseNode } | null {
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const { selection } = view.state
+      if (!(selection instanceof NodeSelection)) return null
+      const node = selection.node
+      if (node.type.name !== 'code_block' && node.type.name !== 'math_block') return null
+      if (node.type.name === 'code_block') {
+        const language = (node.attrs['language'] as string | undefined) ?? ''
+        if (!this.#renderLanguages.has(language)) return null
+      }
+      return { pos: selection.from, node }
+    })
+  }
+
+  /** The live NodeView behind the selected diagram, for view-state verbs. */
+  #selectedDiagramView(): DiagramNodeView | undefined {
+    const found = this.#selectedDiagram()
+    if (found === null) return undefined
+    for (const nodeView of this.diagramViews) {
+      if (nodeView.blockPos() === found.pos) return nodeView
+    }
+    return undefined
+  }
+
+  /**
+   * Rewrites one fence-meta layout key on the selected diagram, one
+   * transaction.
+   *
+   * `setNodeMarkup` replaces the node's opening/closing "tag" as a structural
+   * step, so ProseMirror's default selection mapping reports the
+   * `NodeSelection`'s anchor deleted and strands the caret after the block —
+   * a chip click surviving the click that made it would be one thing, but the
+   * API contract here is that a chained verb (setWidth after setFloat, say)
+   * keeps working without a re-select in between. The node's size is
+   * unchanged, so `found.pos` is still valid in the post-transaction doc and
+   * the same transaction can restore the selection to it directly.
+   */
+  #layoutKey(key: string, value: string | null): boolean {
+    const found = this.#selectedDiagram()
+    if (found === null || found.node.type.name !== 'code_block') return false
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    const meta = withFenceMetaKey((found.node.attrs['meta'] as string | undefined) ?? '', key, value)
+    const transaction = view.state.tr.setNodeMarkup(found.pos, undefined, { ...found.node.attrs, meta })
+    view.dispatch(transaction.setSelection(NodeSelection.create(transaction.doc, found.pos)))
+    view.focus()
+    return true
+  }
 
   static async mount(options: MilkdownEditorOptions): Promise<MilkdownEditor> {
     // Do this before Milkdown sees the Markdown. The unsafe work was building
     // a giant ProseMirror table tree during initial parse, so a post-parse
     // NodeView cannot protect the UI thread in time.
     const preparedMarkdown = prepareMarkdownForEditor(options.initialMarkdown)
+    /**
+     * Live diagram/math NodeViews. Built before `.create()` because Milkdown
+     * constructs NodeViews for the initial document during that call, and the
+     * `MilkdownEditor` instance the controller lives on does not exist yet —
+     * this Set is what the instance is handed once it does.
+     */
+    const diagramViews = new Set<DiagramNodeView>()
+    const diagramRegistry: DiagramViewRegistry = {
+      register: (view) => {
+        diagramViews.add(view)
+      },
+      deregister: (view) => {
+        diagramViews.delete(view)
+      },
+    }
     const codeBlockView = $view(codeBlockSchema.node, () => {
       return (node: ProseNode, view: EditorView, getPos: () => number | undefined) => {
         const language = (node.attrs['language'] as string | undefined) ?? ''
@@ -216,14 +393,30 @@ export class MilkdownEditor {
         if (!options.renderer.languages.includes(language)) {
           return null as unknown as DiagramNodeView
         }
-        return new DiagramNodeView(node, view, getPos, options.renderer, options.clipboard, options.diagramFix)
+        return new DiagramNodeView(
+          node,
+          view,
+          getPos,
+          options.renderer,
+          options.clipboard,
+          options.diagramFix,
+          diagramRegistry,
+        )
       }
     })
     // Display math renders through the same NodeView as a diagram fence: one
     // rendered block, one editable source, one failure surface.
     const mathView = $view(mathBlockSchema.node, () => {
       return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
-        new DiagramNodeView(node, view, getPos, options.renderer, options.clipboard, options.diagramFix)
+        new DiagramNodeView(
+          node,
+          view,
+          getPos,
+          options.renderer,
+          options.clipboard,
+          options.diagramFix,
+          diagramRegistry,
+        )
     })
     const inlineMathView = $view(inlineMathSchema.node, () => {
       return (node: ProseNode, view: EditorView, getPos: () => number | undefined) =>
@@ -304,6 +497,22 @@ export class MilkdownEditor {
       .use($prose(() => pageTrimOfferPlugin(options.images)))
       .use(clipboard)
       .use(listener)
+      // Final review Finding 1: the native menubar's Format → Diagram ids
+      // only ever repainted from inside a menu action's own `activate` — a
+      // bare selection change (a click, an arrow key, Escape) never touched
+      // it, so those 8 ids sat permanently disabled, or stale-enabled from
+      // whatever the last menu click happened to leave behind. A ProseMirror
+      // plugin view's `update` is the one hook that fires on every state
+      // change, selection-only ones included; `onSelectionChange` carries
+      // that up to whoever owns the menu, which debounces its own repaint
+      // rather than this plugin doing it once per keystroke.
+      .use($prose(() => new Plugin({
+        view: () => ({
+          update: (view: EditorView, previousState: EditorState) => {
+            if (!view.state.selection.eq(previousState.selection)) options.onSelectionChange?.()
+          },
+        }),
+      })))
       // Quiet gutter folding (EDITOR-3). View state only: a fold hides content
       // with decorations and never changes the serialised Markdown.
       .use(foldingPlugin)
@@ -340,7 +549,7 @@ export class MilkdownEditor {
     // the first time anything flushed it.
     lastEmitted = preparedMarkdown.restoreMarkdown(editor.action(getMarkdown()))
 
-    const instance = new MilkdownEditor(editor, options.renderer, emitMarkdown)
+    const instance = new MilkdownEditor(editor, options.renderer, emitMarkdown, diagramViews)
     instance.installLinkOpening(options.mount, options.onOpenLink)
     instance.installTaskToggling()
     instance.installBlockReordering()

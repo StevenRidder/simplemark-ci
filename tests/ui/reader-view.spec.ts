@@ -285,11 +285,11 @@ test.describe('folding', () => {
   test('a heading chevron folds the section and unfolds it, byte-safely', async ({ page }) => {
     const before = await markdown(page)
     const beforeSerialized = await serialized(page)
-    const sectionParagraph = page.getByText('Stop is immediate control', { exact: false })
+    const sectionParagraph = page.getByText('Fixture body paragraph before the diagram', { exact: false })
     await expect(sectionParagraph).toBeVisible()
 
     // The chevron is quiet: hidden until the heading is hovered.
-    const heading = page.locator(`${editor} h2`, { hasText: 'The live document boundary' })
+    const heading = page.locator(`${editor} h2`, { hasText: 'Fixture section heading' })
     const chevron = heading.locator('.sm-fold-chevron')
     await expect(chevron).toHaveCSS('opacity', '0')
     await heading.hover()
@@ -341,7 +341,7 @@ test.describe('folding', () => {
     const before = await serialized(page)
     const run = (id: string): Promise<void> =>
       page.evaluate((command) => window.simplemark!.run(command as never), id)
-    const section = page.getByText('Stop is immediate control', { exact: false })
+    const section = page.getByText('Fixture body paragraph before the diagram', { exact: false })
 
     await run('foldAll')
     await expect(section).toBeHidden()
@@ -368,15 +368,15 @@ test.describe('document information panel', () => {
     await page.getByRole('button', { name: 'Contents' }).click()
     const panel = page.locator('.info-panel')
     await expect(panel).toBeVisible()
-    await expect(panel.getByRole('button', { name: 'The first useful proof' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Fixture heading' })).toBeVisible()
 
     const widthBefore = await page.locator(`${editor}`).evaluate((node) => node.clientWidth)
-    await panel.getByRole('button', { name: 'The live document boundary' }).click()
+    await panel.getByRole('button', { name: 'Fixture section heading' }).click()
 
     // The caret landed in the heading, and the panel is still open — a person
     // navigating an outline is usually navigating it more than once.
     const selection = await page.evaluate(() => window.getSelection()?.anchorNode?.textContent)
-    expect(selection).toContain('live document boundary')
+    expect(selection).toContain('Fixture section heading')
     await expect(panel).toBeVisible()
 
     // Floating, not docked: the page never gave up width for it.
@@ -474,12 +474,12 @@ test.describe('document information panel', () => {
     const h1 = page.locator(`${editor} h1`).first()
     await h1.hover()
     await h1.locator('.sm-fold-chevron').click()
-    const h2 = page.locator(`${editor} h2`, { hasText: 'The live document boundary' })
+    const h2 = page.locator(`${editor} h2`, { hasText: 'Fixture section heading' })
     await expect(h2).toBeHidden()
 
     // The outline reads the document, not the DOM, so the entry is still there.
     await page.getByRole('button', { name: 'Contents' }).click()
-    await page.locator('.info-panel').getByRole('button', { name: 'The live document boundary' }).click()
+    await page.locator('.info-panel').getByRole('button', { name: 'Fixture section heading' }).click()
 
     await expect(h2).toBeVisible()
   })

@@ -40,36 +40,36 @@ import './styles/print.css'
  * here can damage a document a person cares about.
  */
 
-/** The note the harness opens — real prose, so the canvas is judged with real content. */
+/**
+ * The note the harness opens — synthetic placeholder prose, not a product doc.
+ *
+ * The UI suite exercises real editor mechanics (folding, find, the reader
+ * outline, paragraph-level CSS, an existing diagram, an existing rule) against
+ * whatever this note contains, so it keeps the same shape those features need
+ * — a heading, a subheading, paragraphs, a Mermaid fence, an image, a rule —
+ * without the shape carrying any real content of its own.
+ */
 const FIXTURE_NAME = 'architecture.md'
-const FIXTURE_MARKDOWN = `# The first useful proof
+const FIXTURE_MARKDOWN = `# Fixture heading
 
-SimpleMark is a quiet local notebook for technical work. It opens ordinary
-Markdown and makes source-shaped ideas legible without turning the file into an
-application database.
+Fixture intro paragraph text for the harness.
 
-## The live document boundary
+## Fixture section heading
 
-While this note is open, the human and agent share one local document session.
-The file remains the durable result; the session supplies presence,
-interruption, scoped edits, and separate undo.
+Fixture body paragraph before the diagram.
 
 \`\`\`mermaid
 flowchart LR
-  FILE[Markdown file] --> SESSION[Live session]
-  SESSION --> BOTH[You + Codex]
+  A[Start] --> B[Middle]
 \`\`\`
 
-![SimpleMark asset](assets/simplemark-asset.svg)
+![Fixture asset](assets/simplemark-asset.svg)
 
-Stop is immediate control, not a message. It cancels the active request and
-rejects anything that arrives late. The rest should feel exactly like writing a
-note.
+Fixture paragraph after the diagram and image.
 
 ---
 
-Nothing else is required for the proof: one file, one window, Mermaid, and one
-visible agent whose work can be interrupted and reversed.
+Fixture closing paragraph.
 `
 
 interface DemoNote {
@@ -95,7 +95,7 @@ interface DemoNote {
 const HOUR = 60 * 60 * 1000
 
 const DEMO_NOTES: DemoNote[] = [
-  { id: 'architecture', name: FIXTURE_NAME, preview: 'A local document boundary for you and Codex.', markdown: FIXTURE_MARKDOWN, updatedLabel: 'Now', modifiedHoursAgo: 0, createdHoursAgo: 52, pinned: true },
+  { id: 'architecture', name: FIXTURE_NAME, preview: '', markdown: FIXTURE_MARKDOWN, updatedLabel: 'Now', modifiedHoursAgo: 0, createdHoursAgo: 52, pinned: true },
   { id: 'field-notes', name: 'field-notes.md', preview: 'Small observations worth keeping close.', markdown: '# Field notes\n\nA quiet notebook should disappear while you think.\n', updatedLabel: 'Today', modifiedHoursAgo: 3, createdHoursAgo: 6, pinned: false },
   { id: 'ideas', name: 'ideas.md', preview: 'Paste technical material; keep the source portable.', markdown: '# Ideas\n\n- Markdown is the durable result\n- Render the useful parts\n', updatedLabel: 'Yesterday', modifiedHoursAgo: 30, createdHoursAgo: 30, pinned: false },
 ]

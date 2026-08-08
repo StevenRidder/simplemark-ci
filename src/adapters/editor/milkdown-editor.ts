@@ -68,6 +68,7 @@ import { codeHighlightPlugin } from './code-highlight.js'
 import { findKey, findPlugin } from './find.js'
 import type { FindState } from './find.js'
 import { calloutRemark, calloutSchema } from './callout.js'
+import { largeTableRemark, largeTableSchema } from './large-table.js'
 import { mathBlockSchema, mathRemark } from './math-block.js'
 import { inlineMathSchema, InlineMathNodeView } from './inline-math.js'
 import { toggleUnderlineCommand, underlineRemark, underlineSchema } from './underline-mark.js'
@@ -295,6 +296,11 @@ export class MilkdownEditor {
       .use(mathRemark)
       .use(inlineMathSchema)
       .use(mathBlockSchema)
+      // Registered after gfm so the table nodes exist to count, and before the
+      // views so a deferred table never reaches a table NodeView at all. A
+      // document may not stall the main thread because it holds a lot of table.
+      .use(largeTableRemark)
+      .use(largeTableSchema)
       .use(wikiRemark)
       .use(wikiLinkSchema)
       .use(calloutRemark)

@@ -616,7 +616,7 @@ test('the quiet gutter drag reorders document blocks through the editor transact
 
   await expect.poll(async () => {
     const value = await markdown(page)
-    return value.indexOf('## The live document boundary') < value.indexOf('# The first useful proof')
+    return value.indexOf('## Fixture section heading') < value.indexOf('# Fixture heading')
   }).toBe(true)
 })
 

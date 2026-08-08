@@ -6,6 +6,8 @@
  * Transactions and fences join this surface with the live-agent deliverable;
  * source baselines and dirty-block serialization with FIDELITY-1.
  */
+export { TABLE_CELL_BUDGET, planTableRendering } from './render/table-budget.js'
+export type { TableRenderPlan } from './render/table-budget.js'
 export { firstByteDifference } from './source/byte-diff.js'
 export { buildSourceMap, emitDocument } from './source/source-map.js'
 export { suggestedMarkdownFileName } from './document-title.js'

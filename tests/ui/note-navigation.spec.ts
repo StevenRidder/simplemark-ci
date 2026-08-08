@@ -73,9 +73,11 @@ test('⌘⌥↓ and ⌘⌥↑ walk the note list in the order it is displayed, w
 })
 
 test('a walk survives the list re-sorting under it', async ({ page }) => {
-  // A pin can reorder the list without moving the selection. A walk that
-  // re-read the live list on every press would step to the second note, watch
-  // it become the first, and bounce back.
+  // The native shell orders Recent Notes by recency and moves each opened note
+  // to the front, so a walk that re-read the live list on every press stepped
+  // to the second note, watched it become the first, and bounced back. Pinning
+  // reorders the list here the same way without moving the selection, which is
+  // the condition that broke it.
   const order = await displayedOrder(page)
   await navigate(page, 'ArrowDown')
   await expect.poll(() => activeNote(page)).toBe(order[1])

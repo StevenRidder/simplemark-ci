@@ -2,16 +2,19 @@
 
 **Four patterns and one file. Not the backend, not the codebase, not the model.**
 
-- **Status:** Draft 1
-- **Date:** 2026-08-01
-- **Reviewed:** `6th-Element-Labs/projectplanner` @ `98b7eee8` — 361 Python modules, `src/switchboard/{domain,application,storage,mcp,contracts}`
-- **Companion to:** [`COLLABORATION.md`](COLLABORATION.md)
+* **Status:** Draft 1
 
----
+* **Date:** 2026-08-01
+
+* **Reviewed:** `6th-Element-Labs/projectplanner` @ `98b7eee8` — 361 Python modules, `src/switchboard/{domain,application,storage,mcp,contracts}`
+
+* **Companion to:** [`COLLABORATION.md`](COLLABORATION.md)
+
+***
 
 ## 1. The verdict
 
-**Do not build SimpleMark on Switchboard.** It is a task-completion control plane: claims, runner lifecycle, CI and merge provenance, project authorization, 33 MCP tools, ~200 test modules. Transplanting it would make a lightweight notebook feel like air-traffic control.
+**Do not build SimpleMark on Switchboard.** It is a task-completion control plane: claims, runner lifecycle, CI and merge provenance, project authorization, 33 MCP tools, \~200 test modules. Transplanting it would make a lightweight notebook feel like air-traffic control.
 
 [`PRODUCT.md`](PRODUCT.md) makes the boundary sharper: SimpleMark displays the artifact; it does not
 operate the AI work that produced it. The patterns below remain useful only behind an optional
@@ -20,14 +23,14 @@ in the rendered-document UI.
 
 **Do take four patterns.** Switchboard has already paid for the mistakes that agent-in-a-document will otherwise make, and one of its modules is portable almost verbatim in concept.
 
-| Take | From | Why |
-|---|---|---|
-| **The fence** | `src/switchboard/domain/execution_liveness.py` (193 lines, pure) | Reliable interruption. This is the important one. |
-| **Exactly-once effects** | `src/switchboard/storage/repositories/external_effects.py` (333 lines) | "Insert this diagram" must not insert it twice |
-| **Thin adapter over shared commands** | `application/commands/*` (28) ← `mcp/tools/*` (33) | MCP calls a document service; it never touches Yjs or files directly |
-| **Communication ≠ control** | ADR-0008 | A comment saying "stop" is not proof anything stopped |
+| Take                                  | From                                                                   | Why                                                                  |
+| ------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **The fence**                         | `src/switchboard/domain/execution_liveness.py` (193 lines, pure)       | Reliable interruption. This is the important one.                    |
+| **Exactly-once effects**              | `src/switchboard/storage/repositories/external_effects.py` (333 lines) | "Insert this diagram" must not insert it twice                       |
+| **Thin adapter over shared commands** | `application/commands/*` (28) ← `mcp/tools/*` (33)                     | MCP calls a document service; it never touches Yjs or files directly |
+| **Communication ≠ control**           | ADR-0008                                                               | A comment saying "stop" is not proof anything stopped                |
 
----
+***
 
 ## 2. The fence — the one worth copying closely
 
@@ -90,7 +93,7 @@ app, never by the agent. The local POC also aborts the in-flight request; the fe
 backstop if a provider returns anyway. Heartbeats and TTLs belong only in a later remote-runner
 design where an operation can genuinely be orphaned.
 
----
+***
 
 ## 3. Exactly-once — so retries don't duplicate
 
@@ -109,7 +112,7 @@ apply_transaction(docId, {
 
 Replaying that key inside the window returns the original transaction id and applies nothing. Cheap, and it removes a whole class of "why are there two diagrams" reports.
 
----
+***
 
 ## 4. Thin adapter over shared commands
 
@@ -122,13 +125,13 @@ mcp/tools/claims.py (298 lines)  →  application/commands/complete_claim.py
 
 The MCP tool's own docstring states the boundary:
 
-> *Transport adapter for claim_task / claim_next / complete_claim. Authentication, identity binding, and MCP serialization remain edge concerns; the shared application commands used by REST own transport-neutral validation.*
+> *Transport adapter for claim\_task / claim\_next / complete\_claim. Authentication, identity binding, and MCP serialization remain edge concerns; the shared application commands used by REST own transport-neutral validation.*
 
 **For SimpleMark:** MCP tools must never touch Yjs state or the filesystem directly. They call a `DocumentSession` service that owns scope checks, fence checks, idempotency, and transaction naming — the same service the app's own UI calls. One set of rules, two transports.
 
 This is the difference between an agent surface that stays correct and one where the fifth tool forgets to check the fence.
 
----
+***
 
 ## 5. Communication is not control
 
@@ -136,22 +139,24 @@ ADR-0008's first plane separation: *a message has zero lifecycle authority.* A c
 
 So in SimpleMark:
 
-- Typing "stop" in a comment thread **posts a comment**. It does nothing else.
-- The **Stop** button bumps the fence. That is what stops the agent.
-- The two may be wired together, but the causal path runs through the fence, never through the text.
+* Typing "stop" in a comment thread **posts a comment**. It does nothing else.
+
+* The **Stop** button bumps the fence. That is what stops the agent.
+
+* The two may be wired together, but the causal path runs through the fence, never through the text.
 
 Switchboard learned this by having message-ish events cause lifecycle effects and then having to unpick it. Free lesson.
 
----
+***
 
 ## 6. What NOT to borrow
 
-| Not taken | Why |
-|---|---|
-| Claims / tasks / runner model | A document is not a work item. Many humans edit freely; agents contribute within temporary scopes. Different shape entirely. |
-| SQLite control plane, project authorization | SimpleMark has no server and no accounts |
-| Coordinator daemon, mission graph, CI provenance | Nothing in a notebook needs verified completion |
-| The 200-module test suite's assumptions | Different domain |
+| Not taken                                        | Why                                                                                                                          |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Claims / tasks / runner model                    | A document is not a work item. Many humans edit freely; agents contribute within temporary scopes. Different shape entirely. |
+| SQLite control plane, project authorization      | SimpleMark has no server and no accounts                                                                                     |
+| Coordinator daemon, mission graph, CI provenance | Nothing in a notebook needs verified completion                                                                              |
+| The 200-module test suite's assumptions          | Different domain                                                                                                             |
 
 **The concrete difference:**
 
@@ -160,7 +165,7 @@ Switchboard: one actor owns a bounded work item through verified completion
 SimpleMark:  many actors edit freely; agents act within temporary, revocable scope
 ```
 
----
+***
 
 ## 7. The extracted kernel
 
@@ -178,7 +183,7 @@ DocumentSession
 
 Four of those five come straight from Switchboard's hard-won shape. None of them come from its code.
 
----
+***
 
 ## 8. Switchboard as a testbed
 

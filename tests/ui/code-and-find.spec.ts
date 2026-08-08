@@ -71,6 +71,19 @@ test.describe('syntax highlighting', () => {
 })
 
 test.describe('in-document find', () => {
+  test.beforeEach(async ({ page }) => {
+    // Find needs real repeated words, a second heading to fold, and a phrase
+    // that appears exactly once to step to — appended after the fixture note.
+    await page.evaluate(() => window.simplemark!.editor.focusEnd())
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('This document explains the notebook and the document flow around it.')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('## Second section')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('This part is under immediate control of the fold test.')
+    await expect.poll(() => markdown(page)).toContain('## Second section')
+  })
+
   test('Cmd+F opens the overlay, matches highlight, Enter steps through', async ({ page }) => {
     const before = await markdown(page)
     await page.locator(editor).click()
@@ -105,11 +118,11 @@ test.describe('in-document find', () => {
   })
 
   test('stepping to a match inside a folded section reveals it', async ({ page }) => {
-    // Fold the H2 section that contains "Stop is immediate control".
-    const heading = page.locator(`${editor} h2`, { hasText: 'The live document boundary' })
+    // Fold the H2 section that contains "immediate control".
+    const heading = page.locator(`${editor} h2`, { hasText: 'Second section' })
     await heading.hover()
     await heading.locator('.sm-fold-chevron').click()
-    const hidden = page.getByText('Stop is immediate control', { exact: false })
+    const hidden = page.getByText('under immediate control', { exact: false })
     await expect(hidden).toBeHidden()
 
     await page.locator(editor).click()

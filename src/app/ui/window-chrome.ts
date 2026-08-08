@@ -2578,8 +2578,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
      * `visibleOrder` rather than `workspaceNotes`: the list on screen is
      * sorted, pin-ordered and possibly search-filtered, and stepping through
      * any other sequence would move the selection somewhere the eye cannot
-     * follow. `NoteWalk` keeps a run stable if another list action reorders it
-     * while the user is stepping through notes.
+     * follow. `NoteWalk` owns the harder half — Recent Notes re-sorts as you
+     * open notes, so the sequence a run of presses walks has to be the one it
+     * started with rather than whatever the list says on each keystroke.
      */
     stepNote = (delta): void => {
       if (workspace.onSelectNote === undefined) return
@@ -2640,6 +2641,19 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
     setWorkspaceMode = applyWorkspaceMode
     getWorkspaceMode = () => workspaceBody.dataset['layout'] as WorkspaceMode
+
+    /**
+     * Below the breakpoint where the list and the document cannot share a row,
+     * which pane is showing is navigation rather than a remembered preference:
+     * an open note means you are reading it, none means you are in the list.
+     */
+    applySinglePaneNavigation = (next: WorkspaceOptions): void => {
+      const narrow = globalThis.matchMedia?.('(max-width: 620px)').matches === true
+      if (!narrow) return
+      const wanted: WorkspaceMode = next.activeNoteId === '' ? 'all' : 'editor'
+      if (getWorkspaceMode() !== wanted) applyWorkspaceMode(wanted)
+    }
+
     applyWorkspaceMode(options.initialWorkspaceMode)
     applySinglePaneNavigation(workspace)
     documentListButton.addEventListener('click', () => {

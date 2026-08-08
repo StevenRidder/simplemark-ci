@@ -37,7 +37,7 @@ test('a chosen image writes portable Markdown and gives a visible missing-file s
   // A relative image already in the document resolves normally when the file
   // exists. The next reference intentionally points at an unavailable path.
   await expect
-    .poll(() => page.locator(`${editor} img[alt="SimpleMark asset"]`).evaluate(
+    .poll(() => page.locator(`${editor} img[alt="Fixture asset"]`).evaluate(
       (image: HTMLImageElement) => image.complete && image.naturalWidth > 0,
     ))
     .toBe(true)

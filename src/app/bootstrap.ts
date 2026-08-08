@@ -960,7 +960,7 @@ const PREFERENCES_KEY = 'simplemark.reader-preferences'
  * The width below which the note list and the document cannot share a row.
  *
  * Must equal the `max-width: 620px` breakpoint in `app.css`, where
- * `.document-surface` stops sharing the grid with the list.
+ * `.document-surface` is hidden outright.
  */
 const SINGLE_PANE_WIDTH = 620
 
@@ -968,11 +968,11 @@ const SINGLE_PANE_WIDTH = 620
  * Which pane a single-pane viewport is showing — navigation, not a preference.
  *
  * Below the breakpoint the list and the document are two screens rather than a
- * split view that got narrow, so "which one am I on" follows from whether a
- * note is open: reading one means you are on it, having none means you are in
- * the list. Deciding it here rather than in the chrome is what makes it
- * survive, because opening a note tears the composition down and builds a new
- * one — a mode written onto the old DOM is gone moments later.
+ * split view that got narrow, so "which one am I on" follows from whether a note
+ * is open: reading one means you are on it, and having none means you are in the
+ * list. Deciding it here rather than in the chrome is what makes it survive —
+ * opening a note tears the composition down and builds a new one, so a mode
+ * written onto the old DOM is gone moments later.
  *
  * Returns undefined on a viewport that can show both, where the mode really is
  * a remembered preference.

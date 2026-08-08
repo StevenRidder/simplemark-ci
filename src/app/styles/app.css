@@ -3142,8 +3142,8 @@ section.editor::-webkit-scrollbar {
   }
   /* The status line stays. It is where every failure the shell can report is
      written — could not open, changed on disk, save refused — and hiding it
-     made those messages invisible rather than absent. A phone has less room to
-     spare and more need to be told. */
+     made those messages invisible rather than absent. A phone has less room
+     to spare and more need to be told. */
   .status {
     max-width: 52vw;
     overflow: hidden;

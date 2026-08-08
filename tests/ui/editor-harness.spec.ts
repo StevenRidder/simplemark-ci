@@ -84,7 +84,7 @@ test('save-state wording does not move the styles bar', async ({ page }) => {
   const before = await formatting.boundingBox()
   expect(before).not.toBeNull()
 
-  await page.locator(`${editor} p`).first().click()
+  await caretAtEnd(page)
   await page.keyboard.type(' one edit is enough')
   await expect(page.locator('.status')).toHaveAttribute('data-state', 'dirty')
 
@@ -105,8 +105,8 @@ test('is the real ProseMirror candidate, not a contenteditable demo', async ({ p
   expect(isProseMirror).toBe(true)
 
   // The fixture's Markdown was parsed into real nodes, not shown as text.
-  await expect(page.locator(`${editor} h1`)).toContainText('The first useful proof')
-  await expect(page.locator(`${editor} h2`)).toContainText('The live document boundary')
+  await expect(page.locator(`${editor} h1`)).toContainText('Fixture heading')
+  await expect(page.locator(`${editor} h2`)).toContainText('Fixture section heading')
 })
 
 test('workspace controls are real while collaboration controls stay disabled', async ({ page }) => {
@@ -173,7 +173,7 @@ test('typing flows through the application API and advances the document revisio
   const before = await page.evaluate(() => window.simplemark!.session.snapshot())
   expect(before.dirty).toBe(false)
 
-  await page.locator(`${editor} p`).first().click()
+  await caretAtEnd(page)
   await page.keyboard.type(' Typed by the acceptance test.')
 
   await expect
@@ -252,7 +252,7 @@ test('the Mermaid fence renders as a diagram and toggles to editable source', as
   // Editing the source updates the document through ProseMirror.
   await source.click()
   await source.press('End')
-  await source.pressSequentially('\n  BOTH --> OUT[Portable Markdown]')
+  await source.pressSequentially('\n  B --> OUT[Portable Markdown]')
 
   await expect
     .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
@@ -316,7 +316,7 @@ test('a renderer that throws fails visibly instead of leaving stale markup', asy
 })
 
 test('saving round-trips through the port and reopens as portable Markdown', async ({ page }) => {
-  await page.locator(`${editor} p`).first().click()
+  await caretAtEnd(page)
   await page.keyboard.type(' Saved round trip.')
 
   await expect
@@ -366,7 +366,7 @@ test('pasted Markdown is parsed, not inserted as escaped literal text', async ({
   // Focus first. Headless Chromium refuses navigator.clipboard.writeText on an
   // unfocused document, which made this pass in isolation and fail in the suite.
   await page.bringToFront()
-  await page.locator(`${editor} p`).first().click()
+  await caretAtEnd(page)
   await page.evaluate((text) => navigator.clipboard.writeText(text), pasted)
 
   await page.keyboard.press('ControlOrMeta+End')
@@ -408,7 +408,7 @@ test('a clipboard carrying both HTML and plain text takes the Markdown path', as
 
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.bringToFront()
-  await page.locator(`${editor} p`).last().click()
+  await caretAtEnd(page)
 
   // A real clipboard carrying both flavours, the way an editor writes it.
   // A synthetic ClipboardEvent is untrusted and ProseMirror ignores it.
@@ -635,14 +635,9 @@ test('Cmd+Z undoes an ordinary edit', async ({ page }) => {
     .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
     .not.toContain('UNDO ME')
 
-  // The surrounding prose is intact. Deliberately not asserting byte equality
-  // with the pre-edit document: remark rewrites `---` to `***` on the first
-  // serialise regardless of undo, which is the D7 normalisation FIDELITY-1
-  // owns. Asserting it here would fail for a reason that has nothing to do
-  // with undo.
+  // The surrounding prose is intact — undo removed only the last edit.
   const after = await page.evaluate(() => window.simplemark!.session.snapshot().markdown)
-  expect(after).toContain('application database.')
-  expect(after).toContain('The live document boundary')
+  expect(after).toContain('Fixture closing paragraph.')
 })
 
 const PASTED_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><rect width="20" height="30"/></svg>'

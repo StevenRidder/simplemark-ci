@@ -215,7 +215,7 @@ test('cancelling the picker leaves the current document untouched', async ({ pag
 
   await page.getByRole('button', { name: 'Open file' }).click()
   await expect(page.locator('.filename-title')).toHaveText('architecture')
-  await expect(page.locator(`${EDITOR} h1`)).toContainText('The first useful proof')
+  await expect(page.locator(`${EDITOR} h1`)).toContainText('Fixture heading')
 })
 
 test('a browser without the native API offers the Safari-compatible open fallback', async ({ page }) => {

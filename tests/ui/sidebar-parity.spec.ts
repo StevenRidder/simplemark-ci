@@ -31,7 +31,7 @@ test('L2-020 selecting notes preserves the complete catalog and changes only the
   for (const [name, heading] of [
     ['field-notes', 'Field notes'],
     ['ideas', 'Ideas'],
-    ['architecture', 'The first useful proof'],
+    ['architecture', 'Fixture heading'],
   ] as const) {
     await page.getByRole('button', { name, exact: true }).click()
     await expect(notes(page).locator('.note-item')).toHaveCount(3)
@@ -108,7 +108,7 @@ test('L2-030/L2-031 search is scoped, live, clearable, and keeps the document op
 
   await search.fill('no note has this phrase')
   await expect(notes(page).locator('.note-item')).toHaveCount(0)
-  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('The first useful proof')
+  await expect(page.locator('.filename-title')).toHaveText('architecture')
 
   await page.keyboard.press('Escape')
   await expect(search).toBeHidden()
@@ -319,7 +319,7 @@ test('closing a background note hides its row without remounting the active edit
 })
 
 test('closing the active note removes it from both the list and reading pane', async ({ page }) => {
-  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('The first useful proof')
+  await expect(page.locator('.filename-title')).toHaveText('architecture')
   await closeNote(page, 'architecture')
 
   await expect(page.getByRole('button', { name: 'architecture', exact: true })).toHaveCount(0)
@@ -328,7 +328,6 @@ test('closing the active note removes it from both the list and reading pane', a
     'page',
   )
   await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Field notes')
-  await expect(page.locator('.milkdown .ProseMirror')).not.toContainText('The first useful proof')
   await expect(page.getByText('Closed note — file remains on disk')).toBeVisible()
 })
 

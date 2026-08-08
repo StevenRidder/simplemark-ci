@@ -1,6 +1,7 @@
 import { parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
+import type { Fragment } from '@milkdown/kit/prose/model'
 import { DOMParser as ProseDOMParser, Slice } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -195,6 +196,28 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
       view.dispatch(closeHistory(convert))
     }
 
+    /**
+     * The slice to insert for a parsed Markdown fragment.
+     *
+     * A closed slice (`0, 0`) says "these are whole blocks" — correct for a
+     * document, and what this path always used. But a paste is not always a
+     * document: with the caret between two words, a closed paragraph cannot
+     * fit inside the paragraph it lands in, so ProseMirror splits the sentence
+     * around it and `before| after` comes back as three blocks. §4.2 condition
+     * 1 already says a mid-sentence paste "inserts text"; this is what makes
+     * that true for the text path.
+     *
+     * So: one paragraph is inline content and its slice is opened at both ends
+     * to merge into the surrounding sentence. Anything else — a heading, a
+     * fence, a table, several blocks — is block content and stays closed,
+     * which is the behaviour every existing paste test pins.
+     */
+    const markdownSlice = (view: EditorView, content: Fragment): Slice => {
+      const only = content.childCount === 1 ? content.firstChild : null
+      const isInlineOnly = only !== null && only.type === view.state.schema.nodes['paragraph']
+      return isInlineOnly ? new Slice(content, 1, 1) : new Slice(content, 0, 0)
+    }
+
     /** §4.2 step 3: no sniffer claimed it, so the Markdown path runs on text/plain. */
     const insertMarkdown = (view: EditorView, text: string): void => {
       // Deliberately total, dispatch included: this is the §4.4 fallback of
@@ -205,7 +228,9 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
       try {
         const parsed = ctx.get(parserCtx)(text)
         if (parsed === null || parsed === undefined) return
-        view.dispatch(view.state.tr.replaceSelection(new Slice(parsed.content, 0, 0)).scrollIntoView())
+        view.dispatch(
+          view.state.tr.replaceSelection(markdownSlice(view, parsed.content)).scrollIntoView(),
+        )
       } catch {
         return
       }

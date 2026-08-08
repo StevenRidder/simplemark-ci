@@ -25,9 +25,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gate:
+  # The browser suite is the long pole on the hosted runner. Spread the suite
+  # across eight independent runners with a light two-worker pool; this preserves
+  # the required `gate` context while keeping each hosted runner's Vite server
+  # and Chromium processes below its CPU ceiling.
+  browser:
+    if: github.event_name == 'merge_group'
+    name: browser (${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies and Chromium
+        run: npm ci && npx playwright install --with-deps chromium
+
+      - name: Run browser shard
+        env:
+          PLAYWRIGHT_WORKERS: '2'
+        run: npm run test:ui -- --shard=${{ matrix.shard }}/8
+
+      - name: Upload Playwright receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: ui-playwright-${{ github.sha }}-shard-${{ matrix.shard }}
+          path: .artifacts/ui-playwright-receipt.json
+          if-no-files-found: warn
+
+  gate:
+    needs: [browser]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    # The merge-group browser suite runs in the shard matrix above. Ten minutes
+    # leaves room for hosted-runner variance in this aggregate gate while failing
+    # a genuinely stalled non-UI gate promptly.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
         with:
@@ -58,20 +104,27 @@ jobs:
         with:
           node-version: '22'
 
-      # The full gate drives a real browser. A PR head receives a quick admission
-      # check only; the queue owns the expensive browser proof for the exact
-      # merge-group SHA. This avoids running the 129-test browser suite twice.
+      # PR heads receive a quick admission check. Merge groups run the non-UI
+      # portion here while the browser job above proves the exact SHA in parallel.
       - name: Install Chromium for the UI gate
         if: github.event_name != 'pull_request' && steps.lock.outputs.present == 'true'
-        run: npm ci && npx playwright install --with-deps chromium
+        run: npm ci && if [ "$GITHUB_EVENT_NAME" != "merge_group" ]; then npx playwright install --with-deps chromium; fi
+
+      - name: Verify browser shard matrix
+        if: github.event_name == 'merge_group' && needs.browser.result != 'success'
+        run: |
+          echo "The merge-group browser shard matrix did not pass: ${{ needs.browser.result }}" >&2
+          exit 1
 
       - name: Run the SimpleMark ${{ github.event_name == 'pull_request' && 'admission gate' || 'merge-group gate' }}
         env:
           SIMPLEMARK_CI_STRICT: '1'
           SIMPLEMARK_CI_SCOPE: ${{ github.event_name == 'pull_request' && 'fast' || 'full' }}
           # The full path installed dependencies before Chromium. The fast PR
-          # admission path installs normally inside the shared canonical script.
+          # admission path installs normally inside the shared canonical script;
+          # merge groups delegate the browser suite to the shard matrix.
           SIMPLEMARK_CI_SKIP_INSTALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          SIMPLEMARK_CI_SKIP_UI: ${{ github.event_name == 'merge_group' && '1' || '0' }}
           CI_RESULT_REPORT: .artifacts/ci-result.json
         run: bash scripts/simplemark_ci.sh
 

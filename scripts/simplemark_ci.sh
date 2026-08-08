@@ -16,6 +16,7 @@ SCOPE="${SIMPLEMARK_CI_SCOPE:-full}"
 FAIL_FAST="${SIMPLEMARK_CI_FAIL_FAST:-0}"
 RESULT_REPORT="${CI_RESULT_REPORT:-.artifacts/ci-result.json}"
 SKIP_INSTALL="${SIMPLEMARK_CI_SKIP_INSTALL:-0}"
+SKIP_UI="${SIMPLEMARK_CI_SKIP_UI:-0}"
 
 if [ "$SCOPE" != "fast" ] && [ "$SCOPE" != "full" ]; then
   echo "Unsupported SIMPLEMARK_CI_SCOPE=$SCOPE (expected fast or full)." >&2
@@ -24,6 +25,11 @@ fi
 
 if [ "$SKIP_INSTALL" != "0" ] && [ "$SKIP_INSTALL" != "1" ]; then
   echo "Unsupported SIMPLEMARK_CI_SKIP_INSTALL=$SKIP_INSTALL (expected 0 or 1)." >&2
+  exit 2
+fi
+
+if [ "$SKIP_UI" != "0" ] && [ "$SKIP_UI" != "1" ]; then
+  echo "Unsupported SIMPLEMARK_CI_SKIP_UI=$SKIP_UI (expected 0 or 1)." >&2
   exit 2
 fi
 
@@ -187,6 +193,11 @@ done
 
 if [ "$SCOPE" = "full" ]; then
   for s in $OPTIONAL_SCRIPTS; do
+    if [ "$s" = "test:ui" ] && [ "$SKIP_UI" = "1" ]; then
+      record "$s" "delegated" "browser shard matrix owns the full UI suite"
+      echo "SKIP  $s (delegated to the browser shard matrix)"
+      continue
+    fi
     run_script "$s" optional
   done
 fi

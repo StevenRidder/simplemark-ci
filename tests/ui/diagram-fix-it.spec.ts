@@ -41,12 +41,14 @@ async function openNoteWithBrokenDiagram(page: import('@playwright/test').Page):
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.getByRole('button', { name: 'Open file' }).click()
-  await expect(page.locator('.diagram-error')).toBeVisible()
+  // The legacy fixture keeps hidden error shells for its other diagrams. The
+  // recovery contract is about the error currently visible for this note.
+  await expect(page.locator('.diagram-error:visible')).toHaveCount(1)
 }
 
 test('Copy places the language, error, and source on the clipboard', async ({ page }) => {
   await openNoteWithBrokenDiagram(page)
-  await page.locator('.diagram-error-copy').click()
+  await page.locator('.diagram-error:visible .diagram-error-copy').click()
   const text = await page.evaluate(() => navigator.clipboard.readText())
   expect(text).toContain('Diagram type: mermaid')
   expect(text).toContain(BROKEN_MERMAID)
@@ -72,12 +74,12 @@ test('Fix it retries until the diagram renders, updating the label on every atte
   })
 
   await openNoteWithBrokenDiagram(page)
-  const fixButton = page.locator('.diagram-error-fix')
+  const fixButton = page.locator('.diagram-error:visible .diagram-error-fix')
   await fixButton.click()
 
   await expect(fixButton).toHaveText('Fixing… (1/3)')
   await expect(page.locator(`${EDITOR} .diagram-render svg`).first()).toBeVisible({ timeout: 15_000 })
-  await expect(page.locator('.diagram-error')).toBeHidden()
+  await expect(page.locator('.diagram-error:visible')).toHaveCount(0)
   expect(calls).toBe(3)
 
   // The editor hands changes to the session on a 200ms debounce (see
@@ -96,7 +98,7 @@ test('a transport failure stops the loop immediately instead of spending all 3 a
   })
 
   await openNoteWithBrokenDiagram(page)
-  await page.locator('.diagram-error-fix').click()
+  await page.locator('.diagram-error:visible .diagram-error-fix').click()
 
   await expect(page.locator('.diagram-error-message')).toContainText('401', { timeout: 10_000 })
   expect(calls).toBe(1)
@@ -110,7 +112,7 @@ test('3 straight syntax-error answers leave the last attempt in the document and
   })
 
   await openNoteWithBrokenDiagram(page)
-  await page.locator('.diagram-error-fix').click()
+  await page.locator('.diagram-error:visible .diagram-error-fix').click()
 
   await expect(page.locator('.diagram-error-message')).toContainText("Couldn't auto-fix after 3 attempts", {
     timeout: 15_000,

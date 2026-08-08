@@ -734,8 +734,9 @@ const SMALL_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80" viewBox="0 0 200 80"><rect width="120" height="40"/></svg>'
 
 test('a pasted SVG renders at its natural width, not the column width', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   await pasteAtEnd(page, SMALL_SVG)
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
 
   const svg = page.locator('.diagram').last().locator('.diagram-render svg')
   await expect(svg).toBeVisible()
@@ -745,8 +746,9 @@ test('a pasted SVG renders at its natural width, not the column width', async ({
 })
 
 test('a pasted SVG with no discoverable size still fills the column', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   await pasteAtEnd(page, '<svg xmlns="http://www.w3.org/2000/svg"><rect width="40" height="20"/></svg>')
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
 
   const svg = page.locator('.diagram').last().locator('.diagram-render svg')
   await expect(svg).toBeVisible()
@@ -757,8 +759,9 @@ test('a pasted SVG with no discoverable size still fills the column', async ({ p
 // §6 of the chart-size spec: zoom is transient reader state on generated
 // diagrams. Pasted SVGs get resize instead — no zoom controls there.
 test('zoom controls scale a Mermaid diagram and reset to 100%', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   await pasteAtEnd(page, BARE_MERMAID)
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
 
   const figure = page.locator('.diagram').last()
   const svg = figure.locator('.diagram-render svg')
@@ -795,8 +798,9 @@ const WIDE_MERMAID = `flowchart LR\n${Array.from({ length: 12 }, (_, i) => `N${i
 test('zoom overrides the wide default: zooming out un-wides a dense diagram, zooming in restores it', async ({
   page,
 }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   await pasteAtEnd(page, WIDE_MERMAID)
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
 
   const figure = page.locator('.diagram').last()
   const svg = figure.locator('.diagram-render svg')
@@ -833,8 +837,9 @@ test('zoom scales from the capped fill width, not the raw column, on a wide read
   await page.getByRole('button', { name: 'Text formatting' }).click()
   await expect(page.locator('.format-popover')).not.toHaveClass(/open/)
 
+  const initialDiagrams = await page.locator('.diagram').count()
   await pasteAtEnd(page, BARE_MERMAID)
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
   const figure = page.locator('.diagram').last()
   const svg = figure.locator('.diagram-render svg')
   await expect(svg).toBeVisible()

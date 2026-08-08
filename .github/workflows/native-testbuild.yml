@@ -1,4 +1,4 @@
-# Private native test builds for every pull request.
+# Private native test builds for pull requests that can change the installed app.
 #
 # This is `docs/RELEASE-CONTRACT.md` §2's pull-request lane and nothing else: it
 # builds the four contracted desktop targets from APP-2's real Tauri application
@@ -13,6 +13,15 @@ name: native test build
 
 on:
   pull_request:
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'index.html'
+      - 'vite.config.ts'
+      - 'tsconfig*.json'
+      - 'scripts/verify-native-*.mjs'
   workflow_dispatch:
 
 permissions:

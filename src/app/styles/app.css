@@ -3303,10 +3303,18 @@ section.editor::-webkit-scrollbar {
      * those differ by the status bar and the home indicator, so the window
      * overhung the viewport and everything pinned to its bottom edge — the
      * formatting palette above all — sat just below the fold, present and
-     * unreachable. `dvh` is the visible viewport and shrinks when the keyboard
-     * arrives, which is the same question asked correctly.
+     * unreachable. `dvh` is the visible viewport, which is the same question
+     * asked correctly.
+     *
+     * `dvh` accounts for browser chrome but *not* for the keyboard, so the
+     * keyboard's own height is subtracted separately. That subtraction is what
+     * makes the rest of this stable: with the app ending at the keyboard's top
+     * edge, the caret can never be underneath it, so iOS never pans the visual
+     * viewport to go looking for it — and a palette pinned to that edge stays
+     * where it was put instead of sliding as `visualViewport.offsetTop` moves
+     * under it.
      */
-    height: 100dvh;
+    height: calc(100dvh - var(--keyboard-inset, 0px));
     min-height: 0;
     border: 0;
     border-radius: 0;
@@ -3340,41 +3348,6 @@ section.editor::-webkit-scrollbar {
   .right .tool {
     display: none;
   }
-  /*
-   * Float against the viewport rather than the pane.
-   *
-   * Absolute positioning anchors to `.document-surface`, and on a phone that
-   * pane measures taller than the part of the screen you can see — so the
-   * palette obediently sat 15px below the fold: visible to the DOM, present in
-   * every measurement, and unreachable by a thumb. Fixed positioning asks the
-   * only question that matters on a small screen, which is where the viewport
-   * ends, and the inset clears the home indicator.
-   */
-  .styles-bar,
-  .styles-bar-reveal {
-    position: fixed;
-    bottom: calc(14px + env(safe-area-inset-bottom));
-  }
-  /*
-   * The palette is authored at a fixed 436px, which is wider than the phone it
-   * is now floating on — so it reached past both edges and stopped reading as
-   * a floating thing at all. Inset from the edges instead, and let the controls
-   * share whatever width the screen has.
-   */
-  .styles-bar {
-    left: 12px;
-    right: 12px;
-    width: auto;
-    justify-content: space-around;
-    transform: none;
-  }
-  .styles-bar.is-placed {
-    left: 12px;
-    right: 12px;
-    top: auto;
-    bottom: calc(14px + env(safe-area-inset-bottom));
-    transform: none;
-  }
   /* The row stays one line: low-frequency actions move into More, where the
      exact same commands remain available. */
   .styles-bar-overflow,
@@ -3395,6 +3368,90 @@ section.editor::-webkit-scrollbar {
   .diagram {
     padding-left: 14px;
     padding-right: 14px;
+  }
+}
+
+/*
+ * The formatting palette, handed over to the keyboard.
+ *
+ * Two changes at once, and they only make sense together.
+ *
+ * It floats against the *viewport* rather than the pane. Absolute positioning
+ * anchors to `.document-surface`, and on a phone that pane measures taller
+ * than the part of the screen you can see — so the palette obediently sat 15px
+ * below the fold: visible to the DOM, present in every measurement, and
+ * unreachable by a thumb.
+ *
+ * And it belongs to the keyboard, not the page: absent while reading — which
+ * is most of the time, and hands ~50pt of a small screen back to the document
+ * — and riding the keyboard's top edge while editing, the way Bear and Notes
+ * both do it. A webview cannot ask for a real `inputAccessoryView`, so
+ * `--keyboard-inset` is measured from `visualViewport` in window-chrome.ts.
+ *
+ * This is deliberately its own query at 620px rather than sharing the 720px
+ * one above, because *that measurement is the JS gate*. Hiding the palette
+ * until a keyboard displaces the viewport is only safe where a keyboard can:
+ * at 621–720px — a narrow desktop window — nothing would ever displace it and
+ * the rule would hide the palette for good. The two numbers have to be the
+ * same number, so they are.
+ */
+@media (max-width: 620px) {
+  .styles-bar,
+  .styles-bar-reveal {
+    display: none;
+    position: fixed;
+    bottom: calc(var(--keyboard-inset, 0px) + 8px);
+    /* Authored at a fixed 436px, which is wider than the phone it now floats
+       on — it reached past both edges and stopped reading as a floating thing
+       at all. Inset from the edges and share whatever width the screen has. */
+    left: 8px;
+    right: 8px;
+    width: auto;
+    transform: none;
+  }
+
+  .window.keyboard-open .styles-bar:not([hidden]) {
+    display: flex;
+  }
+
+  .window.keyboard-open .styles-bar-reveal:not([hidden]) {
+    display: block;
+  }
+
+  /*
+   * The row must not scroll, and it does not need to.
+   *
+   * Scrolling it would mean `overflow-x` on the flex row, and a box with one
+   * axis clipped clips the other too (a computed `visible` beside a
+   * non-`visible` becomes `auto`) — which would trap every dropdown inside a
+   * 29px-tall strip, since these menus open *upward*. What keeps the row to
+   * one line instead is the overflow rule in the query above: low-frequency
+   * controls move into More rather than off the edge.
+   *
+   * Controls keep their authored size and share the leftover width evenly, so
+   * the row reads as a deliberate accessory rather than a left-packed fragment
+   * of a wider desktop bar.
+   */
+  .styles-bar {
+    justify-content: space-evenly;
+  }
+
+  .styles-bar .styles-control {
+    flex: none;
+  }
+
+  /* Nothing to drag, and no dragged position worth honouring: on a phone the
+     keyboard owns where this sits. */
+  .styles-drag-handle {
+    display: none;
+  }
+
+  .styles-bar.is-placed {
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: calc(var(--keyboard-inset, 0px) + 8px);
+    transform: none;
   }
 }
 

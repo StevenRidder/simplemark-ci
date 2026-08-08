@@ -1562,6 +1562,59 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   })
   stylesBarReveal.hidden = !stylesBar.hidden
 
+  /**
+   * On a phone the formatting palette belongs to the keyboard, not the page.
+   *
+   * Pinned to the bottom of the viewport it lost every fight for that strip:
+   * the keyboard covers it, the selection handles and the operating system's
+   * own Copy/Look Up callout land on top of it, and the home indicator sits
+   * underneath. Bear and Notes both answer this by attaching the bar to the
+   * keyboard — it arrives when you start editing, moves with the keyboard, and
+   * is simply absent while reading, which also returns the strip to the
+   * document.
+   *
+   * A webview cannot set a real `inputAccessoryView`, but `visualViewport`
+   * reports exactly where the keyboard's top edge is, which is the same answer
+   * by another route. The selection callout is left alone deliberately: Copy
+   * and Look Up are the platform's, and Bear does not fight them either.
+   */
+  const KEYBOARD_MIN_INSET = 120
+  const trackKeyboard = (): void => {
+    const viewport = window.visualViewport
+    if (viewport === null || viewport === undefined) return
+    // Only where a keyboard actually displaces the viewport. On a desktop it
+    // never shrinks, so "hide unless the keyboard is up" would hide it forever.
+    if (globalThis.matchMedia?.('(max-width: 620px)').matches !== true) {
+      windowEl.classList.remove('keyboard-open')
+      windowEl.style.removeProperty('--keyboard-inset')
+      return
+    }
+    const inset = Math.max(0, window.innerHeight - (viewport.height + viewport.offsetTop))
+    // A keyboard is taller than this; a toolbar or a selection callout is not,
+    // so the threshold keeps a merely shrunken viewport from being mistaken
+    // for one. Below it the inset is reported as zero rather than as a small
+    // number, because the window's own height is measured from this — and a
+    // callout must not be allowed to shorten the document.
+    const open = inset > KEYBOARD_MIN_INSET
+    windowEl.style.setProperty('--keyboard-inset', `${open ? Math.round(inset) : 0}px`)
+    windowEl.classList.toggle('keyboard-open', open)
+
+    // iOS scrolls the whole page to bring the caret above an arriving keyboard.
+    // It does that before the rule above has shortened the window, and having
+    // scrolled it does not scroll back — which drags the titlebar up under the
+    // status bar and leaves it there. Once the app ends at the keyboard's top
+    // edge the caret is visible without any of that, so the page scroll is
+    // simply undone. The app's own scrolling happens inside the panes; the
+    // document itself is never meant to be scrolled at all.
+    if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0)
+  }
+  window.visualViewport?.addEventListener('resize', trackKeyboard)
+  window.visualViewport?.addEventListener('scroll', trackKeyboard)
+  // The caret-reveal scroll above can land after the keyboard has finished
+  // resizing, so the resize events alone would miss it.
+  window.addEventListener('scroll', trackKeyboard, { passive: true })
+  trackKeyboard()
+
   const formatGroup = document.createElement('div')
   formatGroup.className = 'styles-menu-group styles-reader-settings'
   formatGroup.append(formatButton, popover)

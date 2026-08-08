@@ -9,5 +9,10 @@
         "title": "SimpleMark"
       }
     ]
+  },
+  "bundle": {
+    "iOS": {
+      "developmentTeam": "63PAAX9QF2"
+    }
   }
 }

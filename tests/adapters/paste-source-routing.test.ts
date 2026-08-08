@@ -9,7 +9,9 @@ import {
 } from '../../src/domain/index.js'
 import { claimPaste } from '../../src/adapters/editor/paste-sniffers.js'
 import {
+  BROWSER_CHAT_DIAGRAM_ANSWER_COPY,
   BROWSER_CHAT_MARKDOWN_COPY,
+  BROWSER_CHAT_RICH_ANSWER_COPY,
   BROWSER_CHAT_SELECTION_COPY,
   BROWSER_MARKDOWN_SOURCE_COPY,
   DESKTOP_CHAT_COPY_BUTTON,
@@ -116,9 +118,14 @@ describe('LLM output copied from a browser chat UI', () => {
    * — while the HTML is a rendering of it that has to be parsed back out. That
    * round trip is a lossy step in principle: a fence's language, a list's
    * nesting and a table's alignment all have to survive ProseMirror's DOM
-   * parser, where the Markdown path would not have to survive anything. How
-   * much is actually lost is not measured here, and measuring it needs a live
-   * editor rather than this suite.
+   * parser, where the Markdown path would not have to survive anything.
+   *
+   * How much is lost is now measured, in `tests/ui/paste-chat-answer-fidelity.
+   * spec.ts` — a live editor, which this suite is not. The short version: marks,
+   * links, headings, nested lists, tables and both fence languages come through
+   * intact; a task list loses its checkboxes; a formula loses its `$$` and lands
+   * as flattened glyphs; and a rendered Mermaid chart lands as a kilobytes-long
+   * `svg` fence with its four lines of source nowhere in the document.
    *
    * And it is fragile in the other direction. Anything that narrows the
    * predicate far enough to send this payload down the Markdown path would also
@@ -153,6 +160,26 @@ describe('LLM output copied from a browser chat UI', () => {
   // into the middle of a sentence still keeps its formatting.
   it('still takes the HTML path with the caret mid-sentence', () => {
     expect(routePaste(BROWSER_CHAT_MARKDOWN_COPY, { atBlockBoundary: false })).toBe('html')
+  })
+
+  // An answer with fences, math and a task list in it takes the same path.
+  // What that costs is measured in tests/ui/paste-chat-answer-fidelity.spec.ts.
+  it('takes the HTML path for a rich answer as well', () => {
+    expect(routePaste(BROWSER_CHAT_RICH_ANSWER_COPY)).toBe('html')
+  })
+
+  /**
+   * An answer whose diagram arrives already rendered takes it too.
+   *
+   * Worth its own assertion because a reader would expect `svg-in-html` to
+   * claim a payload with a whole `<svg>` in it. It declines: BUG-5's rule says
+   * a document that contains a chart is not a chart, and the surrounding
+   * `<p>`/`<strong>` make this a document. So the `<svg>` is kept in place as
+   * an `svg` fence by the HTML path — and the Mermaid source sitting in
+   * `text/plain` is not consulted.
+   */
+  it('takes the HTML path for an answer whose diagram arrives rendered', () => {
+    expect(routePaste(BROWSER_CHAT_DIAGRAM_ANSWER_COPY)).toBe('html')
   })
 })
 

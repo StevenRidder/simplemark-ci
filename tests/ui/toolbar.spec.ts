@@ -472,6 +472,128 @@ test('convert to diagram turns a Mermaid paragraph into a rendered block', async
   await expect.poll(() => markdown(page)).toContain('continued after diagram')
 })
 
+/**
+ * §4.4 rule 3, "fail visibly", for the conversion path.
+ *
+ * Convert runs the same validation gate as the paste sniffer, but only handled
+ * a renderer that *resolves* {ok:false}. A renderer that rejected — a crash
+ * inside a renderer rather than a parse failure — rejected the method, and the
+ * command's `void editor?.convertBlockToDiagram()` discarded it: the user got a
+ * silent no-op plus an unhandled promise rejection.
+ */
+async function typeMermaidParagraph(page: import('@playwright/test').Page) {
+  await caretAtEnd(page)
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('flowchart LR')
+  await page.keyboard.press('Shift+Enter')
+  await page.keyboard.type('  A --> B')
+  await expect.poll(() => markdown(page)).toContain('A --> B')
+}
+
+/**
+ * Patches the renderer the editor captured, the way the paste suite does.
+ *
+ * This is the one renderer the whole editor shares, DiagramNodeView included —
+ * and that repaints on document change with no guard of its own. Do not edit
+ * the document after calling this: the fixture diagram would repaint, reject,
+ * and fail a `pageerror` assertion for a reason that has nothing to do with
+ * the test.
+ */
+async function makeRendererReject(page: import('@playwright/test').Page) {
+  await page.evaluate(() => {
+    const milkdown = window.simplemark!.editor as unknown as {
+      renderer: { render(language: string, source: string): Promise<unknown> }
+    }
+    milkdown.renderer.render = () => Promise.reject(new Error('renderer crashed'))
+  })
+}
+
+test('a rejecting renderer refuses the conversion with a reason, rather than rejecting', async ({
+  page,
+}) => {
+  await typeMermaidParagraph(page)
+  await makeRendererReject(page)
+
+  // Resolves — the contract the caller relies on — carrying the crash message.
+  const result = await page.evaluate(async () => {
+    try {
+      return { settled: 'resolved', value: await window.simplemark!.editor.convertBlockToDiagram() }
+    } catch (error) {
+      return { settled: 'rejected', value: String(error) }
+    }
+  })
+
+  expect(result.settled).toBe('resolved')
+  expect(result.value).toMatchObject({ ok: false })
+  expect((result.value as { reason: string }).reason).toContain('renderer crashed')
+
+  // The block is untouched: no diagram, and the source is still a paragraph.
+  await expect(page.locator('.diagram')).toHaveCount(1)
+  expect(await markdown(page)).not.toContain('```mermaid\nflowchart LR\n  A --> B')
+})
+
+test('the Convert command says why out loud when the renderer crashes (§4.4)', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(String(error)))
+
+  await typeMermaidParagraph(page)
+  await makeRendererReject(page)
+
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Convert to diagram' }).click()
+
+  // Visible refusal in the status area, the same channel Copy Code uses.
+  await expect(page.locator('.status')).toHaveAttribute('data-state', 'error')
+  await expect(page.locator('.status')).toContainText('renderer crashed')
+  await expect(page.locator('.diagram')).toHaveCount(1)
+  expect(errors).toEqual([])
+})
+
+test('a conversion that throws past the render gate still refuses quietly, not unhandled', async ({
+  page,
+}) => {
+  // The try/catch guards the render await, but editor.action and view.dispatch
+  // can throw too — and in an async method that surfaces as a rejection. The
+  // caller has to hold the same guarantee the method does, or the command is
+  // right back to an unhandled rejection.
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(String(error)))
+
+  await typeMermaidParagraph(page)
+  await page.evaluate(() => {
+    const editorApi = window.simplemark!.editor as unknown as {
+      convertBlockToDiagram(): Promise<unknown>
+    }
+    editorApi.convertBlockToDiagram = () => Promise.reject(new Error('transaction exploded'))
+  })
+
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Convert to diagram' }).click()
+
+  await expect(page.locator('.status')).toHaveAttribute('data-state', 'error')
+  await expect(page.locator('.status')).toContainText('transaction exploded')
+  expect(errors).toEqual([])
+})
+
+test('a status message too long for its slot stays readable on hover', async ({ page }) => {
+  // The slot is a fixed 118px so save wording never nudges the controls, which
+  // means a refusal reason is ellipsised away — "fail visibly" has to survive
+  // that. The full text lives in the title, the one place it cannot be clipped.
+  await typeMermaidParagraph(page)
+  await makeRendererReject(page)
+
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Convert to diagram' }).click()
+
+  const status = page.locator('.status')
+  await expect(status).toHaveAttribute('data-state', 'error')
+  await expect(status).toHaveAttribute('title', /renderer crashed/)
+
+  // The slot really is too small for it — this is why the title matters.
+  const clipped = await status.evaluate((el) => el.scrollWidth > el.clientWidth)
+  expect(clipped).toBe(true)
+})
+
 test('the quiet gutter drag reorders document blocks through the editor transaction', async ({ page }) => {
   const h1 = page.locator(`${editor} > h1`)
   const h2 = page.locator(`${editor} > h2`)

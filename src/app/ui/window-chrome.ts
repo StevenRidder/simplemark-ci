@@ -2799,8 +2799,13 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     dispose: disposeDocumentScrollIndicator,
     setStatus(state, message) {
       status.dataset['state'] = state
-      status.textContent =
+      const text =
         message ?? (state === 'saved' ? 'Saved' : state === 'dirty' ? 'Unsaved changes' : 'Error')
+      status.textContent = text
+      // The slot is a fixed width so save wording never nudges the controls,
+      // which ellipsises anything longer — a refusal reason most of all. The
+      // title carries the full text, the one place the slot cannot clip it.
+      status.title = text
     },
   }
 }

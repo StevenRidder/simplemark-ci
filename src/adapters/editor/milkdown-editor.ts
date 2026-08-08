@@ -1189,7 +1189,15 @@ export class MilkdownEditor {
     }
 
     // Same validation gate as the paste sniffer: never guess silently wrong.
-    const rendered = await this.renderer.render(language, source)
+    // A renderer that rejects outright — a crash rather than a parse failure —
+    // is a refusal like any other, not an exception for the caller to drop on
+    // the floor: §4.4 rule 3 wants the reason said out loud either way.
+    let rendered
+    try {
+      rendered = await this.renderer.render(language, source)
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+    }
     if (!rendered.ok) return { ok: false, reason: rendered.message }
 
     const { view, node, pos } = found

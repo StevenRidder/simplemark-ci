@@ -212,7 +212,21 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     if (COMMANDS[id].target === 'editor') {
       // Async and interactive, so it cannot be a plain forwarded command.
       if (id === 'convertToDiagram') {
-        void editor?.convertBlockToDiagram()
+        // A refusal carries the reason the block did not convert — an empty
+        // block, unrecognised source, or a renderer that failed. Dropping it
+        // left the command looking broken rather than declined (§4.4 rule 3).
+        void editor?.convertBlockToDiagram().then(
+          (result) => {
+            if (!result.ok) chrome.setStatus('error', `Not converted — ${result.reason}`)
+          },
+          // The method guards its render gate, but building or dispatching the
+          // transaction can still throw — and in an async method that arrives
+          // here as a rejection. Saying so is the whole point of the command.
+          (error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error)
+            chrome.setStatus('error', `Not converted — ${message}`)
+          },
+        )
         return
       }
       editor?.runCommand(id as Parameters<MilkdownEditor['runCommand']>[0])

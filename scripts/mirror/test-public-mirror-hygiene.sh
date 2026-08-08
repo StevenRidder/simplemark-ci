@@ -28,7 +28,9 @@ if grep -ERIn --exclude='package-lock.json' \
 fi
 
 test -f "$EXPORT_DIR/src/app/browser.ts"
-test -f "$EXPORT_DIR/docs/decisions/INDEX.md"
+test -f "$EXPORT_DIR/docs/GETTING-STARTED.md"
+test ! -e "$EXPORT_DIR/docs/PRODUCT.md"
+test ! -e "$EXPORT_DIR/docs/decisions"
 test ! -e "$EXPORT_DIR/docs/COLLABORATION.md"
 test ! -e "$EXPORT_DIR/docs/MCP-SERVER.md"
 test ! -e "$EXPORT_DIR/docs/TECH-SPEC.md"

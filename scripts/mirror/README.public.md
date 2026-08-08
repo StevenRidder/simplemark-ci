@@ -77,11 +77,10 @@ What is deliberately not the headline: hosted accounts, agent orchestration, and
 
 ## Read more
 
-- [Product contract](docs/PRODUCT.md) — who this is for, the interaction rules, and the sequence
+- [Getting started](docs/GETTING-STARTED.md) — install, run, test, and explore the repository
 - [Renderer catalog](docs/RENDERERS.md) — the supported formats and their portable fallbacks
 - [Storm Atlas](docs/showcase/project-tanoa-storm-atlas.md) — the source behind the demo above
 - [Living handbook](docs/showcase/welcome-to-simplemark.md) — a tour of the rendered capabilities
-- [Architecture decisions](docs/decisions/INDEX.md) — the durable choices behind the product
 
 ## Licence
 

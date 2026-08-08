@@ -30,17 +30,17 @@ PUBLIC_CLONE="${WORK_ROOT}/public"
 # internal release operations, and unpublished collaboration/agent strategy.
 # tests/ui/fidelity.spec.ts drives spike/fidelity's harness and types against the
 # window global it installs. The spike does not ship, so the spec goes with it.
-HIDDEN_PATH_RE='^(website/|AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattributes$|scripts/(publish-public-mirror|ci-sandbox|simplemark_ci)\.sh|scripts/mirror/|spike/|tests/app/(ci-sandbox-open-pr|native-testbuild-workflow|release-workflow|emergency-release-workflow|simplemark-launch-showcase)\.test\.ts|tests/ui/(fidelity|simplemark-launch-showcase)\.spec\.ts|tests/fixtures/01-switchboard-borrowing-map\.md|src/adapters/mcp/README\.md|src/domain/(fences|transactions)/README\.md|docs/wireframe[^/]*\.html|docs/(POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX|DESIGN|COLLABORATION|MCP-SERVER|TECH-SPEC|APPLE-NATIVE-AI|APPLE-NATIVE-CAPABILITIES|NATIVE-WORKSPACE|READER-CANVAS-ZOOM-SCOPE|SIDEBAR-PARITY-TEST-PLAN|SKETCH-TO-DIAGRAM|UPDATE-NOTIFICATION|WELLVIEW-PASTE|THIRD-PARTY-ICONS|LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT|BEAR-EDIT-MENU-INVENTORY|BEAR-INSPIRED-EDITING|MERGE-QUEUE|RELEASE-CONTRACT|RELEASE-TRUST)\.md|docs/showcase/simplemark-1\.0-launch-plan\.md|docs/decisions/000(1-single-product-modular-architecture|2-local-document-session-before-crdt|4-mcp-as-participant-client|5-rendered-document-before-agent-participation|6-one-authoritative-change-stream|7-annotation-before-participation)\.md|docs/superpowers/)'
+HIDDEN_PATH_RE='^(website/|AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattributes$|scripts/(publish-public-mirror|ci-sandbox|simplemark_ci)\.sh|scripts/mirror/|spike/|tests/app/(ci-sandbox-open-pr|native-testbuild-workflow|release-workflow|emergency-release-workflow|simplemark-launch-showcase)\.test\.ts|tests/ui/(fidelity|simplemark-launch-showcase)\.spec\.ts|tests/fixtures/01-switchboard-borrowing-map\.md|src/adapters/mcp/README\.md|src/domain/(fences|transactions)/README\.md|docs/wireframe[^/]*\.html|docs/decisions/|docs/(PRODUCT|POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX|DESIGN|COLLABORATION|MCP-SERVER|TECH-SPEC|APPLE-NATIVE-AI|APPLE-NATIVE-CAPABILITIES|NATIVE-WORKSPACE|READER-CANVAS-ZOOM-SCOPE|SIDEBAR-PARITY-TEST-PLAN|SKETCH-TO-DIAGRAM|UPDATE-NOTIFICATION|WELLVIEW-PASTE|THIRD-PARTY-ICONS|LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT|BEAR-EDIT-MENU-INVENTORY|BEAR-INSPIRED-EDITING|MERGE-QUEUE|RELEASE-CONTRACT|RELEASE-TRUST)\.md|docs/showcase/simplemark-1\.0-launch-plan\.md|docs/superpowers/)'
 
 # Text that must never appear in the mirror, even inside a file that ships.
 # Scoped to the agent/board scaffolding and CI mechanics — not to every mention
 # of Switchboard, which is a sibling product the docs legitimately cite.
-HIDDEN_TEXT_RE='AGENTS\.md|CLAUDE\.md|superpowers|ci-sandbox|simplemark-ci|taikun-plan|plan\.taikunai|PM_MCP_TOKEN|SWITCHBOARD_TOKEN|MIRROR_DRY_RUN|6th-Element-Labs/simplemark|StevenRidder/simplemark([^[:alnum:]-]|$)|(POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX|DESIGN|COLLABORATION|MCP-SERVER|TECH-SPEC|APPLE-NATIVE-AI|APPLE-NATIVE-CAPABILITIES|NATIVE-WORKSPACE|READER-CANVAS-ZOOM-SCOPE|SIDEBAR-PARITY-TEST-PLAN|SKETCH-TO-DIAGRAM|UPDATE-NOTIFICATION|WELLVIEW-PASTE|THIRD-PARTY-ICONS|LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT|BEAR-EDIT-MENU-INVENTORY|BEAR-INSPIRED-EDITING|MERGE-QUEUE|RELEASE-CONTRACT|RELEASE-TRUST|simplemark-1\.0-launch-plan)\.md|ADR-000[124567]'
+HIDDEN_TEXT_RE='AGENTS\.md|CLAUDE\.md|superpowers|ci-sandbox|simplemark-ci|taikun-plan|plan\.taikunai|PM_MCP_TOKEN|SWITCHBOARD_TOKEN|MIRROR_DRY_RUN|6th-Element-Labs/simplemark|StevenRidder/simplemark([^[:alnum:]-]|$)|docs/decisions/|(PRODUCT|POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX|DESIGN|COLLABORATION|MCP-SERVER|TECH-SPEC|APPLE-NATIVE-AI|APPLE-NATIVE-CAPABILITIES|NATIVE-WORKSPACE|READER-CANVAS-ZOOM-SCOPE|SIDEBAR-PARITY-TEST-PLAN|SKETCH-TO-DIAGRAM|UPDATE-NOTIFICATION|WELLVIEW-PASTE|THIRD-PARTY-ICONS|LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT|BEAR-EDIT-MENU-INVENTORY|BEAR-INSPIRED-EDITING|MERGE-QUEUE|RELEASE-CONTRACT|RELEASE-TRUST|simplemark-1\.0-launch-plan)\.md|ADR-000[124567]'
 
 # Documents that do not ship. References to them are de-linked rather than
 # deleted, so the surrounding sentence survives and the mirror has no dead links.
 UNSHIPPED_DOCS=(
-  POC SWITCHBOARD-KERNEL AGENT-WORKSPACE CI-SANDBOX DESIGN COLLABORATION MCP-SERVER TECH-SPEC
+  PRODUCT POC SWITCHBOARD-KERNEL AGENT-WORKSPACE CI-SANDBOX DESIGN COLLABORATION MCP-SERVER TECH-SPEC
   APPLE-NATIVE-AI APPLE-NATIVE-CAPABILITIES NATIVE-WORKSPACE READER-CANVAS-ZOOM-SCOPE
   SIDEBAR-PARITY-TEST-PLAN SKETCH-TO-DIAGRAM UPDATE-NOTIFICATION WELLVIEW-PASTE THIRD-PARTY-ICONS
   LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT BEAR-EDIT-MENU-INVENTORY BEAR-INSPIRED-EDITING MERGE-QUEUE
@@ -62,9 +62,10 @@ REQUIRED_PATHS=(
   package.json
   index.html
   docs/assets/project-tanoa-storm-atlas.gif
-  docs/decisions/INDEX.md
-  docs/PRODUCT.md
+  docs/GETTING-STARTED.md
   docs/RENDERERS.md
+  docs/showcase/project-tanoa-storm-atlas.md
+  docs/showcase/welcome-to-simplemark.md
   src/domain/source/source-map.ts
   src/adapters/editor/milkdown-editor.ts
   src/app/browser.ts
@@ -122,7 +123,7 @@ scan_product_contract() {
   # explicit so a future path-regex edit cannot accidentally reopen the moat.
   local private_path
   for private_path in \
-    docs/COLLABORATION.md docs/MCP-SERVER.md docs/DESIGN.md docs/TECH-SPEC.md \
+    docs/PRODUCT.md docs/decisions docs/COLLABORATION.md docs/MCP-SERVER.md docs/DESIGN.md docs/TECH-SPEC.md \
     docs/wireframe.html docs/wireframe-bear.html docs/wireframe-collaboration.html docs/wireframe-ios.html \
     docs/showcase/simplemark-1.0-launch-plan.md \
     docs/decisions/0001-single-product-modular-architecture.md \
@@ -130,7 +131,7 @@ scan_product_contract() {
     docs/decisions/0004-mcp-as-participant-client.md \
     docs/decisions/0005-rendered-document-before-agent-participation.md \
     docs/decisions/0006-one-authoritative-change-stream.md \
-    docs/decisions/0007-annotation-before-participation.md \
+    docs/decisions/0007-annotation-before-participation.md docs/decisions/0008-pasted-images-become-local-files.md \
     src/adapters/mcp/README.md src/domain/fences/README.md src/domain/transactions/README.md; do
     [ ! -e "${tree_dir}/${private_path}" ] || die "[$label] private document reached the mirror: ${private_path}"
   done
@@ -155,11 +156,10 @@ sanitize_export() {
   done
   find "$dir" -type d -empty -delete
 
-  # Replace internal front-door documents with public-facing versions.
+  # Replace the private front door with the public README and onboarding guide.
   cp "${ROOT}/scripts/mirror/README.public.md" "${dir}/README.md"
   cp "${ROOT}/scripts/mirror/LICENSE" "${dir}/LICENSE"
-  cp "${ROOT}/scripts/mirror/PRODUCT.public.md" "${dir}/docs/PRODUCT.md"
-  cp "${ROOT}/scripts/mirror/decisions-INDEX.public.md" "${dir}/docs/decisions/INDEX.md"
+  cp "${ROOT}/scripts/mirror/GETTING-STARTED.public.md" "${dir}/docs/GETTING-STARTED.md"
 
   # The private workflows were just stripped wholesale with the rest of
   # .github/ — they build signed native artifacts this repo cannot and never
@@ -201,6 +201,8 @@ sanitize_export() {
     find "$dir" -type f \( -name '*.md' -o -name '*.ts' -o -name '*.tsx' -o -name '*.html' -o -name '*.css' -o -name '*.rs' -o -name '*.cjs' -o -name '*.mjs' -o -name '*.toml' -o -name '*.yml' -o -name '*.yaml' -o -name '*.json' -o -name '*.xml' -o -name '*.entitlements' -o -name '*.sh' \) -print0 \
       | xargs -0 perl -0pi -e "s/${adr}/the internal architecture decision/g"
   done
+  find "$dir" -type f \( -name '*.md' -o -name '*.ts' -o -name '*.tsx' -o -name '*.html' -o -name '*.css' -o -name '*.rs' -o -name '*.cjs' -o -name '*.mjs' -o -name '*.toml' -o -name '*.yml' -o -name '*.yaml' -o -name '*.json' -o -name '*.xml' -o -name '*.entitlements' -o -name '*.sh' \) -print0 \
+    | xargs -0 perl -0pi -e 's#(?:\.\./)?docs/decisions/[A-Za-z0-9_.-]+\.md#the internal architecture note#g; s#decisions/[A-Za-z0-9_.-]+\.md#the internal architecture note#g'
 
   # scripts/simplemark_ci.sh is stripped by HIDDEN_PATH_RE like the docs
   # above, but it is prose-linked ("the canonical gate") rather than named by

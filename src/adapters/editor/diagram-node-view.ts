@@ -4,6 +4,7 @@ import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 
 import type { ClipboardPort, DiagramFixPort, DiagramRenderer, RenderedDiagram } from '../../application/index.js'
 import { parseFenceLayout, withFenceMetaKey } from '../../domain/index.js'
+import { openFigureViewer } from './figure-viewer.js'
 
 /** CSS absolute lengths, in px. The relative ones cannot be resolved here. */
 const CSS_UNITS: Record<string, number> = {
@@ -89,6 +90,13 @@ export class DiagramNodeView implements NodeView {
   #zoomLevel: HTMLButtonElement | undefined
   /** Cached so the click-guard and `stopEvent` don't re-query `.diagram-zoom` by string. */
   #zoomControls: HTMLElement | undefined
+  /**
+   * Opens the figure full screen. Offered only on a figure too wide for its
+   * column, because on one that already fits there is nothing to go and see.
+   */
+  #expand: HTMLButtonElement | undefined
+  /** Closes an open viewer, so tearing down the block takes it along. */
+  #closeViewer: (() => void) | undefined
   /** Present only on an `svg` block — resize is not offered for generated diagrams. */
   #grip: HTMLElement | undefined
 
@@ -203,7 +211,17 @@ export class DiagramNodeView implements NodeView {
 
     this.#sheet.append(this.#sheetHeader, this.#textarea)
     document.body.append(this.#sheet)
-    this.dom.append(label, this.#toggle, this.#render, this.#error)
+    this.#expand = document.createElement('button')
+    this.#expand.className = 'diagram-expand'
+    this.#expand.type = 'button'
+    this.#expand.textContent = 'Open figure'
+    this.#expand.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.#openViewer()
+    })
+
+    this.dom.append(label, this.#toggle, this.#expand, this.#render, this.#error)
 
     const language = (node.attrs['language'] as string | undefined) ?? ''
     if (DiagramNodeView.#ZOOMABLE.has(language)) {
@@ -228,8 +246,10 @@ export class DiagramNodeView implements NodeView {
       if (this.#toggle.contains(event.target as Node)) return
       if (this.#sheet.contains(event.target as Node)) return
       if (this.#zoomControls?.contains(event.target as Node) === true) return
+      if (this.#expand?.contains(event.target as Node) === true) return
       this.#selectBlock()
     })
+    this.#render.addEventListener('scroll', this.#markScrollEnd, { passive: true })
     this.dom.addEventListener('contextmenu', this.#openMenu)
     this.#sheetHeader.addEventListener('pointerdown', this.#beginDrag)
 
@@ -708,6 +728,11 @@ export class DiagramNodeView implements NodeView {
 
     const wide = natural > available * DiagramNodeView.#WIDEST_SQUEEZE
     this.#render.classList.toggle('is-wide', wide)
+    // The offer to open it full screen belongs to the figure that does not fit,
+    // and to no other. Kept on the block rather than the render because the
+    // button is positioned against the block's padding.
+    this.dom.classList.toggle('has-wide-figure', wide)
+    this.#markScrollEnd()
 
     if (wide) {
       // Legibility beats fitting: the drawing keeps its own size and the
@@ -874,8 +899,31 @@ export class DiagramNodeView implements NodeView {
     return true
   }
 
+  /**
+   * Drops the edge fade once there is nothing left behind it.
+   *
+   * The fade exists to say the drawing continues past the edge. Leaving it up
+   * at the far end would keep making that promise after it stopped being true,
+   * which reads as a rendering fault rather than an affordance.
+   */
+  #markScrollEnd = (): void => {
+    const remaining = this.#render.scrollWidth - this.#render.clientWidth - this.#render.scrollLeft
+    this.#render.classList.toggle('is-at-end', remaining <= 2)
+  }
+
+  /** Hands the rendered drawing to the full-screen reader. */
+  #openViewer(): void {
+    const svg = this.#render.querySelector('svg')
+    if (svg === null) return
+    const language = (this.#node.attrs['language'] as string | undefined) ?? 'diagram'
+    this.#closeViewer?.()
+    this.#closeViewer = openFigureViewer(svg, `${language} figure`)
+  }
+
   destroy(): void {
     this.#destroyed = true
+    this.#closeViewer?.()
+    this.#render.removeEventListener('scroll', this.#markScrollEnd)
     this.#renderToken += 1
     this.#scheme?.removeEventListener('change', this.#onSchemeChange)
     this.#sheetHeader.removeEventListener('pointerdown', this.#beginDrag)

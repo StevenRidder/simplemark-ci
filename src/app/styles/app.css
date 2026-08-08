@@ -3869,3 +3869,120 @@ section.editor::-webkit-scrollbar {
 .page-trim-offer button:hover {
   background: var(--line);
 }
+
+/*
+ * A figure wider than its column, and the two ways out of it.
+ *
+ * Scrolling inside the box stays — it is the quickest way to glance at the far
+ * edge — but a clipped drawing with a hard edge says nothing about what it is
+ * hiding, so the fade is the affordance. `Open figure` is the answer for
+ * actually reading one: on a phone the box is 390pt and the chart was authored
+ * at 760, and no amount of dragging inside that box makes a dense chart legible.
+ */
+.diagram-render.is-wide {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 34px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 34px), transparent);
+}
+
+/* The fade is a hint that there is more, not a permanent veil: once you reach
+   the end there is nothing left to promise. */
+.diagram-render.is-wide.is-at-end {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.diagram-expand {
+  position: absolute;
+  z-index: 3;
+  top: 6px;
+  right: 8px;
+  display: none;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font: 500 11.5px var(--sans);
+  cursor: pointer;
+}
+
+/* Only a figure that does not fit has somewhere to go. */
+.diagram.has-wide-figure .diagram-expand {
+  display: block;
+}
+
+.diagram-expand:hover {
+  color: var(--ink);
+}
+
+/* ---- the full-screen figure ---- */
+
+.figure-viewer {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 92%, transparent);
+  /* The browser's own pan and zoom would fight the gesture handling below. */
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+.figure-viewer-stage {
+  /* Transformed on every gesture frame, so it must not also be laying out. */
+  will-change: transform;
+  transform-origin: center center;
+  max-width: 100vw;
+  padding: 24px;
+}
+
+.figure-viewer-stage svg {
+  display: block;
+  /*
+   * A definite width, not `auto`. The clone arrives stripped of the width the
+   * document gave it so that the screen decides instead — but an SVG with only
+   * a `viewBox` has no intrinsic size, so `auto` inside a centred grid item
+   * collapsed it to nothing. The viewBox then scales the drawing to this width
+   * and the aspect ratio follows.
+   */
+  width: calc(100vw - 48px);
+  height: auto;
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.figure-viewer-close {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  right: 16px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 14px var(--sans);
+  cursor: pointer;
+}
+
+.figure-viewer-hint {
+  position: absolute;
+  right: 0;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  left: 0;
+  margin: 0;
+  color: color-mix(in srgb, var(--paper) 76%, transparent);
+  font: 12px var(--sans);
+  text-align: center;
+  pointer-events: none;
+}
+
+/* A pointer has hover and a scrollbar; the hint is for a thumb. */
+@media (hover: hover) {
+  .figure-viewer-hint {
+    display: none;
+  }
+}

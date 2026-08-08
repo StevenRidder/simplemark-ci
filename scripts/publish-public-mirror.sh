@@ -52,7 +52,7 @@ REQUIRED_PATHS=(
   LICENSE
   package.json
   index.html
-  docs/assets/simplemark-demo.gif
+  docs/assets/project-tanoa-storm-atlas.gif
   docs/DESIGN.md
   docs/decisions/INDEX.md
   src/domain/source/source-map.ts
@@ -108,9 +108,9 @@ scan_product_contract() {
     [ -e "${tree_dir}/${path}" ] || die "[$label] product guard failed: ${path} is missing from the mirror"
   done
 
-  # The README must actually show the demo, or the front page is pointless.
-  grep -Eq 'docs/assets/simplemark-demo\.gif' "${tree_dir}/README.md" \
-    || die "[$label] product guard failed: README does not embed the demo GIF"
+  # The README must actually show the flagship demo, or the front page is pointless.
+  grep -Eq 'docs/assets/project-tanoa-storm-atlas\.gif' "${tree_dir}/README.md" \
+    || die "[$label] product guard failed: README does not embed the flagship GIF"
 
   # The fixture swap must be complete on both sides, or the suite cannot run.
   grep -Eq "01-hostile-markdown\.md" "${tree_dir}/tests/support/fixtures.ts" \

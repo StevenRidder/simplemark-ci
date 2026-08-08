@@ -1,247 +1,96 @@
 # SimpleMark
 
-**The beautiful living document for AI work.**
+**The calm, beautiful place to read what your agents make.**
 
-Your agent writes the Markdown. SimpleMark turns it into a document: open any local `.md` file,
-see it rendered exceptionally, keep reading while the agent updates it, and click in only when you
-want to make a small correction. No IDE, vault, account, provider setup, workspace, or permanent
-Markdown source view.
+SimpleMark opens a local Markdown file as a living document — not a source editor with a preview bolted on. Diagrams, maps, charts, math, code, tables, and technical evidence appear together on one composed page. Keep reading while another tool updates the file; click into the exact passage only when a small correction is needed.
 
-**The core promise:** always rendered, always your file. Mermaid, SVG, math, charts, tables, code,
-and technical material live inline on one calm page. Untouched source is preserved byte for byte.
+**Always rendered. Always your file.** No vault, account, provider setup, workspace, or permanent Markdown-source view.
 
-![Current SimpleMark renderer prototype showing Markdown, Mermaid and SVG rendered in one document canvas](docs/assets/simplemark-demo.gif)
+![Project Tanoa: a fictional Fulaga microgrid storm report rendering a weather map, reserve forecast, energy diagram, math, terminal evidence, and a source correction in one continuous take](docs/assets/project-tanoa-storm-atlas.gif)
 
-*Current pre-alpha renderer and correction proof, recorded from the running app in one unbroken
-session. It is not the canonical product demo; that watched-file demo is specified in
-[`docs/PRODUCT.md`](docs/PRODUCT.md). Regenerate with `npm run demo` while `npm run dev` is up.*
+*The 22-second flagship demo is [Project Tanoa: Storm Atlas](docs/showcase/project-tanoa-storm-atlas.md): a fictional commissioning decision in the latest SimpleMark UI. It moves from an approaching cyclone to the battery math, then corrects the live source and returns to the finished document. Regenerate it with `npm run showcase:tanoa:atlas` while the development app is running.*
 
-![Project Tanoa: a fictional Fulaga microgrid commissioning field report rendering a sourced map, live reserve forecast, battery Sankey, terminal evidence, and a fault tree, with a contextual source correction, all in one unbroken take](docs/assets/project-tanoa-showcase.gif)
+SimpleMark is not an AI workspace or a cockpit for operating agents. Let Codex, Claude, or another writer create `plan.md`; SimpleMark makes that exact file a document worth judging. The filesystem is the first integration — source remains portable, inspectable, and yours.
 
-*The flagship showcase: [Project Tanoa](docs/showcase/project-tanoa.md), a fictional 2032 field
-report, opened in the native shell, corrected in place, and re-opened — the same renderer set under
-one continuous narrative rather than isolated snippets. Recorded with `npm run showcase:tanoa`.*
+## A document, not a preview
 
-In practice: Codex, Claude, or another tool writes `plan.md`; SimpleMark opens that exact file as a
-beautiful technical document and refreshes it cleanly as the file changes. Raw Mermaid, a raw
-`<svg>`, DOT, LaTeX, Vega-Lite, tables, code, charts, and ANSI captures render natively. The source
-stays portable and yours.
+| What you need | How SimpleMark behaves |
+|---|---|
+| **Read the work** | One continuous rendered page. Markdown syntax stays out of the way until you ask for it. |
+| **Trust the file** | An untouched save is byte-identical. Editing one block does not renumber lists, repad tables, or restyle another block. |
+| **Make a correction** | Select the precise passage, figure, or structure; the source appears only there and saves back as portable Markdown. |
+| **Stay current** | The native app watches an opened file and calmly collapses bursts of external writes into the newest document state. |
 
-SimpleMark is not an AI workspace or a cockpit for operating agents. Editing is a contextual escape
-hatch. In-app agent participation and collaboration are optional later capabilities, and they must
-remain invisible until explicitly invoked.
+## Render the work, not the syntax
+
+SimpleMark is built for the outputs an agent or technical team actually produces:
+
+| Kind of evidence | Renders inline |
+|---|---|
+| **Diagrams and maps** | Mermaid, raw SVG, Graphviz/DOT, Vega-Lite charts and geographic displays |
+| **Analysis** | KaTeX display and inline math, data tables, highlighted code, local chart data |
+| **Working trail** | ANSI terminal captures, unified diffs, collapsible JSON, file trees, and stack traces |
+| **Everyday Markdown** | GFM tables and tasks, images, links, callouts, footnotes, highlights, underline, wiki links, and document structure |
+
+Raw source stays in the `.md`. A Mermaid fence remains a Mermaid fence; a Vega-Lite specification can be reviewed and edited; a raw SVG is sanitized and still travels with the document. Big tables render on a budget, and renderer failures stay visible with a useful diagnostic instead of a blank rectangle.
+
+### Paste without a mode picker
+
+Paste a diagram, formula, chart specification, TSV grid, terminal capture, diff, JSON object, file tree, or stack trace. SimpleMark recognizes bounded, verifiable signatures and gives it the right portable Markdown form. Paste a web article in the native app and it becomes readable Markdown with local images, provenance, and a lightweight trim control — not a fragile web embed.
+
+### Figures behave like part of the page
+
+Charts and diagrams can be selected, resized, floated beside prose, zoomed, or opened into a full-screen figure viewer with pan and zoom. The controls are contextual: a document remains a document until the reader reaches for detail.
+
+## A calm surface over real files
+
+- **Open files and folders directly.** No import step or proprietary database. Note-relative images, document links, and local chart data resolve from the file’s own location.
+- **Browse a useful workspace.** Notes have extracted previews, pins, collections, remembered selection, and built-in samples instead of a dead welcome screen.
+- **Keep the reader in control.** Find in document, print, reader navigation, whole-page zoom, and persistent typeface, size, leading, width, and theme preferences.
+- **Use the platform without losing it.** The desktop shell preserves native menus, services, clipboard exports, Save As, rename, Show in Finder, and Move to Trash.
+
+Two rich samples now ship with the app: [Welcome to SimpleMark](docs/showcase/welcome-to-simplemark.md) is a compact capability tour, while [Project Tanoa: Storm Atlas](docs/showcase/project-tanoa-storm-atlas.md) is the cinematic field report. They are useful documents first and renderer proof second.
 
 ## Status
 
-**Pre-alpha, and now a real desktop app.** The native macOS shell opens files and folders from
-disk, watches them, and re-renders calmly when another process rewrites the file. Byte-fidelity
-round-tripping, the full renderer set, portable document commands, and reader controls all work.
-Cross-platform test builds and the release-trust gate are in review.
+**Pre-alpha, with a working native macOS app.** It opens files and folders from disk, renders the full document canvas, watches external changes, and saves with byte-preserving block fidelity. The same application core powers the browser composition; an iPhone prototype can open and read notes, but does not yet have desktop-grade conflict handling or cross-device change detection.
 
-Not done: the renderer-first product proof end to end, the one-real-day dogfood that picks the
-default workflow, and the multi-client authority decision.
-
-### iOS — first working prototype
-
-![The same note, Project Tanoa's storm atlas, open side by side in the macOS app and the first iOS prototype](docs/assets/ios-prototype-storm-atlas.png)
-
-Tapping a note on iPhone used to do nothing. A single unguarded `await` in the native-menu setup
-was silently killing the app's mount before the operation queue existed to report it. That is
-fixed, along with the synthetic welcome row that had no real note behind it. The document above —
-[Project Tanoa](docs/showcase/project-tanoa.md), rendering its checklist and Sankey diagram — is
-the same file, open and reading correctly on both. iOS is still the weak spot: no menubar, no
-conflict or error frames yet, and external file changes made on the Mac aren't detected there. See
-[`docs/DESIGN.md`](docs/DESIGN.md) for the platform's open questions.
-
-## What works today
-
-### The document canvas
-
-- **One continuous rendered page.** No source/preview split, no permanent Markdown view. Source
-  appears only for the block being corrected.
-- **Byte fidelity.** An untouched save is byte-identical. Editing one block never renormalizes
-  another — no renumbered lists, no repadded tables, no restyled fences. Enforced by a source map
-  and a byte-diff suite over hostile real-world fixtures.
-- **Typography as product behavior.** Bear-style font, size, line height, and theme in preferences.
-
-### Renderers
-
-Mermaid diagrams · raw `<svg>` · KaTeX math (with proven malformed-math fallback) · Graphviz/DOT ·
-Vega-Lite charts from inline data *or* note-relative data files · ANSI terminal captures ·
-syntax-highlighted code via lowlight · text cards · a composite renderer that combines them.
-
-Large Markdown tables render under a budget with deferral, so a huge table stays responsive instead
-of freezing the page. Diagrams size to their column and their detail sheet closes itself. A diagram
-that fails to render shows its error inline with a **Copy** button and an **AI Fix-it** action,
-instead of leaving stale or blank markup behind.
-
-### Paste
-
-A recognition ladder classifies pasted content — formal Markdown, callouts, and a set of exhaust
-sniffers for terminal/log/tool output — and renders it correctly without the user choosing a mode.
-The sniffers are deliberately bounded so they cannot swallow a whole Markdown document.
-
-### Files and workspace
-
-- Open any `.md` file directly — no import, no vault, no workspace choice.
-- Folder and note browsing with collections, pins, selection state, and an extracted preview on
-  every row instead of a placeholder — a deterministic summary everywhere, upgraded to Apple's
-  on-device Foundation Models on macOS 26+ Apple silicon.
-- Native draft save, **Save As**, and rename; a **Move to Trash** keyboard shortcut; **Show in
-  Finder** for notes and folders.
-- Note-relative asset and document-link resolution, so images and cross-links work from the file's
-  own location.
-- External-change watching (`watch_note`) with a superseding operation queue, so a burst of agent
-  writes collapses to one calm re-render.
-
-### Reader
-
-Whole-page pinch zoom, expanded reader zoom, remembered view and app state, window geometry, a find
-bar, and temporary reader navigation.
-
-### Portable document commands
-
-Clipboard exports in portable formats and structural corrections that survive the round trip, both
-reachable from a right-click, including a **Paragraph** command that lifts a list item fully out of
-every enclosing list back to plain text. Native macOS menus, menu services, and context menu are
-preserved rather than replaced.
-
-### Desktop and release
-
-Tauri-based native shell (`src-tauri/`) with its own file, catalog, chart-data, and document-link
-ports behind the same application interfaces the browser shell uses. Cross-platform test builds,
-build provenance that follows `HEAD`, an executable release-trust gate, and update notification.
-
-## The hierarchy
-
-```
-First:   read and judge a beautiful document while an external agent updates the file
-Then:    make a small correction without living in Markdown source
-Later:   invite an agent or another human only if the simpler workflow proves insufficient
-```
-
-The filesystem is the first agent integration. Any agent can write the file; SimpleMark watches it.
-Inside the app, one `DocumentSession` protects the open document and materializes atomic saves:
-
-```
-External agent ─→ .md in your folder ─→ watched import ─┐
-                                                        ├─→ rendered document
-Small human correction ─────────────→ DocumentSession ──┘
-```
-
-Later, an MCP-connected agent may submit scoped transactions to that same authority. Multi-client
-collaboration remains a separate evidence-gated decision. Neither belongs in the first install
-reason or the default interface.
-
-## Architecture
-
-Dependencies point one way only:
-
-```
-app → adapters → application → domain
-```
-
-`domain` imports nothing inward and knows nothing about ProseMirror, Mermaid, or the DOM.
-`application` defines ports; `adapters` implement them — which is why the browser shell and the
-Tauri shell are two adapter sets over one application core, not two apps. The rule is enforced
-mechanically:
-
-```bash
-npm run check:boundaries
-```
-
-```
-src/
-  domain/       source maps, byte diff, paste recognition, render budgets, clipboard formats
-  application/  DocumentSession, ports, commands
-  adapters/     editor (Milkdown), renderers, filesystem (browser + Tauri), clipboard, MCP
-  app/          browser.ts and tauri.ts shells, UI, preferences, provenance
-src-tauri/      the native macOS shell
-tests/          unit, round-trip, and Playwright suites over the real composition
-```
+What is deliberately not the headline: hosted accounts, agent orchestration, and multi-person collaboration. Those remain evidence-gated follow-on work. SimpleMark must be worth installing when it is just you, your local `.md` files, and the things that write them.
 
 ## Run it
 
-```bash
-npm install
-npm run dev          # browser shell
-npm run dev:native   # Tauri desktop shell
-```
+    npm install
+    npm run dev          # browser composition
+    npm run dev:native   # native desktop shell
 
-```bash
-npm test             # unit and round-trip suites
-npm run test:ui      # Playwright, against the real composition
-npm run typecheck
-npm run check:boundaries
-npm run demo         # re-record the demo GIF (needs a running dev server)
-```
+    npm test             # unit and round-trip suites
+    npm run test:ui      # Playwright against the real composition
+    npm run typecheck
+    npm run check:boundaries
+    npm run showcase:tanoa:atlas  # record the flagship GIF
 
-The canonical local gate is `scripts/simplemark_ci.sh`. Landing is owned by GitHub's native merge
-queue behind the `gate` check.
+The canonical local gate is:
 
-## The bet
+    bash scripts/simplemark_ci.sh
 
-Most Markdown products assume a human writes Markdown and AI assists inside an editor or workspace.
-SimpleMark assumes AI composes and the human consumes, judges, and occasionally directs.
+## How it is built
 
-SimpleMark keeps files as the truth but treats the editor as a real document canvas. Diagrams, SVG,
-math, tables, and highlighted code render in place. Source appears only for the exact content being
-corrected, and everything still saves as portable Markdown.
+    app → adapters → application → domain
 
-| Decision | Choice |
-|---|---|
-| Editor core | Milkdown over ProseMirror with a source-preserving bridge |
-| POC coordination | One in-process `DocumentSession`; human edits and watched external changes share application use cases |
-| Later collaboration | ProseMirror step authority first; Yjs only if masterless operation is required |
-| Durability | Plain `.md` files in a folder; SQLite is a rebuildable cache |
-| Fidelity | Untouched blocks are preserved byte-for-byte; only edited blocks re-serialize |
-| Sync | Delegated to iCloud Drive / any synced folder — no server, no accounts |
-| Canvas | Single unified view, no source/preview split |
-| Typography | Bear-style: font, size, line height, theme in preferences |
-| Extensibility | Internal extension points in v1, shaped to become the public plugin API |
-| Desktop shell | Tauri, as an adapter set — not a fork of the app |
+The domain owns fidelity, save safety, paste decisions, and run generations. Application use cases own the document session. Browser and Tauri are adapter sets over that same core — not two product forks. The boundary is mechanically checked with `npm run check:boundaries`.
 
-## Roadmap
+## Read more
 
-The board sequences this as *see it → use it → refine it → ship it → then decide expansion*.
+- [Product contract](docs/PRODUCT.md) — who this is for, the interaction rules, and the sequence
+- [Renderer catalog](docs/RENDERERS.md) — the supported formats and their portable fallbacks
+- [Storm Atlas](docs/showcase/project-tanoa-storm-atlas.md) — the source behind the demo above
+- [Living handbook](docs/showcase/welcome-to-simplemark.md) — a tour of the rendered capabilities
+- [Design notebook](docs/DESIGN.md) — document fidelity, paste recognition, and system design
+- [Release trust](docs/RELEASE-TRUST.md) — the build and verification contract
+- [Architecture decisions](docs/decisions/INDEX.md) — the durable choices behind the product
 
-| # | Milestone | State |
-|---|---|---|
-| 1 | **See SimpleMark** — wireframe-backed editor and Markdown trust | Done |
-| 2 | **Use SimpleMark** — one local note and Mermaid | Done |
-| 3 | **Refine SimpleMark** — portable document commands | In review |
-| 4 | **Ship SimpleMark** — cross-platform test builds and releases | In review |
+## Licence
 
-Next, in order:
+Copyright © 6th Element Labs. All rights reserved.
 
-- **Turn AI work into living local documents** — the renderer-first product proof: an agent writes,
-  SimpleMark stays a calm current reading surface, and the source stays trustworthy.
-- **Use SimpleMark for one real day and choose the default** — dogfood decides the default
-  workflow rather than a design argument.
-- **Choose multi-client authority from evidence** — ProseMirror steps vs Yjs, decided by what the
-  single-client product actually needs. Deliberately last.
-
-Collaboration, in-app agent participation, comments, and history stay behind that gate. The product
-must be worth installing with all of them removed —
-[`ADR-0005`](docs/decisions/0005-rendered-document-before-agent-participation.md) records the
-sequencing correction.
-
-## Documents
-
-- [`docs/PRODUCT.md`](docs/PRODUCT.md) — **the product authority** — user, job, category difference, UI rules, sequencing, demo, and language
-- [`docs/DESIGN.md`](docs/DESIGN.md) — **start here** — the notebook: architecture, fidelity contract, paste rules, wireframe
-- [`docs/decisions/`](docs/decisions/) — accepted architecture decisions and supersession record
-- [`docs/POC.md`](docs/POC.md) — **the next executable target** — open, render, watch, correct, and preserve one AI-generated local file
-- [`docs/COLLABORATION.md`](docs/COLLABORATION.md) — optional expansion after the reader product proves itself
-- [`docs/SWITCHBOARD-KERNEL.md`](docs/SWITCHBOARD-KERNEL.md) — the four patterns borrowed from Switchboard, and the four deliberately not
-- [`docs/TECH-SPEC.md`](docs/TECH-SPEC.md) — universal paste: recognition ladder, renderer catalog, sandbox
-- [`docs/RENDERERS.md`](docs/RENDERERS.md) — renderers vs embedded editors, and the v1 set
-- [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) — the agent contract: one tool surface for notes whether or not they are open
-- [`docs/RELEASE-CONTRACT.md`](docs/RELEASE-CONTRACT.md) — what any build-and-release workflow must do
-- [`docs/RELEASE-TRUST.md`](docs/RELEASE-TRUST.md) — the executable release-trust gate
-- [`docs/LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT.md`](docs/LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT.md) — code-level competitor audit: mechanisms to borrow, traps to reject, licenses, tests, and community evidence
-- [`docs/AGENT-WORKSPACE.md`](docs/AGENT-WORKSPACE.md) — MCP safety posture and build rationale; its tool surface is superseded above
-- [`docs/wireframe.html`](docs/wireframe.html) — interactive editor, agent, redirect/chat, and stop states (open in a browser)
-- [`docs/superpowers/plans/`](docs/superpowers/plans/) — the Phase 0–1 implementation plan
-- [`AGENTS.md`](AGENTS.md) — **contributors and agents start here** — boundaries, board, and the validation gate
-- [`docs/CI-SANDBOX.md`](docs/CI-SANDBOX.md) — private canonical repo, public CI sandbox, and the branch loop
+This source is published for reading and evaluation. It is not licensed for redistribution or derivative works. See the [public-mirror licence](scripts/mirror/LICENSE).

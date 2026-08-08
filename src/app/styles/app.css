@@ -3235,7 +3235,15 @@ section.editor::-webkit-scrollbar {
   }
   .window {
     width: 100%;
-    height: 100%;
+    /*
+     * `100%` measures the screen, not the part of it you can see. On a phone
+     * those differ by the status bar and the home indicator, so the window
+     * overhung the viewport and everything pinned to its bottom edge — the
+     * formatting palette above all — sat just below the fold, present and
+     * unreachable. `dvh` is the visible viewport and shrinks when the keyboard
+     * arrives, which is the same question asked correctly.
+     */
+    height: 100dvh;
     min-height: 0;
     border: 0;
     border-radius: 0;
@@ -3269,11 +3277,40 @@ section.editor::-webkit-scrollbar {
   .right .tool {
     display: none;
   }
-  .styles-bar {
-    bottom: 14px;
-  }
+  /*
+   * Float against the viewport rather than the pane.
+   *
+   * Absolute positioning anchors to `.document-surface`, and on a phone that
+   * pane measures taller than the part of the screen you can see — so the
+   * palette obediently sat 15px below the fold: visible to the DOM, present in
+   * every measurement, and unreachable by a thumb. Fixed positioning asks the
+   * only question that matters on a small screen, which is where the viewport
+   * ends, and the inset clears the home indicator.
+   */
+  .styles-bar,
   .styles-bar-reveal {
-    bottom: 14px;
+    position: fixed;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+  /*
+   * The palette is authored at a fixed 436px, which is wider than the phone it
+   * is now floating on — so it reached past both edges and stopped reading as
+   * a floating thing at all. Inset from the edges instead, and let the controls
+   * share whatever width the screen has.
+   */
+  .styles-bar {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    justify-content: space-around;
+    transform: none;
+  }
+  .styles-bar.is-placed {
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    transform: none;
   }
   /* The row stays one line: low-frequency actions move into More, where the
      exact same commands remain available. */

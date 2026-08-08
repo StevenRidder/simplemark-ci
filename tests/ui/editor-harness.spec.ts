@@ -274,6 +274,47 @@ test('invalid diagram source fails visibly and keeps its source editable', async
   await expect(source).toBeVisible()
 })
 
+// A renderer that *rejects* is a crash inside the renderer, which is a
+// different thing from the `{ok: false}` a parser returns for source it can
+// read but not draw. Only the second had a visible-failure path, so a crash
+// left the last good picture on screen, said nothing, and reached the console
+// as an unhandled rejection — the same bug class already fixed in the paste
+// pipeline and in Convert to diagram.
+test('a renderer that throws fails visibly instead of leaving stale markup', async ({ page }) => {
+  const crashes: string[] = []
+  page.on('pageerror', (error) => crashes.push(error.message))
+
+  // Built here rather than taken from whatever the fixture note happens to
+  // hold: "stale markup" is only a claim if this test put the picture on screen
+  // itself and can see it go.
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('```mermaid ')
+  const diagram = page.locator('.diagram').last()
+  await diagram.getByRole('button', { name: 'Edit source' }).click()
+  // Every block's sheet lives on <body>, so the open one is the only one that
+  // belongs to the block under test.
+  const source = page.locator('.diagram-source-sheet:not([hidden]) .diagram-source')
+  await source.click()
+  await source.pressSequentially('flowchart LR\n  A[Start] --> B[Middle]')
+  await expect(diagram.locator('.diagram-render svg')).toBeVisible()
+
+  await page.evaluate(() => {
+    const editor = window.simplemark!.editor as unknown as {
+      renderer: { render: () => Promise<never> }
+    }
+    editor.renderer.render = () => Promise.reject(new Error('renderer crashed'))
+  })
+
+  await source.press('ControlOrMeta+a')
+  await source.pressSequentially('flowchart LR\n  A --> C')
+
+  await expect(diagram.locator('.diagram-error')).toBeVisible()
+  await expect(diagram.locator('.diagram-error')).toHaveText('renderer crashed')
+  await expect(diagram.locator('.diagram-render svg')).toHaveCount(0)
+  expect(crashes).toEqual([])
+})
+
 test('saving round-trips through the port and reopens as portable Markdown', async ({ page }) => {
   await page.locator(`${editor} p`).first().click()
   await page.keyboard.type(' Saved round trip.')

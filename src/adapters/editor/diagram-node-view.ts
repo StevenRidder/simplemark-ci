@@ -2,7 +2,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 
-import type { DiagramRenderer } from '../../application/index.js'
+import type { DiagramRenderer, RenderedDiagram } from '../../application/index.js'
 
 /** CSS absolute lengths, in px. The relative ones cannot be resolved here. */
 const CSS_UNITS: Record<string, number> = {
@@ -428,7 +428,17 @@ export class DiagramNodeView implements NodeView {
   async #paint(): Promise<void> {
     const token = (this.#renderToken += 1)
     const language = (this.#node.attrs['language'] as string | undefined) ?? 'mermaid'
-    const result = await this.renderer.render(language, this.#node.textContent)
+
+    // A renderer that *throws* is a crash, not the `{ok: false}` a parser
+    // returns for source it can read but not draw. Every caller invokes this as
+    // `void this.#paint()`, so without this the rejection went nowhere: the
+    // block kept the previous picture and reported nothing.
+    let result: RenderedDiagram
+    try {
+      result = await this.renderer.render(language, this.#node.textContent)
+    } catch (error) {
+      result = { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
     if (token !== this.#renderToken) return
 
     if (result.ok) {

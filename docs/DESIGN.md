@@ -104,6 +104,10 @@ Byte-identical round-trip through a general Markdown serializer is not achievabl
 
 **Implementation:** every top-level block node carries the byte range of its original source. Clean blocks re-emit that slice. Dirty blocks serialize. Front matter, arbitrary embedded HTML, and unknown constructs are always preserved as opaque source, never round-tripped through the AST.
 
+The fence info tail (```` ```svg width=320 ````) is part of those bytes: the
+editor's `code_block` schema carries it as a `meta` attribute and serialises
+it back verbatim.
+
 This is the hardest requirement in the project and the reason §12 exists.
 
 **Refined by ADR-0002.** `originalSource` is an immutable baseline, not collaborative text. Dirty is

@@ -10,6 +10,7 @@ export { TABLE_CELL_BUDGET, planTableRendering } from './render/table-budget.js'
 export type { TableRenderPlan } from './render/table-budget.js'
 export { firstByteDifference } from './source/byte-diff.js'
 export { buildSourceMap, emitDocument } from './source/source-map.js'
+export { parseFenceLayout, withFenceMetaKey } from './source/fence-meta.js'
 export { suggestedMarkdownFileName } from './document-title.js'
 export {
   MERMAID_SIGNATURE,
@@ -21,6 +22,7 @@ export {
 } from './paste/recognition.js'
 export type { ByteDifference } from './source/byte-diff.js'
 export type { SourceBlock, SourceMap } from './source/source-map.js'
+export type { FenceLayout } from './source/fence-meta.js'
 export type { PasteCandidate } from './paste/recognition.js'
 export {
   DEFAULT_LIVE_TABLE_CELL_BUDGET,

@@ -710,6 +710,307 @@ test('right-clicking a diagram offers Delete', async ({ page }) => {
   await expect(menu).toHaveCount(0)
 })
 
+// §2 of the chart-size spec: a pasted SVG has an author-chosen size, so the
+// frame must not inflate it to the column the way it sizes a Mermaid render.
+const SMALL_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80" viewBox="0 0 200 80"><rect width="120" height="40"/></svg>'
+
+test('a pasted SVG renders at its natural width, not the column width', async ({ page }) => {
+  await pasteAtEnd(page, SMALL_SVG)
+  await expect(page.locator('.diagram')).toHaveCount(2)
+
+  const svg = page.locator('.diagram').last().locator('.diagram-render svg')
+  await expect(svg).toBeVisible()
+  const box = await svg.boundingBox()
+  expect(box!.width).toBeGreaterThan(150)
+  expect(box!.width).toBeLessThan(260)
+})
+
+test('a pasted SVG with no discoverable size still fills the column', async ({ page }) => {
+  await pasteAtEnd(page, '<svg xmlns="http://www.w3.org/2000/svg"><rect width="40" height="20"/></svg>')
+  await expect(page.locator('.diagram')).toHaveCount(2)
+
+  const svg = page.locator('.diagram').last().locator('.diagram-render svg')
+  await expect(svg).toBeVisible()
+  const box = await svg.boundingBox()
+  expect(box!.width).toBeGreaterThan(400)
+})
+
+// §6 of the chart-size spec: zoom is transient reader state on generated
+// diagrams. Pasted SVGs get resize instead — no zoom controls there.
+test('zoom controls scale a Mermaid diagram and reset to 100%', async ({ page }) => {
+  await pasteAtEnd(page, BARE_MERMAID)
+  await expect(page.locator('.diagram')).toHaveCount(2)
+
+  const figure = page.locator('.diagram').last()
+  const svg = figure.locator('.diagram-render svg')
+  await expect(svg).toBeVisible()
+  const before = (await svg.boundingBox())!.width
+
+  await figure.locator('.diagram-zoom').getByRole('button', { name: 'Zoom in' }).click()
+  await expect(figure.locator('.diagram-zoom-level')).toHaveText('125%')
+  const zoomed = (await svg.boundingBox())!.width
+  expect(zoomed).toBeGreaterThan(before * 1.1)
+
+  await figure.locator('.diagram-zoom-level').click()
+  await expect(figure.locator('.diagram-zoom-level')).toHaveText('100%')
+})
+
+test('zooming past the column engages the scroll rail', async ({ page }) => {
+  await pasteAtEnd(page, BARE_MERMAID)
+  const figure = page.locator('.diagram').last()
+  const zoomIn = figure.locator('.diagram-zoom').getByRole('button', { name: 'Zoom in' })
+  for (let i = 0; i < 6; i += 1) await zoomIn.click()
+  await expect(figure.locator('.diagram-render.is-wide')).toHaveCount(1)
+})
+
+test('a pasted SVG block has no zoom controls', async ({ page }) => {
+  await pasteAtEnd(page, SMALL_SVG)
+  await expect(page.locator('.diagram').last().locator('.diagram-zoom')).toHaveCount(0)
+})
+
+// Review fix round 1, Finding 1: a dense diagram trips #fitDiagram's natural-width
+// "wide" branch, which used to return before zoom ever ran — exactly the diagram a
+// reader reaches for zoom on. Zoom must win over that default in both directions.
+const WIDE_MERMAID = `flowchart LR\n${Array.from({ length: 12 }, (_, i) => `N${i + 1}[Node ${i + 1}]`).join(' --> ')}`
+
+test('zoom overrides the wide default: zooming out un-wides a dense diagram, zooming in restores it', async ({
+  page,
+}) => {
+  await pasteAtEnd(page, WIDE_MERMAID)
+  await expect(page.locator('.diagram')).toHaveCount(2)
+
+  const figure = page.locator('.diagram').last()
+  const svg = figure.locator('.diagram-render svg')
+  await expect(svg).toBeVisible()
+  // Twelve chained nodes are comfortably past #WIDEST_SQUEEZE (1.6x the column)
+  // at their natural size, so the diagram starts wide, unzoomed.
+  await expect(figure.locator('.diagram-render.is-wide')).toHaveCount(1)
+  const wideWidth = (await svg.boundingBox())!.width
+
+  const zoomOut = figure.locator('.diagram-zoom').getByRole('button', { name: 'Zoom out' })
+  await zoomOut.click()
+  await zoomOut.click()
+  await expect(figure.locator('.diagram-zoom-level')).toHaveText('64%')
+  const shrunkWidth = (await svg.boundingBox())!.width
+  expect(shrunkWidth).toBeLessThan(wideWidth)
+  await expect(figure.locator('.diagram-render.is-wide')).toHaveCount(0)
+
+  const zoomIn = figure.locator('.diagram-zoom').getByRole('button', { name: 'Zoom in' })
+  for (let i = 0; i < 4; i += 1) await zoomIn.click()
+  await expect(figure.locator('.diagram-render.is-wide')).toHaveCount(1)
+  const regrownWidth = (await svg.boundingBox())!.width
+  expect(regrownWidth).toBeGreaterThan(shrunkWidth)
+})
+
+// Review fix round 1, Finding 2: the zoom base has to match the resting fill
+// width (capped at #FILL_CAP), or a reader on a column wider than 720px sees a
+// zoom step's visual growth overshoot its own percentage readout.
+test('zoom scales from the capped fill width, not the raw column, on a wide reading column', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.getByRole('button', { name: 'Text formatting' }).click()
+  await page.locator('.format-popover').getByRole('button', { name: 'Wide width' }).click()
+  // Close the popover — left open, it sits over the diagram and intercepts
+  // the zoom-button click below.
+  await page.getByRole('button', { name: 'Text formatting' }).click()
+  await expect(page.locator('.format-popover')).not.toHaveClass(/open/)
+
+  await pasteAtEnd(page, BARE_MERMAID)
+  await expect(page.locator('.diagram')).toHaveCount(2)
+  const figure = page.locator('.diagram').last()
+  const svg = figure.locator('.diagram-render svg')
+  await expect(svg).toBeVisible()
+  const before = (await svg.boundingBox())!.width
+
+  await figure.locator('.diagram-zoom').getByRole('button', { name: 'Zoom in' }).click()
+  await expect(figure.locator('.diagram-zoom-level')).toHaveText('125%')
+  const zoomed = (await svg.boundingBox())!.width
+
+  // The readout says 125% — the rendered growth has to match it, not the
+  // wider (uncapped) column the readout is blind to.
+  expect(zoomed).toBeGreaterThan(before * 1.2)
+  expect(zoomed).toBeLessThan(before * 1.3)
+})
+
+// D7: the fence info tail is part of the user's bytes. Milkdown drops it by
+// default; the schema extension is what carries it through a serialise.
+test('fence meta survives an edit-elsewhere round trip', async ({ page }) => {
+  await pasteAtEnd(page, '```svg width=320 twoslash\n<svg viewBox="0 0 4 4"><rect/></svg>\n```')
+
+  // The parse direction: `width=320` in the fence meta must drive the render,
+  // not just survive as bytes — otherwise this test could pass on a parser
+  // that keeps the meta string but a renderer that ignores it.
+  const svg = page.locator('.diagram').last().locator('.diagram-render svg')
+  await expect(svg).toBeVisible()
+  const box = (await svg.boundingBox())!
+  expect(box.width).toBeGreaterThan(300)
+  expect(box.width).toBeLessThan(340)
+
+  await caretAtEnd(page)
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('Unrelated edit.')
+
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('```svg width=320 twoslash')
+})
+
+// §4 of the chart-size spec: dragging the grip persists width= into the
+// fence meta — the document, not the DOM, is where layout lives.
+test('dragging the resize grip persists width= and the render honors it', async ({ page }) => {
+  await pasteAtEnd(page, SMALL_SVG)
+  const figure = page.locator('.diagram').last()
+  await figure.locator('.diagram-render').click()
+  await expect(page.locator('.diagram.is-selected')).toHaveCount(1)
+
+  const grip = figure.locator('.diagram-resize-grip')
+  await expect(grip).toBeVisible()
+  const gripBox = (await grip.boundingBox())!
+  await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(gripBox.x + gripBox.width / 2 + 120, gripBox.y + gripBox.height / 2, { steps: 6 })
+  await page.mouse.up()
+
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toMatch(/```svg width=3\d\d/)
+
+  const svg = figure.locator('.diagram-render svg')
+  const box = (await svg.boundingBox())!
+  expect(box.width).toBeGreaterThan(290)
+  expect(box.width).toBeLessThan(360)
+})
+
+// Fix round 1, Finding 1: an svg whose natural width already trips the wide
+// threshold used to have the wide branch run before the meta-aware svg
+// branch — a drag would commit width= correctly and then get overwritten
+// straight back to natural on the very next paint. The committed width must
+// win over the wide default, the same way zoom already wins over it for
+// generated diagrams.
+const WIDE_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="200" viewBox="0 0 1200 200"><rect width="1160" height="160"/></svg>'
+
+test('a committed resize wins over the wide default for an oversized svg', async ({ page }) => {
+  await pasteAtEnd(page, WIDE_SVG)
+  const figure = page.locator('.diagram').last()
+  await expect(figure.locator('.diagram-render.is-wide')).toHaveCount(1)
+
+  await figure.locator('.diagram-render').click()
+  await expect(page.locator('.diagram.is-selected')).toHaveCount(1)
+
+  const grip = figure.locator('.diagram-resize-grip')
+  await expect(grip).toBeVisible()
+  const gripBox = (await grip.boundingBox())!
+  await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2)
+  await page.mouse.down()
+  // Dragged far past the left edge of the column — #MIN_WIDTH floors the
+  // result, so the committed width is deterministic (120) regardless of the
+  // column's actual measure.
+  await page.mouse.move(10, gripBox.y + gripBox.height / 2, { steps: 8 })
+  await page.mouse.up()
+
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toMatch(/```svg width=120(?!\d)/)
+
+  const svg = figure.locator('.diagram-render svg')
+  const box = (await svg.boundingBox())!
+  expect(box.width).toBeLessThan(200)
+  expect(box.width).toBeGreaterThan(100)
+  await expect(figure.locator('.diagram-render.is-wide')).toHaveCount(0)
+})
+
+// §5 of the chart-size spec: float is a menu action on svg figures, persisted
+// as float= in the meta, and narrow viewports ignore it entirely.
+test('Float left wraps prose around a small chart; Inline undoes it', async ({ page }) => {
+  await pasteAtEnd(page, SMALL_SVG)
+  await caretAtEnd(page)
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('Prose that should wrap beside the floated chart.')
+
+  const figure = page.locator('.diagram').last()
+  await figure.locator('.diagram-render').click({ button: 'right' })
+  await page.locator('.diagram-context-menu').getByRole('button', { name: 'Float left' }).click()
+
+  await expect(figure).toHaveClass(/diagram--float-left/)
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('float=left')
+  expect(await figure.evaluate((el) => getComputedStyle(el).float)).toBe('left')
+
+  await figure.locator('.diagram-render').click({ button: 'right' })
+  await page.locator('.diagram-context-menu').getByRole('button', { name: 'Inline' }).click()
+  await expect(figure).not.toHaveClass(/diagram--float-left/)
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .not.toContain('float=')
+})
+
+// Float, then narrow the viewport — not the brief's order. At <=620px
+// `.document-surface` is `display: none` unless a note was opened while
+// already single-pane (window-chrome.ts's `isSinglePane` escape hatch); a
+// note already open from a desktop-width `beforeEach` never trips that, so
+// resizing first leaves the editor unfocusable and `pasteAtEnd` hangs on
+// nothing the float feature controls. Floating before the resize checks the
+// same CSS (float only ever reads the current viewport) without the
+// unrelated pane visibility gate.
+test('a narrow viewport ignores float', async ({ page }) => {
+  await pasteAtEnd(page, SMALL_SVG)
+  const figure = page.locator('.diagram').last()
+  await figure.locator('.diagram-render').click({ button: 'right' })
+  await page.locator('.diagram-context-menu').getByRole('button', { name: 'Float left' }).click()
+  await expect(figure).toHaveClass(/diagram--float-left/)
+
+  await page.setViewportSize({ width: 420, height: 800 })
+  expect(await figure.evaluate((el) => getComputedStyle(el).float)).toBe('none')
+})
+
+// Fix round 2, Finding 1: a floated figure is `width: fit-content`, so its
+// own render box collapses toward the drawing and cannot stand in for "the
+// column" — both the float menu's room-to-wrap check and the resize clamp
+// used it, and both broke the moment a chart had already floated once.
+test('a floated chart can re-float to the other side and still grow on drag', async ({ page }) => {
+  await pasteAtEnd(page, SMALL_SVG)
+  const figure = page.locator('.diagram').last()
+  await figure.locator('.diagram-render').click({ button: 'right' })
+  await page.locator('.diagram-context-menu').getByRole('button', { name: 'Float left' }).click()
+  await expect(figure).toHaveClass(/diagram--float-left/)
+
+  // (a) Switching sides must not require a detour through Inline first.
+  await figure.locator('.diagram-render').click({ button: 'right' })
+  const menu = page.locator('.diagram-context-menu')
+  await expect(menu).toBeVisible()
+  const floatRight = menu.getByRole('button', { name: 'Float right' })
+  await expect(floatRight).toBeEnabled()
+  await floatRight.click()
+  await expect(figure).toHaveClass(/diagram--float-right/)
+  await expect(figure).not.toHaveClass(/diagram--float-left/)
+
+  // (b) A grow-drag on a floated chart must not clamp at its current width,
+  // nor land in the edge-clear band and silently delete the committed width=.
+  await figure.locator('.diagram-render').click()
+  await expect(page.locator('.diagram.is-selected')).toHaveCount(1)
+
+  const svg = figure.locator('.diagram-render svg')
+  await expect(svg).toBeVisible()
+  const beforeWidth = (await svg.boundingBox())!.width
+
+  const grip = figure.locator('.diagram-resize-grip')
+  await expect(grip).toBeVisible()
+  const gripBox = (await grip.boundingBox())!
+  await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(gripBox.x + gripBox.width / 2 + 100, gripBox.y + gripBox.height / 2, { steps: 6 })
+  await page.mouse.up()
+
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toMatch(/width=\d+/)
+
+  const afterWidth = (await svg.boundingBox())!.width
+  expect(afterWidth).toBeGreaterThan(beforeWidth + 30)
+})
+
 // Regression: the task checkbox is drawn by CSS on the list item and the app
 // only reached `checked` through the Format menu, so the box everyone tries to
 // click was decoration — a pointer press just placed the caret.

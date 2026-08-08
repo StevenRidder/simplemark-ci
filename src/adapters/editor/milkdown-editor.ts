@@ -54,6 +54,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { AssetReference, ClipboardPort, DiagramFixPort, DiagramRenderer } from '../../application/index.js'
 import { looksLikeMermaid, looksLikeSvg } from '../../domain/index.js'
 import { AssetImageNodeView } from './asset-image-node-view.js'
+import { codeBlockMetaSchema } from './code-fence-meta.js'
 import { DiagramNodeView } from './diagram-node-view.js'
 import {
   HIGHLIGHT_COLOURS,
@@ -305,6 +306,9 @@ export class MilkdownEditor {
       .use(wikiLinkSchema)
       .use(calloutRemark)
       .use(calloutSchema)
+      // Carries the fence info tail (D7): must come after the commonmark
+      // preset so the extended code_block schema replaces the stock one.
+      .use(codeBlockMetaSchema)
       .use(codeBlockView)
       .use(mathView)
       .use(inlineMathView)

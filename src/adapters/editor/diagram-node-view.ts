@@ -3,6 +3,7 @@ import { NodeSelection, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 
 import type { ClipboardPort, DiagramFixPort, DiagramRenderer, RenderedDiagram } from '../../application/index.js'
+import { parseFenceLayout, withFenceMetaKey } from '../../domain/index.js'
 
 /** CSS absolute lengths, in px. The relative ones cannot be resolved here. */
 const CSS_UNITS: Record<string, number> = {
@@ -83,6 +84,13 @@ export class DiagramNodeView implements NodeView {
   #lastRenderError: string | undefined = undefined
   /** The block's own context menu, while it is open. */
   #menu: HTMLElement | undefined
+  /** Transient reader state, like folding — never written to the document. */
+  #zoom = 1
+  #zoomLevel: HTMLButtonElement | undefined
+  /** Cached so the click-guard and `stopEvent` don't re-query `.diagram-zoom` by string. */
+  #zoomControls: HTMLElement | undefined
+  /** Present only on an `svg` block — resize is not offered for generated diagrams. */
+  #grip: HTMLElement | undefined
 
   readonly #render: HTMLElement
   readonly #sheet: HTMLElement
@@ -197,12 +205,29 @@ export class DiagramNodeView implements NodeView {
     document.body.append(this.#sheet)
     this.dom.append(label, this.#toggle, this.#render, this.#error)
 
+    const language = (node.attrs['language'] as string | undefined) ?? ''
+    if (DiagramNodeView.#ZOOMABLE.has(language)) {
+      this.#zoomControls = this.#buildZoomControls()
+      this.dom.append(this.#zoomControls)
+    }
+
+    if (language === 'svg') {
+      this.#grip = document.createElement('div')
+      this.#grip.className = 'diagram-resize-grip'
+      this.#grip.setAttribute('aria-label', 'Resize chart')
+      this.#grip.addEventListener('pointerdown', this.#beginResize)
+      this.dom.append(this.#grip)
+    }
+
+    this.#applyFloat()
+
     // A click anywhere on the figure selects the block. The Edit-source button
     // and the source sheet are excluded — `stopEvent` already treats those as
     // ours, and selecting the block from them would fight the textarea.
     this.dom.addEventListener('click', (event) => {
       if (this.#toggle.contains(event.target as Node)) return
       if (this.#sheet.contains(event.target as Node)) return
+      if (this.#zoomControls?.contains(event.target as Node) === true) return
       this.#selectBlock()
     })
     this.dom.addEventListener('contextmenu', this.#openMenu)
@@ -327,6 +352,17 @@ export class DiagramNodeView implements NodeView {
   }
 
   /**
+   * The column the figure sits in, measured float-proof.
+   *
+   * A floated figure is `width: fit-content`, so its own render box collapses
+   * to the drawing and can't serve as "the column" (§4 resize clamp, §5 float
+   * threshold). The parent block — the editor column — keeps the real measure.
+   */
+  #columnWidth(): number {
+    return this.dom.parentElement?.clientWidth ?? this.#render.clientWidth
+  }
+
+  /**
    * The block's own context menu.
    *
    * `.note-context-menu` is the sidebar's menu styling, reused so this looks
@@ -360,6 +396,34 @@ export class DiagramNodeView implements NodeView {
       item('Edit source', () => this.#setShowingSource(true)),
       item('Delete', () => this.#deleteBlock()),
     )
+
+    const language = (this.#node.attrs['language'] as string | undefined) ?? ''
+    if (language === 'svg') {
+      const separator = document.createElement('hr')
+      const svg = this.#render.querySelector('svg')
+      const effective = svg?.getBoundingClientRect().width ?? 0
+      // §5: wrapping a sliver of text beside a wide chart reads as a bug, so
+      // float is only offered while the chart leaves the prose real room.
+      //
+      // Fix round 2, Finding 1: measured against the column, not the figure's
+      // own render box — a floated figure is `width: fit-content`, so once
+      // already floated, `#render.clientWidth` had collapsed to ≈ the
+      // drawing's own width and this was never true again. Float left/right
+      // read as permanently disabled the moment a chart floated once.
+      const roomToWrap = effective > 0 && effective <= this.#columnWidth() * 0.6
+      const floatItem = (text: string, value: string | null): HTMLButtonElement => {
+        const button = item(text, () => this.#commitLayout('float', value))
+        if (value !== null && !roomToWrap) button.disabled = true
+        return button
+      }
+      menu.append(
+        separator,
+        floatItem('Float left', 'left'),
+        floatItem('Float right', 'right'),
+        floatItem('Inline', null),
+      )
+    }
+
     document.body.append(menu)
     this.#menu = menu
 
@@ -425,6 +489,133 @@ export class DiagramNodeView implements NodeView {
   }
 
   /**
+   * §4: the drag writes width= into the fence meta on release — one
+   * transaction, one undo step. Dragging to the column edge clears the key,
+   * which reads as "back to natural".
+   */
+  readonly #beginResize = (event: PointerEvent): void => {
+    if (event.button !== 0) return
+    const grip = this.#grip
+    if (grip === undefined) return
+    event.preventDefault()
+    event.stopPropagation()
+    const svg = this.#render.querySelector('svg')
+    if (svg === null) return
+    const startWidth = svg.getBoundingClientRect().width
+    const startX = event.clientX
+    // Fix round 2, Finding 1: the column, not the figure's own render box —
+    // on a floated figure (`width: fit-content`) `#render.clientWidth` had
+    // collapsed to ≈ the drawing's own width, so a grow-drag clamped at the
+    // current width and any rightward release landed in the edge-clear band
+    // below, silently deleting the committed width= instead of growing it.
+    const available = this.#columnWidth()
+
+    const width = (moveEvent: PointerEvent): number =>
+      Math.min(
+        available,
+        Math.max(DiagramNodeView.#MIN_WIDTH, Math.round(startWidth + (moveEvent.clientX - startX))),
+      )
+
+    const move = (moveEvent: PointerEvent): void => {
+      svg.style.width = `${width(moveEvent)}px`
+    }
+    const stop = (stopEvent: PointerEvent): void => {
+      grip.removeEventListener('pointermove', move)
+      grip.removeEventListener('pointerup', stop)
+      const final = width(stopEvent)
+      this.#commitLayout('width', final >= available - 4 ? null : String(final))
+    }
+    // Fix round 1, Finding 2: capturing the pointer retargets its later
+    // events straight to the grip, even past the viewport edge. Without
+    // this, the listeners lived on `window` — a pointerup missed outside the
+    // window (or firing after this NodeView is destroyed mid-drag) left them
+    // stale, so a later unrelated pointerup could dispatch a bogus width=
+    // transaction. Attaching to the grip instead of `window` also means the
+    // listeners simply die with it.
+    grip.setPointerCapture(event.pointerId)
+    grip.addEventListener('pointermove', move)
+    grip.addEventListener('pointerup', stop, { once: true })
+  }
+
+  /** Rewrites one layout key in the fence meta through the editor. */
+  #commitLayout(key: string, value: string | null): void {
+    const pos = this.getPos()
+    if (pos === undefined) return
+    const { state } = this.view
+    const node = state.doc.nodeAt(pos)
+    if (node === null) return
+    const meta = withFenceMetaKey((node.attrs['meta'] as string | undefined) ?? '', key, value)
+    this.view.dispatch(
+      state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, meta }),
+    )
+  }
+
+  /** float= drives layout classes; the stylesheet does the rest. */
+  #applyFloat(): void {
+    const layout = parseFenceLayout((this.#node.attrs['meta'] as string | undefined) ?? '')
+    this.dom.classList.toggle('diagram--float-left', layout.float === 'left')
+    this.dom.classList.toggle('diagram--float-right', layout.float === 'right')
+  }
+
+  #buildZoomControls(): HTMLElement {
+    const zoom = document.createElement('div')
+    zoom.className = 'diagram-zoom'
+
+    const button = (label: string, text: string, run: () => void): HTMLButtonElement => {
+      const el = document.createElement('button')
+      el.type = 'button'
+      el.setAttribute('aria-label', label)
+      el.textContent = text
+      el.addEventListener('click', (event) => {
+        event.preventDefault()
+        run()
+      })
+      return el
+    }
+
+    this.#zoomLevel = button('Reset zoom', '100%', () => this.#setZoom(1))
+    this.#zoomLevel.className = 'diagram-zoom-level'
+    zoom.append(
+      button('Zoom out', '−', () => this.#setZoom(this.#zoom / DiagramNodeView.#ZOOM_STEP)),
+      this.#zoomLevel,
+      button('Zoom in', '+', () => this.#setZoom(this.#zoom * DiagramNodeView.#ZOOM_STEP)),
+    )
+    return zoom
+  }
+
+  #setZoom(next: number): void {
+    const clamped = Math.min(
+      DiagramNodeView.#ZOOM_MAX,
+      Math.max(DiagramNodeView.#ZOOM_MIN, next),
+    )
+    // Fix round 2, Finding 3: repeated in/out steps accumulate float error
+    // (0.8 * 1.25 = 1.0000000000000002) — close enough to read "100%" but
+    // never `=== 1`, so #fitDiagram's zoom branch stayed active forever.
+    this.#zoom = Math.abs(clamped - 1) < 0.001 ? 1 : clamped
+    if (this.#zoomLevel !== undefined) {
+      this.#zoomLevel.textContent = `${Math.round(this.#zoom * 100)}%`
+    }
+    this.#fitDiagram()
+  }
+
+  /** §6: zoom lives on generated renders only. Pasted SVGs resize instead. */
+  static readonly #ZOOMABLE = new Set(['mermaid', 'dot', 'vega-lite'])
+  static readonly #ZOOM_STEP = 1.25
+  static readonly #ZOOM_MIN = 0.5
+  static readonly #ZOOM_MAX = 4
+  /**
+   * Mirrors `.diagram-render svg`'s `max-width: min(100%, 720px)`.
+   *
+   * The resting (zoom === 1) width defers to that CSS rule entirely, so it
+   * never needs to know the number. An explicit zoom instead computes its own
+   * inline width, which beats `max-width` once `is-wide` lifts the cap — so
+   * the cap has to be duplicated here, or a zoomed diagram on a column wider
+   * than 720px would visually jump on the very first zoom click instead of
+   * scaling smoothly from what was already on screen. Keep the two in sync.
+   */
+  static readonly #FILL_CAP = 720
+
+  /**
    * How much narrower than its natural width a diagram may be squeezed before
    * scrolling beats shrinking.
    *
@@ -435,6 +626,9 @@ export class DiagramNodeView implements NodeView {
    * inside itself instead. The page must never scroll sideways to read a note.
    */
   static readonly #WIDEST_SQUEEZE = 1.6
+
+  /** §4: the floor a drag (or a hand-typed `width=`) may shrink an svg block to. */
+  static readonly #MIN_WIDTH = 120
 
   /**
    * Decides between filling the column and keeping natural size.
@@ -463,18 +657,87 @@ export class DiagramNodeView implements NodeView {
     // guessing — the first paint almost always lands here.
     if (available === 0 || natural === undefined) return
 
+    const language = (this.#node.attrs['language'] as string | undefined) ?? ''
+
+    // An explicit zoom is the reader's own choice and wins over the
+    // natural-width "wide" default below — a dense diagram that already
+    // trips `#WIDEST_SQUEEZE` is exactly the one a reader reaches for zoom
+    // on. Without this check first, the wide branch would return before
+    // zoom ever ran: the readout would climb 100% -> 125% -> ... on every
+    // click while the picture never moved, in either direction.
+    //
+    // `zoom === 1` skips this and falls through to today's wide/svg/fill
+    // ruling unchanged. Zooming out can un-wide a diagram that was wide by
+    // default; zooming in can push one wide that wasn't.
+    if (this.#zoom !== 1 && DiagramNodeView.#ZOOMABLE.has(language)) {
+      // The base is the resting fill width — `min(available, #FILL_CAP)` —
+      // not `natural`: §2 of the design ruling has generated diagrams fill
+      // the column regardless of natural size, so the un-zoomed (100%)
+      // width already *is* this value. Scaling from `natural` instead
+      // would, for any diagram smaller than its column — the common case —
+      // make the first "Zoom in" click shrink the drawing below its resting
+      // size.
+      const base = Math.min(available, DiagramNodeView.#FILL_CAP)
+      const scaled = base * this.#zoom
+      this.#render.classList.toggle('is-wide', scaled > available)
+      svg.style.width = `${scaled}px`
+      return
+    }
+
+    // Fix round 1, Finding 1: a committed width (a drag, or a hand-typed
+    // fence meta) is the reader's own explicit choice and wins over the
+    // natural-width "wide" default below — the same way zoom, just above,
+    // already wins over wide for generated diagrams. Without this check
+    // first, the wide branch ran unconditionally for an oversized natural
+    // width and returned before the meta was ever read: a drag to 400px on
+    // an svg whose natural width trips `#WIDEST_SQUEEZE` would commit
+    // `width=400` correctly and then get overwritten straight back to
+    // natural (e.g. 1200px) on the very next paint.
+    if (language === 'svg') {
+      const layout = parseFenceLayout((this.#node.attrs['meta'] as string | undefined) ?? '')
+      if (layout.width !== undefined) {
+        this.#render.classList.remove('is-wide')
+        const wanted = Math.max(layout.width, DiagramNodeView.#MIN_WIDTH)
+        // Floated figures self-size (fit-content): capping at the container
+        // would chase our own shadow. The stylesheet clamps to 60% instead.
+        const chosen = layout.float !== undefined ? wanted : Math.min(wanted, available)
+        svg.style.width = `${chosen}px`
+        return
+      }
+    }
+
     const wide = natural > available * DiagramNodeView.#WIDEST_SQUEEZE
     this.#render.classList.toggle('is-wide', wide)
 
-    // `width: auto` is not enough to restore natural size. Mermaid writes
-    // `width="100%"` as an *attribute*, which an `auto` computed width defers
-    // to — so the diagram obediently shrank back into the column and the
-    // scrolling had nothing to scroll. Only an explicit length overrides it.
     if (wide) {
+      // Legibility beats fitting: the drawing keeps its own size and the
+      // figure scrolls, unchanged for every language. The explicit length is
+      // load-bearing, not just the number: `width: auto` is not enough to
+      // restore natural size, because Mermaid writes `width="100%"` as an
+      // *attribute*, which an `auto` computed width defers to — so the
+      // diagram obediently shrank back into the column and the scrolling had
+      // nothing to scroll. Only an explicit length overrides it.
       svg.style.width = `${natural}px`
-    } else {
-      svg.style.removeProperty('width')
+      return
     }
+
+    if (language === 'svg') {
+      // §2: a pasted SVG has an author-chosen size (no meta width — that
+      // case returned above). Cap at the column, but never inflate —
+      // inflating is for renders whose size the engine invented, not for a
+      // drawing that arrived with one.
+      const layout = parseFenceLayout((this.#node.attrs['meta'] as string | undefined) ?? '')
+      this.#render.classList.remove('is-wide')
+      // Floated figures self-size (fit-content): capping at the container
+      // would chase our own shadow. The stylesheet clamps to 60% instead.
+      const chosen = layout.float !== undefined ? natural : Math.min(natural, available)
+      svg.style.width = `${chosen}px`
+      return
+    }
+
+    // Generated diagrams (mermaid, dot, vega-lite) fill the measure; the
+    // stylesheet's `width: 100%` does that once no explicit width remains.
+    svg.style.removeProperty('width')
   }
 
   static readonly #MAX_FIX_ATTEMPTS = 3
@@ -576,6 +839,7 @@ export class DiagramNodeView implements NodeView {
   update(node: ProseNode): boolean {
     if (node.type !== this.#node.type) return false
     this.#node = node
+    this.#applyFloat()
     if (this.#textarea.value !== node.textContent && document.activeElement !== this.#textarea) {
       // Refresh source without recreating the NodeView or stealing focus.
       this.#textarea.value = node.textContent
@@ -599,7 +863,9 @@ export class DiagramNodeView implements NodeView {
       event.target === this.#toggle ||
       event.target === this.#copyButton ||
       event.target === this.#fixButton ||
-      this.#sheet.contains(event.target as Node)
+      this.#sheet.contains(event.target as Node) ||
+      (event.target instanceof Node && this.#zoomControls?.contains(event.target) === true) ||
+      (this.#grip !== undefined && event.target instanceof Node && this.#grip.contains(event.target))
     )
   }
 

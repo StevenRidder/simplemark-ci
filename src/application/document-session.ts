@@ -1,4 +1,7 @@
-import type { FilePort } from './ports.js'
+import { buildSourceMap, emitDocument } from '../domain/index.js'
+
+import { dirtyBlocks } from './dirty-blocks.js'
+import type { BlockBoundaryPort, FilePort } from './ports.js'
 
 /**
  * The coordination authority for one open document (ADR-0002).
@@ -52,21 +55,34 @@ export type SaveResult =
 export class DocumentSession {
   #revision = 0
   #dirty = false
+  /**
+   * The document's bytes as last read from or written to disk.
+   *
+   * Untouched blocks are re-emitted from this, never re-serialized, which is
+   * what stops an edit to one paragraph renormalizing the whole file. Replaced
+   * only by a successful save — never by `apply`, or an edit would become its
+   * own baseline and preserve nothing.
+   */
+  #baseline: string
 
   private constructor(
     private readonly port: FilePort,
     private readonly handle: string,
     readonly name: string,
     private markdown: string,
-  ) {}
+    private readonly boundaries?: BlockBoundaryPort,
+  ) {
+    this.#baseline = markdown
+  }
 
-  static async open(port: FilePort): Promise<DocumentSession> {
+  static async open(port: FilePort, boundaries?: BlockBoundaryPort): Promise<DocumentSession> {
     const opened = await port.open()
     return new DocumentSession(
       port,
       opened.handle,
       opened.name,
       new TextDecoder().decode(opened.bytes),
+      boundaries,
     )
   }
 
@@ -101,8 +117,10 @@ export class DocumentSession {
     // anyway changes the file's modification date just for having been read.
     if (!force && !this.#dirty) return { ok: true, revision: this.#revision }
 
+    const bytes = this.#preservingSerialization()
+
     try {
-      await this.port.save(this.handle, new TextEncoder().encode(this.markdown))
+      await this.port.save(this.handle, new TextEncoder().encode(bytes))
     } catch (error) {
       // Surface the real cause. A save that failed must never leave the document
       // looking clean, or the user trusts a file that was never written.
@@ -110,6 +128,29 @@ export class DocumentSession {
     }
 
     this.#dirty = false
+    this.#baseline = bytes
     return { ok: true, revision: this.#revision }
+  }
+
+  /**
+   * What to write: the baseline with only the changed blocks re-serialized.
+   *
+   * Falls back to the whole document — which renormalizes, exactly as every
+   * save did before this existed — whenever the dirty set cannot be determined
+   * honestly: no boundary port composed, a block added, removed or split, or a
+   * changed preamble. A wrong preservation would corrupt the file; an honest
+   * re-serialization only reformats it.
+   */
+  #preservingSerialization(): string {
+    if (this.boundaries === undefined) return this.markdown
+
+    const baselineMap = buildSourceMap(this.#baseline, this.boundaries.starts(this.#baseline))
+    const nextMap = buildSourceMap(this.markdown, this.boundaries.starts(this.markdown))
+
+    const boundaries = this.boundaries
+    const dirty = dirtyBlocks(baselineMap, nextMap, (a, b) => boundaries.equivalent(a, b))
+    if (dirty === null) return this.markdown
+
+    return emitDocument(baselineMap, dirty)
   }
 }

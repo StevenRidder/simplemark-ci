@@ -23,8 +23,10 @@ export type {
   ClipboardPort,
   NoteSummary,
   NoteSummaryPort,
+  BlockBoundaryPort,
 } from './ports.js'
 export { DocumentSession } from './document-session.js'
+export { dirtyBlocks } from './dirty-blocks.js'
 export type {
   DocumentSnapshot,
   DocumentTransaction,

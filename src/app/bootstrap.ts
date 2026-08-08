@@ -17,7 +17,7 @@ import { createWindowChrome } from './ui/window-chrome.js'
 import { createFindBar } from './ui/find-bar.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import { COMMANDS } from '../application/index.js'
-import type { DocumentCommandId } from '../application/index.js'
+import type { BlockBoundaryPort, DocumentCommandId } from '../application/index.js'
 import type { WindowChrome } from './ui/window-chrome.js'
 import type { SaveState } from './ui/window-chrome.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
@@ -57,6 +57,12 @@ export interface AppPorts {
   readonly links?: DocumentLinkPort
   readonly clipboard?: ClipboardPort
   readonly diagrams: DiagramRenderer
+  /**
+   * Supplies the top-level block offsets that let a save preserve untouched
+   * blocks. Absent means every save re-serializes the whole document, which is
+   * what happened before FIDELITY-1 and remains the honest fallback.
+   */
+  readonly blockBoundaries?: BlockBoundaryPort
 }
 
 export interface AppComposition {
@@ -181,7 +187,7 @@ const WORKSPACE_MODE_KEY = 'simplemark.workspace-mode'
 
 export async function composeApp(options: ComposeOptions): Promise<AppComposition> {
   const { ports } = options
-  const session = await DocumentSession.open(ports.file)
+  const session = await DocumentSession.open(ports.file, ports.blockBoundaries)
 
   // Reader preferences are app state, never document content (D6). They are
   // applied to the document root so one multiplier and one palette drive the

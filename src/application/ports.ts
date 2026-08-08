@@ -208,3 +208,37 @@ export interface NoteSummaryPort {
   /** Returns an unsubscribe function. */
   onSummary(listener: (summary: NoteSummary) => void): () => void
 }
+
+/**
+ * The offset of every top-level block in a Markdown document.
+ *
+ * `domain`'s `buildSourceMap` is a pure tiling function and takes these from
+ * its caller — it does not parse Markdown. Parsing needs a real Markdown
+ * parser, which `application` may not import (ADR-0001), so the capability
+ * arrives as a port and the composition root supplies it.
+ *
+ * The contract is *self-consistency*, not agreement with the editor: the same
+ * implementation reads both the baseline and the edited document, so a coarser
+ * answer (a GFM table seen as one block rather than several) is safe. What is
+ * not safe is two different answers for the same bytes.
+ *
+ * Offsets must be ascending, and must be genuine block starts — the first byte
+ * of a top-level node, not of its leading whitespace.
+ */
+export interface BlockBoundaryPort {
+  starts(markdown: string): readonly number[]
+
+  /**
+   * Whether two blocks say the same thing, whatever their bytes.
+   *
+   * Byte comparison cannot answer this, and that is not a detail — the editor
+   * re-serializes the *whole* document on every edit, so every block's bytes
+   * differ from the author's even where nothing was touched. Comparing bytes
+   * would mark all of them dirty and preserve nothing.
+   *
+   * Equivalent blocks keep the author's original bytes; only blocks whose
+   * meaning changed are re-serialized. `- a` and `* a` are the same list, so
+   * the author's `-` survives.
+   */
+  equivalent(a: string, b: string): boolean
+}

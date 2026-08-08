@@ -1,3 +1,4 @@
+import { MdastBlockBoundaries } from '../adapters/editor/mdast-block-boundaries.js'
 import { CompositeRenderer } from '../adapters/renderers/composite-renderer.js'
 import { MermaidRenderer } from '../adapters/renderers/mermaid-renderer.js'
 import { SvgRenderer } from '../adapters/renderers/svg-renderer.js'
@@ -281,6 +282,9 @@ async function mount(
       links: new BrowserDocumentLinkPort(window),
       // One port, several renderers. Markmap joins here.
       clipboard: new BrowserClipboardPort(),
+      // Lets a save re-emit untouched blocks from the file's own bytes instead
+      // of re-serializing the whole document (FIDELITY-1).
+      blockBoundaries: new MdastBlockBoundaries(),
       diagrams: new CompositeRenderer([
         new MermaidRenderer(),
         new SvgRenderer(),

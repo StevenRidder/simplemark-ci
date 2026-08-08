@@ -41,8 +41,11 @@ default workflow, and the multi-client authority decision.
 
 - **One continuous rendered page.** No source/preview split, no permanent Markdown view. Source
   appears only for the block being corrected.
-- **Byte fidelity.** An untouched save is byte-identical. Editing one block never renormalizes
-  another — no renumbered lists, no repadded tables, no restyled fences. Enforced by a source map
+- **Byte fidelity.** An untouched save is byte-identical. Editing one block leaves every other
+  block's bytes alone — no renumbered lists, no repadded tables, no restyled fences — because
+  untouched blocks are re-emitted from the file rather than re-serialized. When a block is added,
+  removed or split, block identity no longer holds and the document is written whole rather than
+  guessed at. Enforced by a source map
   and a byte-diff suite over hostile real-world fixtures.
 - **Typography as product behavior.** Bear-style font, size, line height, and theme in preferences.
 
@@ -170,7 +173,7 @@ corrected, and everything still saves as portable Markdown.
 | POC coordination | One in-process `DocumentSession`; human edits and watched external changes share application use cases |
 | Later collaboration | ProseMirror step authority first; Yjs only if masterless operation is required |
 | Durability | Plain `.md` files in a folder; SQLite is a rebuildable cache |
-| Fidelity | Untouched blocks are preserved byte-for-byte; only edited blocks re-serialize |
+| Fidelity | Untouched blocks are preserved byte-for-byte; only blocks whose meaning changed re-serialize |
 | Sync | Delegated to iCloud Drive / any synced folder — no server, no accounts |
 | Canvas | Single unified view, no source/preview split |
 | Typography | Bear-style: font, size, line height, theme in preferences |

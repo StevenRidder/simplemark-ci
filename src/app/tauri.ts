@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 
+import { MdastBlockBoundaries } from '../adapters/editor/mdast-block-boundaries.js'
 import { CompositeRenderer } from '../adapters/renderers/composite-renderer.js'
 import { MermaidRenderer } from '../adapters/renderers/mermaid-renderer.js'
 import { SvgRenderer } from '../adapters/renderers/svg-renderer.js'
@@ -1006,6 +1007,9 @@ async function mount(
       assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
       links: new TauriDocumentLinkPort(invoke),
       clipboard: new BrowserClipboardPort(),
+      // Lets a save re-emit untouched blocks from the file's own bytes instead
+      // of re-serializing the whole document (FIDELITY-1).
+      blockBoundaries: new MdastBlockBoundaries(),
       diagrams: new CompositeRenderer([
         new MermaidRenderer(),
         new SvgRenderer(),

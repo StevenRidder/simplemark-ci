@@ -73,7 +73,7 @@ What is deliberately not the headline: hosted accounts, agent orchestration, and
 
     app → adapters → application → domain
 
-The domain owns fidelity, save safety, paste decisions, and run generations. Application use cases own the document session. Browser and Tauri are adapter sets over that same core — not two product forks. The boundary is mechanically checked with `npm run check:boundaries`.
+    The domain owns fidelity, save safety, and paste decisions. Application use cases own the document session. Browser and Tauri are adapter sets over that same core — not two product forks. The boundary is mechanically checked with `npm run check:boundaries`.
 
 ## Read more
 
@@ -81,8 +81,6 @@ The domain owns fidelity, save safety, paste decisions, and run generations. App
 - [Renderer catalog](docs/RENDERERS.md) — the supported formats and their portable fallbacks
 - [Storm Atlas](docs/showcase/project-tanoa-storm-atlas.md) — the source behind the demo above
 - [Living handbook](docs/showcase/welcome-to-simplemark.md) — a tour of the rendered capabilities
-- [Design notebook](docs/DESIGN.md) — document fidelity, paste recognition, and system design
-- [Release trust](docs/RELEASE-TRUST.md) — the build and verification contract
 - [Architecture decisions](docs/decisions/INDEX.md) — the durable choices behind the product
 
 ## Licence

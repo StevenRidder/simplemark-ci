@@ -28,6 +28,17 @@ if grep -ERIn --exclude='package-lock.json' \
 fi
 
 test -f "$EXPORT_DIR/src/app/browser.ts"
-test -f "$EXPORT_DIR/docs/DESIGN.md"
+test -f "$EXPORT_DIR/docs/decisions/INDEX.md"
+test ! -e "$EXPORT_DIR/docs/COLLABORATION.md"
+test ! -e "$EXPORT_DIR/docs/MCP-SERVER.md"
+test ! -e "$EXPORT_DIR/docs/TECH-SPEC.md"
+test ! -e "$EXPORT_DIR/docs/showcase/simplemark-1.0-launch-plan.md"
+test ! -e "$EXPORT_DIR/docs/wireframe-collaboration.html"
+test ! -e "$EXPORT_DIR/docs/wireframe-bear.html"
+test ! -e "$EXPORT_DIR/docs/wireframe-ios.html"
+test ! -e "$EXPORT_DIR/docs/wireframe.html"
+test ! -e "$EXPORT_DIR/src/adapters/mcp/README.md"
+test ! -e "$EXPORT_DIR/src/domain/fences/README.md"
+test ! -e "$EXPORT_DIR/src/domain/transactions/README.md"
 
 echo "public mirror hygiene: sanitized export excludes website and private identity"

@@ -292,8 +292,23 @@ export class DiagramNodeView implements NodeView {
       if (this.#sheet.contains(event.target as Node)) return
       if (this.#chips?.contains(event.target as Node) === true) return
       if (this.#expand?.contains(event.target as Node) === true) return
+      // Tapping the drawing itself opens it, which is what a phone expects of
+      // any picture too big for its frame — the button beside it is the visible
+      // fallback, not the gesture. Only where a pointer cannot hover, and only
+      // on a figure that overflows: with a mouse this click selects the block,
+      // and selection is how a diagram is moved, copied and deleted.
+      if (
+        this.#opensOnTap()
+        && this.#render.contains(event.target as Node)
+      ) {
+        this.#openViewer()
+        return
+      }
       this.#selectBlock()
     })
+    this.dom.addEventListener('pointerdown', (event) => {
+      this.#lastPointerType = event.pointerType
+    }, { capture: true, passive: true })
     this.#render.addEventListener('scroll', this.#markScrollEnd, { passive: true })
     this.dom.addEventListener('contextmenu', this.#openMenu)
     this.#sheetHeader.addEventListener('pointerdown', this.#beginDrag)
@@ -1174,6 +1189,22 @@ export class DiagramNodeView implements NodeView {
   #markScrollEnd = (): void => {
     const remaining = this.#render.scrollWidth - this.#render.clientWidth - this.#render.scrollLeft
     this.#render.classList.toggle('is-at-end', remaining <= 2)
+  }
+
+  /** What kind of input produced the click currently being handled. */
+  #lastPointerType = ''
+
+  /**
+   * Whether a tap on the drawing should open it rather than select the block.
+   *
+   * Asks the event what it came from rather than asking the display what it is
+   * capable of. `(hover: none)` looked like the honest test and is not: this
+   * webview reports hover regardless, so the media query answered "mouse" for a
+   * finger and the gesture never fired. A pointer event knows.
+   */
+  #opensOnTap(): boolean {
+    if (!this.dom.classList.contains('has-wide-figure')) return false
+    return this.#lastPointerType === 'touch' || this.#lastPointerType === 'pen'
   }
 
   /** Hands the rendered drawing to the full-screen reader. */

@@ -575,10 +575,12 @@ test('a conversion that throws past the render gate still refuses quietly, not u
   expect(errors).toEqual([])
 })
 
-test('a status message too long for its slot stays readable on hover', async ({ page }) => {
-  // The slot is a fixed 118px so save wording never nudges the controls, which
-  // means a refusal reason is ellipsised away — "fail visibly" has to survive
-  // that. The full text lives in the title, the one place it cannot be clipped.
+test('a refusal reason is readable in the slot, not ellipsised away', async ({ page }) => {
+  // The fixed 118px slot exists so save wording never nudges the controls, and
+  // it used to clip every refusal to roughly its first fifteen characters —
+  // "fail visibly" cannot survive that. Error wording is rare and transient, so
+  // the slot gives it the room it needs; the title still carries the full text
+  // for anything longer than even that.
   await typeMermaidParagraph(page)
   await makeRendererReject(page)
 
@@ -589,9 +591,9 @@ test('a status message too long for its slot stays readable on hover', async ({ 
   await expect(status).toHaveAttribute('data-state', 'error')
   await expect(status).toHaveAttribute('title', /renderer crashed/)
 
-  // The slot really is too small for it — this is why the title matters.
+  // Nothing ellipsised: the slot is at least as wide as the sentence in it.
   const clipped = await status.evaluate((el) => el.scrollWidth > el.clientWidth)
-  expect(clipped).toBe(true)
+  expect(clipped).toBe(false)
 })
 
 test('the quiet gutter drag reorders document blocks through the editor transaction', async ({ page }) => {

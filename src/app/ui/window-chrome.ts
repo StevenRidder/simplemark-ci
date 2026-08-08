@@ -53,6 +53,15 @@ export type { FoldersSort, InfoTab, NotesSort, PreviewDensity } from '../ui-pref
 
 export type SaveState = 'saved' | 'dirty' | 'error'
 
+/**
+ * How long a refusal owns the status slot before routine status may replace it.
+ *
+ * Autosave settles 900ms after the last keystroke and commands usually follow
+ * typing, so anything shorter than a second loses the race that hid the reason
+ * in the first place. Four seconds clears that with room to read the sentence.
+ */
+const ERROR_DWELL_MS = 4000
+
 /** A palette centre expressed inside the document pane, so window resizing is safe. */
 export interface StylesBarPosition {
   readonly x: number
@@ -1488,6 +1497,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   status.className = 'status'
   status.dataset['state'] = 'saved'
   status.textContent = 'Saved'
+  status.title = 'Saved'
   right.append(status)
 
   const workWithAi = document.createElement('button')
@@ -1610,6 +1620,25 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   documentSurface.className = 'document-surface'
   documentSurface.append(stylesBar, stylesBarReveal, editorSection, infoPanel.element)
   const disposeDocumentScrollIndicator = installDocumentScrollIndicator(editorSection, documentSurface, page)
+
+  // Save state and command feedback share one slot, and a command refusal is
+  // the only message in it that answers something the person deliberately did.
+  // Autosave settles a beat later and used to paint "Saved" straight over the
+  // reason, leaving no trace that the command declined. So a refusal owns the
+  // slot for a moment; see `setStatus`.
+  let errorHoldUntil = 0
+  let deferredStatus: { state: SaveState; message?: string } | undefined
+  let deferredStatusTimer: ReturnType<typeof setTimeout> | undefined
+
+  const paintStatus = (state: SaveState, message?: string): void => {
+    status.dataset['state'] = state
+    const text =
+      message ?? (state === 'saved' ? 'Saved' : state === 'dirty' ? 'Unsaved changes' : 'Error')
+    status.textContent = text
+    // Even widened, an error can outrun its slot. The title carries the full
+    // text, the one place the slot cannot clip it.
+    status.title = text
+  }
   windowEl.addEventListener('pointerdown', (event) => {
     if (event.target instanceof Node && !stylesBar.contains(event.target)) {
       stylesBar.dispatchEvent(new Event('simplemark-close-menus'))
@@ -2797,16 +2826,36 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     togglePinned: (id) => toggleWorkspacePin(id),
     isPinned: (id) => workspacePinState(id),
     reconcileWorkspace: (workspace) => reconcileWorkspace(workspace),
-    dispose: disposeDocumentScrollIndicator,
+    dispose() {
+      clearTimeout(deferredStatusTimer)
+      deferredStatusTimer = undefined
+      disposeDocumentScrollIndicator()
+    },
     setStatus(state, message) {
-      status.dataset['state'] = state
-      const text =
-        message ?? (state === 'saved' ? 'Saved' : state === 'dirty' ? 'Unsaved changes' : 'Error')
-      status.textContent = text
-      // The slot is a fixed width so save wording never nudges the controls,
-      // which ellipsises anything longer — a refusal reason most of all. The
-      // title carries the full text, the one place the slot cannot clip it.
-      status.title = text
+      const now = Date.now()
+      if (state === 'error') {
+        // A newer refusal replaces an older one at once and restarts the hold.
+        // Errors never suppress errors: the latest reason is the useful one.
+        clearTimeout(deferredStatusTimer)
+        deferredStatusTimer = undefined
+        deferredStatus = undefined
+        errorHoldUntil = now + ERROR_DWELL_MS
+        paintStatus(state, message)
+        return
+      }
+      if (now < errorHoldUntil) {
+        // Hold the newest routine status rather than dropping it, so the slot
+        // still ends on the truth — just after the refusal has been read.
+        deferredStatus = message === undefined ? { state } : { state, message }
+        deferredStatusTimer ??= setTimeout(() => {
+          deferredStatusTimer = undefined
+          errorHoldUntil = 0
+          if (deferredStatus !== undefined) paintStatus(deferredStatus.state, deferredStatus.message)
+          deferredStatus = undefined
+        }, errorHoldUntil - now)
+        return
+      }
+      paintStatus(state, message)
     },
   }
 }

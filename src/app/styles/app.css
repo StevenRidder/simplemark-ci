@@ -932,6 +932,13 @@ button[disabled] {
    different from a successful one at a glance. */
 .status[data-state='error'] {
   color: var(--danger);
+  /* A refusal is only useful if its reason is readable, and the fixed width
+     above clipped every one of them to roughly its first fifteen characters.
+     That width exists so save wording never nudges the formatting controls;
+     error wording is rare and transient, so it may take the room it needs. */
+  flex: 0 0 auto;
+  inline-size: auto;
+  max-inline-size: 46ch;
 }
 
 /* section.editor, not .editor: Milkdown also puts an `editor` class on the

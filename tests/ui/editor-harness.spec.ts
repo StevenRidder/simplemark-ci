@@ -714,3 +714,32 @@ test('right-clicking a diagram offers Delete', async ({ page }) => {
   await expect(page.locator('.diagram')).toHaveCount(1)
   await expect(menu).toHaveCount(0)
 })
+
+// Regression: the task checkbox is drawn by CSS on the list item and the app
+// only reached `checked` through the Format menu, so the box everyone tries to
+// click was decoration — a pointer press just placed the caret.
+test('clicking the checkbox toggles the task under it', async ({ page }) => {
+  await caretAtEnd(page)
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('a thing to do')
+  await page.getByLabel('Styles bar').getByRole('button', { name: 'Todo', exact: true }).click()
+
+  const item = page.locator(`${editor} li[data-item-type="task"]`)
+  await expect(item).toHaveCount(1)
+  await expect(item).toHaveAttribute('data-checked', 'false')
+
+  const box = (await item.boundingBox())!
+  await page.mouse.click(box.x + 7, box.y + 15)
+
+  await expect(item).toHaveAttribute('data-checked', 'true')
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toMatch(/\[x\] a thing to do/)
+
+  await page.mouse.click(box.x + 7, box.y + 15)
+
+  await expect(item).toHaveAttribute('data-checked', 'false')
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toMatch(/\[ \] a thing to do/)
+})

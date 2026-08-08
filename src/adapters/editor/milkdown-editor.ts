@@ -309,6 +309,7 @@ export class MilkdownEditor {
 
     const instance = new MilkdownEditor(editor, options.renderer, emitMarkdown)
     instance.installLinkOpening(options.mount, options.onOpenLink)
+    instance.installTaskToggling()
     instance.installBlockReordering()
     instance.installTableControls()
     return instance
@@ -627,6 +628,76 @@ export class MilkdownEditor {
       )
       view.focus()
     })
+  }
+
+  /**
+   * The checkbox everyone tries to click becomes the gesture that toggles it.
+   *
+   * Milkdown's GFM task item emits no `<input>` — the box is drawn by CSS on
+   * the list item — so until now a press there only placed the caret and
+   * `checked` was reachable solely from the Format menu.
+   *
+   * Capture phase on the editor's own node, because ProseMirror registered its
+   * mousedown listener first and would otherwise move the selection before this
+   * ran. Stopping the event there also keeps the block-drag gutter out of it.
+   */
+  private installTaskToggling(): void {
+    this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dom.addEventListener(
+        'mousedown',
+        (event) => {
+          if (event.button !== 0 || !view.editable) return
+          const item = event.target instanceof Element
+            ? event.target.closest<HTMLElement>('li[data-item-type="task"]')
+            : null
+          if (item === null || !this.withinCheckbox(item, event)) return
+
+          event.preventDefault()
+          event.stopPropagation()
+          this.toggleTaskAt(view, item)
+        },
+        true,
+      )
+    })
+  }
+
+  /**
+   * Hit-tests the drawn box from the item's own layout rather than from the
+   * pixel values in app.css, so the two cannot drift apart. The box occupies
+   * the item's left padding on its first line: a click on the third line of a
+   * wrapped task is prose, not the checkbox.
+   */
+  private withinCheckbox(item: HTMLElement, event: MouseEvent): boolean {
+    const rect = item.getBoundingClientRect()
+    const style = getComputedStyle(item)
+    const gutter = Number.parseFloat(style.paddingLeft)
+    const firstLine = Number.parseFloat(style.lineHeight)
+    if (!Number.isFinite(gutter)) return false
+    const height = Number.isFinite(firstLine) ? firstLine : rect.height
+    return event.clientX >= rect.left
+      && event.clientX < rect.left + gutter
+      && event.clientY >= rect.top
+      && event.clientY < rect.top + height
+  }
+
+  /** Flips `checked` on the task item the pointer landed in. */
+  private toggleTaskAt(view: EditorView, item: HTMLElement): void {
+    const $pos = view.state.doc.resolve(view.posAtDOM(item, 0))
+    for (let depth = $pos.depth; depth > 0; depth -= 1) {
+      const node = $pos.node(depth)
+      if (node.type.name !== 'list_item') continue
+      // The innermost item wins, and only a task carries `checked` — a plain
+      // item here means the click was not on a box after all.
+      if (node.attrs['checked'] == null) return
+      view.dispatch(
+        view.state.tr.setNodeMarkup($pos.before(depth), undefined, {
+          ...node.attrs,
+          checked: !(node.attrs['checked'] as boolean),
+        }),
+      )
+      return
+    }
   }
 
   /** A quiet gutter drag becomes one ordinary ProseMirror transaction. */

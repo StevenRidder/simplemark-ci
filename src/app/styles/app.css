@@ -2689,6 +2689,8 @@ section.editor::-webkit-scrollbar {
   border: 1.5px solid var(--ink-3);
   border-radius: 4px;
   background: var(--paper);
+  /* The box is clickable (installTaskToggling), so it says so. */
+  cursor: pointer;
 }
 
 .milkdown .ProseMirror li[data-checked='true']::before {

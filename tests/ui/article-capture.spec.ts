@@ -276,3 +276,87 @@ test('replacing the whole document drops a stale trim offer', async ({ page }) =
   await page.keyboard.type('Replaced entirely.')
   await expect(page.locator('.page-trim-offer')).toHaveCount(0)
 })
+
+/**
+ * Issue #151, in a real browser: the schema parse drops `<script>` and event
+ * handlers, but takes a link's destination verbatim. This is the test that
+ * proves the selectors in `paste-urls.ts` match real elements — the vitest
+ * suite proves the decision, this proves the wiring.
+ *
+ * The realistic risk is over-strictness, so the same paste carries every link
+ * shape a note legitimately uses. All of them have to survive.
+ */
+const MIXED_LINKS = `<div><h2>Contact</h2><p>${PROSE}</p><p>
+  <a href="javascript:alert(document.cookie)">Click me</a>
+  <a href="https://example.com/story">The story</a>
+  <a href="mailto:hi@example.com">Email us</a>
+  <a href="tel:+61-2-5550-1234">Call us</a>
+  <a href="#contact">Jump to contact</a>
+  <a href="notes/other.md">A sibling note</a>
+  <a href="file:///device-root/secret.pdf">A local file</a>
+</p></div>`
+
+test('a pasted script link loses its destination and keeps its words', async ({ page }) => {
+  await pasteAtEnd(page, 'Contact', MIXED_LINKS)
+  const markdown = await serialize(page)
+
+  expect(markdown).not.toContain('javascript:')
+  expect(markdown).not.toContain('file://')
+  // §4.4 rule 2, applied to what the reader sees: the text is never the thing
+  // that gets dropped.
+  expect(markdown).toContain('Click me')
+  expect(markdown).toContain('A local file')
+})
+
+/**
+ * The over-strictness guard. The fragment and the sibling-note link arrive
+ * already absolutised against the page's own base — that is Chrome resolving
+ * relative hrefs on its way through the clipboard, not anything SimpleMark
+ * does, and it is why these assert the tail of the destination rather than
+ * the literal relative form. The relative-path rule itself is asserted
+ * directly in `tests/domain/paste-urls.test.ts`.
+ */
+test('every legitimate link shape survives the same paste', async ({ page }) => {
+  await pasteAtEnd(page, 'Contact', MIXED_LINKS)
+  const markdown = await serialize(page)
+
+  expect(markdown).toContain('](https://example.com/story)')
+  expect(markdown).toContain('](mailto:hi@example.com)')
+  expect(markdown).toContain('](tel:+61-2-5550-1234)')
+  expect(markdown).toContain('#contact)')
+  expect(markdown).toContain('notes/other.md)')
+})
+
+test('an inline data: image still lands, and a script image source does not', async ({ page }) => {
+  await pasteAtEnd(
+    page,
+    'pictures',
+    `<div><p>${PROSE}</p><p><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="A pixel">` +
+      `<img src="javascript:alert(1)" alt="Not a picture"></p></div>`,
+  )
+  const markdown = await serialize(page)
+
+  expect(markdown).toContain('data:image/gif;base64,R0lGODlhAQABAAAAACw=')
+  expect(markdown).not.toContain('javascript:')
+})
+
+/**
+ * Trim rebuilds its replacement from the RAW clipboard HTML, so a destination
+ * the paste-time check refused is back in that tree. Without the same check on
+ * the trim path, accepting the offer would put it in the file after all.
+ */
+test('accepting a trim does not reintroduce a script link', async ({ page }) => {
+  // Inside the article prose, not in a paragraph of its own: a link-only
+  // paragraph is exactly what the trimmer removes as page chrome, which would
+  // make this test pass for the wrong reason.
+  const withScriptLink = FULL_PAGE.replace(
+    `<p>${PROSE}</p>`,
+    `<p>${PROSE} <a href="javascript:alert(1)">Read the source</a></p>`,
+  )
+  await pasteAtEnd(page, 'Gemini is Cooked', withScriptLink)
+  await page.locator('.page-trim-offer-accept').click()
+
+  const markdown = await serialize(page)
+  expect(markdown).not.toContain('javascript:')
+  expect(markdown).toContain('Read the source')
+})

@@ -337,6 +337,7 @@ reader who is above the changed block, or reveal raw source.
 SVG and embedded HTML are untrusted input. A pasted `<svg>` can carry `<script>`, `onload=`, `<foreignObject>`, and external references.
 
 - All SVG passes **DOMPurify** with the SVG profile before rendering; scripts, event handlers, `foreignObject`, and external references are stripped. Sanitisation runs before validation, so an SVG that only survives by being neutered still renders — neutered.
+- **Pasted destinations are scheme-checked** before they reach the document. A link keeps `http`, `https`, `mailto`, `tel` and note-relative paths; an image additionally keeps an inline `data:image/…`. Anything else — `javascript:`, `vbscript:`, `file:`, a private application scheme — loses the destination and keeps the visible text (§4.4 rule 2). The check runs on the parsed clipboard document, and again when a page trim rebuilds content from the raw clipboard HTML.
 - Rendered content runs under a strict CSP; note content never issues network requests.
 - Mermaid runs with `securityLevel: 'strict'` (HTML labels disabled).
 - Extensions declare capabilities today; **enforcement at the native boundary is a prerequisite for opening the API to third parties** (D5), not something declared capabilities provide on their own.

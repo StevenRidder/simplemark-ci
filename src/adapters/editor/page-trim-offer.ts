@@ -6,6 +6,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import type { NoteImageStore } from '../../application/index.js'
 import { captureRemoteImages, remoteImageSources } from './image-capture.js'
 import { extractArticleHtml } from './page-trim.js'
+import { stripUnsafePastedUrls } from './paste-urls.js'
 
 /**
  * DESIGN.md §4.2: a pasted web page keeps its faithful shape, and trimming is
@@ -101,6 +102,10 @@ function accept(view: EditorView, images: NoteImageStore | undefined): void {
       return
     }
     const dom = new window.DOMParser().parseFromString(trimmed, 'text/html')
+    // Rebuilt from the RAW clipboard HTML, so every destination the paste-time
+    // check refused is back in this tree. Without the same check here, Trim
+    // would reintroduce them (issue #151).
+    stripUnsafePastedUrls(dom.body)
     const slice = ProseDOMParser.fromSchema(view.state.schema).parseSlice(dom.body)
     applyPageTrim(view, images, slice)
   } catch {

@@ -28,6 +28,7 @@ import {
 } from '../../domain/index.js'
 import type { DiagramRenderer, NoteImageStore } from '../../application/index.js'
 import { captureRemoteImages, remoteImageSources } from './image-capture.js'
+import { stripUnsafePastedUrls } from './paste-urls.js'
 import { looksLikeFullPagePaste } from './page-trim.js'
 import { offerPageTrim } from './page-trim-offer.js'
 
@@ -263,6 +264,10 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
           const language = /(?:^|\s)language-(\S+)/.exec(code.className)?.[1]
           if (language !== undefined) code.parentElement?.setAttribute('data-language', language)
         })
+        // §7: the schema parse drops `<script>` and event handlers, but takes
+        // a link's destination verbatim. Scheme-check before it becomes a
+        // mark, so nothing a page authored can be written into the file.
+        stripUnsafePastedUrls(dom.body)
         const slice = ProseDOMParser.fromSchema(view.state.schema).parseSlice(dom.body)
 
         const from = view.state.selection.from

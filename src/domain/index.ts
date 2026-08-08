@@ -48,6 +48,7 @@ export {
 export { CALLOUT_TYPES, matchCalloutMarker } from './paste/callout.js'
 export type { CalloutMarker, CalloutType } from './paste/callout.js'
 export { isPortableAssetReference, isRemoteImageSource } from './paste/images.js'
+export { isSafePastedImageSrc, isSafePastedLinkHref } from './paste/urls.js'
 export { analysePastedPage } from './paste/page.js'
 export type { PageAnalysis, PageNode } from './paste/page.js'
 export { provenanceHtml, readPasteProvenance } from './paste/provenance.js'

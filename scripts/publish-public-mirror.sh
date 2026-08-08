@@ -30,7 +30,7 @@ PUBLIC_CLONE="${WORK_ROOT}/public"
 # internal strategy documents.
 # tests/ui/fidelity.spec.ts drives spike/fidelity's harness and types against the
 # window global it installs. The spike does not ship, so the spec goes with it.
-HIDDEN_PATH_RE='^(website/|AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattributes$|scripts/(publish-public-mirror|ci-sandbox|simplemark_ci)\.sh|scripts/mirror/|spike/|tests/app/ci-sandbox-open-pr\.test\.ts|tests/ui/fidelity\.spec\.ts|docs/(POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX)\.md|docs/superpowers/|tests/fixtures/01-switchboard-borrowing-map\.md)'
+HIDDEN_PATH_RE='^(website/|AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattributes$|scripts/(publish-public-mirror|ci-sandbox|simplemark_ci)\.sh|scripts/mirror/|spike/|tests/app/(ci-sandbox-open-pr|native-testbuild-workflow|release-workflow|emergency-release-workflow)\.test\.ts|tests/ui/fidelity\.spec\.ts|docs/(POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX)\.md|docs/superpowers/|tests/fixtures/01-switchboard-borrowing-map\.md)'
 
 # Text that must never appear in the mirror, even inside a file that ships.
 # Scoped to the agent/board scaffolding and CI mechanics — not to every mention
@@ -161,10 +161,29 @@ sanitize_export() {
       | xargs -0 perl -0pi -e "s/\\[(\`?)${doc}\\.md(\`?)\\]\\([^)]*\\)/\$1${doc}.md\$2/g"
   done
 
+  # scripts/simplemark_ci.sh is stripped by HIDDEN_PATH_RE like the docs
+  # above, but it is prose-linked ("the canonical gate") rather than named by
+  # its own filename, so it needs the href-only de-link rather than the
+  # name-preserving one those use.
+  find "$dir" -type f \( -name '*.md' -o -name '*.ts' -o -name '*.html' \) -print0 \
+    | xargs -0 perl -0pi -e 's/\[([^\]]*)\]\([^)]*scripts\/simplemark_ci\.sh\)/$1/g'
+
   # AGENTS.md is contributor/agent workflow and does not ship at all, so its
   # references become the plain noun rather than a de-linked filename.
+  #
+  # Three passes, in order: a link whose visible text names the file becomes
+  # the noun outright; a link whose *target* names the file (visible text
+  # something else, e.g. "See AGENTS.md" as prose beside an unrelated link)
+  # loses only the link, keeping its own text; anything left over is a bare
+  # mention in prose. Running the bare-text substitution first would also
+  # rewrite the href half of `[AGENTS.md](../../AGENTS.md)`, turning a working
+  # link into a path literally named "the contributor guide".
   find "$dir" -type f \( -name '*.md' -o -name '*.ts' \) -print0 \
-    | xargs -0 perl -0pi -e 's/\[`AGENTS\.md`\]\([^)]*\)/the contributor guide/g; s/`?AGENTS\.md`?/the contributor guide/g'
+    | xargs -0 perl -0pi -e '
+        s/\[`?AGENTS\.md`?\]\([^)]*\)/the contributor guide/g;
+        s/\[([^\]]*)\]\([^)]*AGENTS\.md\)/$1/g;
+        s/`?AGENTS\.md`?/the contributor guide/g;
+      '
 }
 
 main() {

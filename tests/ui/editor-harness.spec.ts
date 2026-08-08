@@ -487,6 +487,36 @@ test('bare Mermaid pasted at a block boundary becomes a rendered diagram', async
     .toContain('```mermaid')
 })
 
+// §4.4 "never lose the source", rejection flavour. Invalid diagram source
+// resolves {ok: false} and falls back to the Markdown path — but a renderer
+// that REJECTS (a crash inside a renderer, not a parse failure) settled into
+// nothing: handlePaste had already claimed the event, so ProseMirror inserted
+// nothing either and the pasted text vanished.
+test('a renderer that rejects outright still lands the pasted text (§4.4)', async ({ page }) => {
+  await page.evaluate(() => {
+    // The composition's editor holds the same renderer object the paste
+    // plugin captured, so patching it here forces the rejection path.
+    const milkdown = window.simplemark!.editor as unknown as {
+      renderer: { render(language: string, source: string): Promise<unknown> }
+    }
+    milkdown.renderer.render = () => Promise.reject(new Error('renderer crashed'))
+  })
+
+  await pasteAtEnd(page, BARE_MERMAID)
+
+  // The fallback is the ordinary Markdown path: prose lands, no diagram, and
+  // the source survives into the document.
+  await expect(page.locator(editor)).toContainText('Bare paste')
+  await expect(page.locator('.diagram')).toHaveCount(1)
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain('Bare paste')
+  // Exactly the fixture's own fence — the rejected paste must not have added
+  // a second one.
+  const doc = await page.evaluate(() => window.simplemark!.session.snapshot().markdown)
+  expect(doc.match(/```mermaid/g)).toHaveLength(1)
+})
+
 test('a bare <svg> pasted at a block boundary renders, sanitised', async ({ page }) => {
   // §7: scripts and event handlers must not survive.
   const hostile =

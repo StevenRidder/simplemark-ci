@@ -192,14 +192,18 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
 
     /** §4.2 step 3: no sniffer claimed it, so the Markdown path runs on text/plain. */
     const insertMarkdown = (view: EditorView, text: string): void => {
-      let parsed
+      // Deliberately total, dispatch included: this is the §4.4 fallback of
+      // last resort. The async rejection path runs it with the paste event
+      // already claimed and nothing left to fall back to, and the sync
+      // callers claim the event on return either way — a throw could only
+      // trade a lost paste for an unhandled error on top of it.
       try {
-        parsed = ctx.get(parserCtx)(text)
+        const parsed = ctx.get(parserCtx)(text)
+        if (parsed === null || parsed === undefined) return
+        view.dispatch(view.state.tr.replaceSelection(new Slice(parsed.content, 0, 0)).scrollIntoView())
       } catch {
         return
       }
-      if (parsed === null || parsed === undefined) return
-      view.dispatch(view.state.tr.replaceSelection(new Slice(parsed.content, 0, 0)).scrollIntoView())
     }
 
     /**
@@ -297,6 +301,15 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
               // Never guess silently wrong (§4.4) — fall back to the text path.
               insertMarkdown(view, text)
             }
+          }).catch(() => {
+            // A renderer that rejects outright gets the same answer as one
+            // that reports failure. The event is already claimed by the
+            // `return true` below, so dropping the payload here would lose
+            // the source (§4.4) — the paste would simply vanish. This also
+            // backstops a throwing insertFence; if that ever failed between
+            // its two transactions the raw text can land twice — §4.4
+            // prefers duplicated source to lost source.
+            insertMarkdown(view, text)
           })
           return true
         },

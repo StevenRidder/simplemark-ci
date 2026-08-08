@@ -1092,6 +1092,22 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   const left = document.createElement('div')
   left.className = 'left'
+
+  /**
+   * Leaving a note on a single-pane viewport.
+   *
+   * Not a close: the note stays open and saved, exactly as it does in Notes and
+   * in Bear, and this only walks back to the list it came from. It is its own
+   * control rather than the desktop Document-list toggle because the two say
+   * different things — that one is a layout preference on a window wide enough
+   * for both panes, this is the only exit from a screen that fits one.
+   */
+  const backToList = document.createElement('button')
+  backToList.type = 'button'
+  backToList.className = 'single-pane-back'
+  backToList.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg><span class="single-pane-back-label"></span>'
+  left.append(backToList)
   left.append(
     commandButton(
       'tool',
@@ -1596,7 +1612,12 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   // Bear keeps the history arrows at the window's leading edge in both cases:
   // beside the native traffic lights, or at the head of the web toolbar.
-  if (isMacOS) titlebar.append(historyNavigation, filename, right)
+  // The macOS bar drops the `left` group because the traffic lights own that
+  // corner — but the single-pane back control has to survive, since the same
+  // chrome runs on iOS where that corner is free and going back is the only way
+  // out of an open note. CSS keeps it hidden until a viewport too narrow to
+  // show both panes asks for it.
+  if (isMacOS) titlebar.append(backToList, historyNavigation, filename, right)
   else {
     left.insertBefore(historyNavigation, documentListButton.nextSibling)
     titlebar.append(left, filename, right)
@@ -1653,6 +1674,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   )
 
   let setWorkspaceMode = (_mode: WorkspaceMode): void => {}
+  let applySinglePaneNavigation = (_next: WorkspaceOptions): void => {}
   let getWorkspaceMode = (): WorkspaceMode => 'editor'
 
   /**
@@ -2573,6 +2595,11 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       paintFolderRows()
       repaintNoteList()
       refreshHistoryNavigation()
+      // Reconciling is the third way a note reaches the screen, alongside a
+      // fresh mount and a restore, and it does not rebuild the composition — so
+      // a single-pane viewport has to be told here too, or selecting a note
+      // repaints the list and never moves to the document it just opened.
+      applySinglePaneNavigation(next)
     }
     repaintNoteList()
     noteItems.addEventListener('scroll', () => {
@@ -2587,12 +2614,34 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     const applyWorkspaceMode = (mode: WorkspaceMode): void => {
       workspaceBody.dataset['layout'] = mode
       workspaceBody.classList.toggle('navigation-hidden', mode === 'editor')
+      // The title bar is a sibling of the workspace body wherever the platform
+      // draws its own window controls, so reading state is stamped on the bar
+      // itself rather than inherited through the tree.
+      titlebar.classList.toggle('single-pane-reading', mode === 'editor')
       documentListButton.classList.toggle('active', mode !== 'all')
       options.onWorkspaceModeChange(mode)
     }
+    /**
+     * Below the breakpoint where the list and the document cannot share a row,
+     * which pane is showing is navigation rather than a remembered preference:
+     * an open note means you are reading it, none means you are in the list.
+     */
+    applySinglePaneNavigation = (next: WorkspaceOptions): void => {
+      // Name the destination rather than saying "Back": the list you return to
+      // is a particular collection, and on a phone that label is the only thing
+      // telling you which one.
+      const label = backToList.querySelector('.single-pane-back-label')
+      if (label !== null) label.textContent = next.collectionLabel ?? 'Notes'
+      if (globalThis.matchMedia?.('(max-width: 620px)').matches !== true) return
+      const wanted: WorkspaceMode = next.activeNoteId === '' ? 'all' : 'editor'
+      if (getWorkspaceMode() !== wanted) applyWorkspaceMode(wanted)
+    }
+    backToList.addEventListener('click', () => applyWorkspaceMode('all'))
+
     setWorkspaceMode = applyWorkspaceMode
     getWorkspaceMode = () => workspaceBody.dataset['layout'] as WorkspaceMode
     applyWorkspaceMode(options.initialWorkspaceMode)
+    applySinglePaneNavigation(workspace)
     documentListButton.addEventListener('click', () => {
       applyWorkspaceMode(getWorkspaceMode() === 'editor' ? 'all' : 'editor')
     })

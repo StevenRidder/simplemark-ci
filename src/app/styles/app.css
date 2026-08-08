@@ -3137,9 +3137,18 @@ section.editor::-webkit-scrollbar {
   .titlebar {
     backdrop-filter: none;
   }
-  .filename,
-  .status {
+  .filename {
     display: none;
+  }
+  /* The status line stays. It is where every failure the shell can report is
+     written — could not open, changed on disk, save refused — and hiding it
+     made those messages invisible rather than absent. A phone has less room to
+     spare and more need to be told. */
+  .status {
+    max-width: 52vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   /* `.path-hide` used to take the Document list button with it. On a narrow
      viewport that button is not decoration: it is the only control that
@@ -3633,3 +3642,49 @@ section.editor::-webkit-scrollbar {
 .milkdown .ProseMirror mark[data-highlight-color='blue'] { background: #b8d8f1; }
 .milkdown .ProseMirror mark[data-highlight-color='yellow'] { background: #f6dc83; }
 .milkdown .ProseMirror mark[data-highlight-color='purple'] { background: #d8c1e8; }
+
+/*
+ * Leaving a note on a single-pane viewport.
+ *
+ * Hidden wherever the list and the document can share a row, because there the
+ * list never went away and there is nothing to go back to. It appears only in
+ * the one state where the document occupies the whole screen — which on a phone
+ * is every open note.
+ */
+.single-pane-back {
+  display: none;
+  align-items: center;
+  gap: 1px;
+  min-height: 34px;
+  margin-right: 2px;
+  padding: 0 8px 0 2px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--accent);
+  font: 500 15px/1 var(--sans);
+  cursor: pointer;
+}
+
+.single-pane-back svg {
+  width: 18px;
+  height: 18px;
+}
+
+.single-pane-back-label {
+  max-width: 34vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .titlebar.single-pane-reading .single-pane-back {
+    display: inline-flex;
+  }
+  /* Undo and Redo remain in the styles bar while editing; on a phone the space
+     they take belongs to knowing where you are and how to get back. */
+  .titlebar.single-pane-reading .left .tool {
+    display: none;
+  }
+}

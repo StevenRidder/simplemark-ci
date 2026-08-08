@@ -362,6 +362,29 @@ async function startNative(
     )
   }
 
+  /**
+   * The note list to show while no document is open.
+   *
+   * The welcome shape is one synthetic row whose id is a display name, so
+   * nothing behind it can be opened — honest while there is no collection, and
+   * a dead end the moment there is one. On iOS there always is: the operating
+   * system supplies a document directory whether or not anybody chose it, so a
+   * person arriving with notes already in it would otherwise be shown a row
+   * that does nothing and no way to reach their own files.
+   *
+   * Real notes therefore win over the welcome note whenever they exist. The
+   * welcome note remains what an empty workspace shows.
+   */
+  const idleWorkspace = (): WorkspaceOptions =>
+    collections.collection(activeCollectionId, workspaceHandle ?? '').notes.length > 0
+      ? workspaceView('')
+      : nativeWorkspace(WELCOME_NAME, {
+        create: createNote,
+        addFolder,
+        selectCollection,
+        folders: collections.folders(),
+      })
+
   const reconcileWorkspace = (
     selectedHandle = activeHandle,
     collectionId = activeCollectionId,
@@ -712,12 +735,7 @@ async function startNative(
       pageZoom,
       settingsPanel,
       onOpenFile: openFromPicker,
-      workspace: nativeWorkspace(WELCOME_NAME, {
-        create: createNote,
-        addFolder,
-        selectCollection,
-        folders: collections.folders(),
-      }),
+      workspace: idleWorkspace(),
     })
     current.setStatus('saved', 'Discarded the new note')
   }
@@ -821,12 +839,7 @@ async function startNative(
       settingsPanel,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
-      workspace: nativeWorkspace(WELCOME_NAME, {
-        create: createNote,
-        addFolder,
-        selectCollection,
-        folders: collections.folders(),
-      }),
+      workspace: idleWorkspace(),
     })
   })
 
@@ -856,6 +869,26 @@ async function startNative(
     } catch {
       // A moved or disconnected folder is omitted rather than resurrected
       // from stale metadata. The next successful save repairs persistence.
+    }
+  }
+  // A platform that supplies its own document directory has no folder picker
+  // and no folder sidebar narrow enough to reach, so nothing else could ever
+  // adopt one: on iOS the operating system hands the application exactly one
+  // documents directory, published to the Files app. Asked only when the person
+  // has adopted nothing themselves, so their own choice always outranks the
+  // platform's — and desktop, which has a picker, always answers null.
+  if (collections.folders().length === 0) {
+    try {
+      const supplied = await invoke<WorkspaceCatalog | null>('default_workspace')
+      if (supplied !== null) {
+        collections.addFolder(supplied)
+        activeCollectionId = supplied.handle
+        saveActiveCollection(window.localStorage, activeCollectionId)
+        await watchFolder(supplied.handle)
+      }
+    } catch {
+      // An unreachable default is the same as not having one: the shell stays
+      // in its welcome state rather than claiming a folder it cannot read.
     }
   }
   persistFolders()
@@ -897,12 +930,7 @@ async function startNative(
     settingsPanel,
     menuTarget: () => current,
     onOpenFile: openFromPicker,
-    workspace: nativeWorkspace(WELCOME_NAME, {
-      create: createNote,
-      addFolder,
-      selectCollection,
-      folders: collections.folders(),
-    }),
+    workspace: idleWorkspace(),
   })
 
   const mostRecent = collections.recentNotes('').notes[0]
@@ -963,12 +991,7 @@ async function startNative(
           settingsPanel,
           menuTarget: () => current,
           onOpenFile: openFromPicker,
-          workspace: nativeWorkspace(WELCOME_NAME, {
-            create: createNote,
-            addFolder,
-            selectCollection,
-            folders: collections.folders(),
-          }),
+          workspace: idleWorkspace(),
         })
         return
       }
@@ -1116,17 +1139,30 @@ async function mount(
     provenance = undefined
   }
 
-  await installNativeMenu({
-    run: (command) => menuApp().run(command),
-    state: (command) => menuApp().commandState(command),
-    openSettings: () => options.settingsPanel.open(),
-    runTextService: (service: MacosTextServiceId) => {
-      void invoke('perform_macos_text_service', { service }).catch((error) => {
-        app.setStatus('error', `macOS text service unavailable — ${String(error)}`)
-      })
-    },
-    ...(provenance === undefined ? {} : { provenance }),
-  })
+  // A menubar is a desktop capability, and iOS has none — Tauri's menu APIs
+  // reject there. Unguarded, that made a missing menubar fatal to the whole
+  // composition: the document was already on screen by the time this ran, so
+  // the app looked fine while `mount` never returned and `current` was never
+  // assigned. Every later interaction then died on an undefined composition,
+  // which is why tapping a note on iOS did nothing at all and reported nothing.
+  // Losing the menubar must cost exactly the menubar, the same way losing
+  // provenance does just above.
+  try {
+    await installNativeMenu({
+      run: (command) => menuApp().run(command),
+      state: (command) => menuApp().commandState(command),
+      openSettings: () => options.settingsPanel.open(),
+      runTextService: (service: MacosTextServiceId) => {
+        void invoke('perform_macos_text_service', { service }).catch((error) => {
+          app.setStatus('error', `macOS text service unavailable — ${String(error)}`)
+        })
+      },
+      ...(provenance === undefined ? {} : { provenance }),
+    })
+  } catch {
+    // No menubar on this platform. Every command it carries is also reachable
+    // from the toolbar and the context menu, so the document stays fully usable.
+  }
 
   // Once, at launch, and never on a timer (docs/UPDATE-NOTIFICATION.md §8):
   // one call per launch is far inside the unauthenticated rate limit, and a

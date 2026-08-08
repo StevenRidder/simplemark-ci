@@ -33,6 +33,37 @@ export function looksLikeDocument(text: string): boolean {
   return MARKDOWN_BLOCK.some((pattern) => pattern.test(text))
 }
 
+/**
+ * Does the `text/html` flavour carry document structure worth keeping?
+ *
+ * The §4.2 ruling used to be "pasted-from-browser HTML is not treated as a
+ * document", so every paste was flattened to text/plain and arrived without
+ * bold, links, lists or tables. This predicate is what reverses it.
+ *
+ * Deliberately narrow. A plain-text copy still arrives with a `<meta charset>`
+ * and a styled `<span>` wrapper, and that paste must keep taking the Markdown
+ * path — otherwise pasted Markdown source stops being parsed as Markdown
+ * (BUG-1). So a wrapper alone is not structure: a block element, a mark, or
+ * more than one paragraph is.
+ *
+ * `pre` is deliberately absent from the block list, for the same reason: an
+ * editor's copy (VS Code, a terminal) is a `<pre>` of `<span>`s around the
+ * same plain text, one syntax-highlighted wrapper rather than a document
+ * (BUG-2). A `<pre>` that wraps a real `<code>` block still counts — `code`
+ * is in the mark list below regardless of what tag encloses it.
+ */
+const HTML_STRUCTURE: readonly RegExp[] = [
+  /<(h[1-6]|ul|ol|li|table|thead|tbody|tr|td|th|blockquote)[\s>]/i,
+  /<(strong|b|em|i|a|code|del|s)[\s>]/i,
+]
+
+export function htmlCarriesDocumentStructure(html: string): boolean {
+  if (html.trim() === '') return false
+  if (HTML_STRUCTURE.some((pattern) => pattern.test(html))) return true
+  // Two or more paragraphs is a document even with no marks in it.
+  return (html.match(/<p[\s>]/gi) ?? []).length > 1
+}
+
 /** Non-empty lines, the denominator for "is this mostly the artifact?". */
 function significantLines(text: string): number {
   return text.split('\n').filter((line) => line.trim() !== '').length

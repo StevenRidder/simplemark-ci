@@ -1,12 +1,13 @@
 import { parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
-import { Slice } from '@milkdown/kit/prose/model'
+import { DOMParser as ProseDOMParser, Slice } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 
 import {
+  htmlCarriesDocumentStructure,
   isStandaloneBlockPaste,
   looksLikeAnsi,
   looksLikeDiff,
@@ -21,6 +22,7 @@ import {
   looksLikeTsv,
   stripMathDelimiters,
   svgInHtml,
+  svgToCodeFenceHtml,
   tsvToMarkdownTable,
 } from '../../domain/index.js'
 import type { DiagramRenderer } from '../../application/index.js'
@@ -64,6 +66,10 @@ const SNIFFERS: readonly Sniffer[] = [
     id: 'svg-in-html',
     priority: 30,
     claim: (_text: string, html: string) => {
+      // A document that contains a chart is not a chart. Claiming it replaced
+      // the whole paste with its one <svg> and threw the rest away — the same
+      // fault BUG-5 fixed in the exhaust tier, which this sniffer never got.
+      if (htmlCarriesDocumentStructure(html)) return null
       const svg = svgInHtml(html)
       return svg === null ? null : { language: 'svg', source: svg }
     },
@@ -196,6 +202,41 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
       view.dispatch(view.state.tr.replaceSelection(new Slice(parsed.content, 0, 0)).scrollIntoView())
     }
 
+    /**
+     * §4.2 step 3, HTML flavour: a paste that is a document keeps being one.
+     *
+     * The old ruling flattened every paste to text/plain, so a report pasted
+     * from a browser arrived with no bold, no links, no lists and no tables.
+     * ProseMirror's own parser produces all of them; nothing here reimplements
+     * it. The one thing it has no rule for is `<svg>`, which is why the source
+     * is rewritten to a fence first — that is what keeps a chart in place
+     * instead of dropping it.
+     *
+     * Returns whether it dispatched. §4.4: never lose the source — a schema
+     * parse that throws must not claim the paste while inserting nothing, so
+     * the caller falls back to the text path instead of trusting this blindly.
+     */
+    const insertHtml = (view: EditorView, html: string): boolean => {
+      try {
+        const dom = new window.DOMParser().parseFromString(svgToCodeFenceHtml(html), 'text/html')
+        // The code_block schema's own parseDOM reads a `<pre data-language>` —
+        // the shape its toDOM writes back out. svgToCodeFenceHtml marks the
+        // language on the nested `<code class="language-svg">` instead, the
+        // HTML convention every other tool uses. Without this bridge the fence
+        // parses back with no language at all, so the renderer never claims it
+        // and the chart lands as inert text instead of the picture it was.
+        dom.body.querySelectorAll('pre > code').forEach((code) => {
+          const language = /(?:^|\s)language-(\S+)/.exec(code.className)?.[1]
+          if (language !== undefined) code.parentElement?.setAttribute('data-language', language)
+        })
+        const slice = ProseDOMParser.fromSchema(view.state.schema).parseSlice(dom.body)
+        view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView())
+        return true
+      } catch {
+        return false
+      }
+    }
+
     return new Plugin({
       key: pasteSnifferKey,
       props: {
@@ -227,7 +268,6 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
             : null
 
           if (claimed === null) {
-            if (text.trim() === '') return false
             // The Excel/Sheets clipboard is TSV in text/plain. It becomes a
             // real GFM table — content, not a card — so it goes through the
             // Markdown path rather than a renderer.
@@ -235,7 +275,16 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
               insertMarkdown(view, tsvToMarkdownTable(text))
               return true
             }
-            // §4.2: prefer text/plain over the HTML flavour.
+            // §4.2, revised: HTML that carries document structure is a
+            // document. Flattening it to text/plain was what lost every mark,
+            // link, list and table in a paste from a browser. A parse that
+            // throws is not a claim (§4.4) — it falls through to the text
+            // path below instead of swallowing the paste with nothing to show.
+            if (htmlCarriesDocumentStructure(html) && insertHtml(view, html)) {
+              return true
+            }
+            if (text.trim() === '') return false
+            // No structure to keep: text/plain, parsed as Markdown (BUG-1).
             insertMarkdown(view, text)
             return true
           }

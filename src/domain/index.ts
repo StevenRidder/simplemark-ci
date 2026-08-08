@@ -15,6 +15,7 @@ export {
   looksLikeMermaid,
   looksLikeSvg,
   svgInHtml,
+  svgToCodeFenceHtml,
 } from './paste/recognition.js'
 export type { ByteDifference } from './source/byte-diff.js'
 export type { SourceBlock, SourceMap } from './source/source-map.js'
@@ -25,6 +26,7 @@ export {
 } from './render/table-deferral.js'
 export type { MarkdownTableSpan, TableDeferralPlan } from './render/table-deferral.js'
 export {
+  htmlCarriesDocumentStructure,
   looksLikeAnsi,
   looksLikeDiff,
   looksLikeFileTree,

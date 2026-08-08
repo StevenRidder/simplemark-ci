@@ -1,5 +1,5 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { Selection } from '@milkdown/kit/prose/state'
+import { NodeSelection, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 
 import type { DiagramRenderer } from '../../application/index.js'
@@ -69,6 +69,8 @@ export class DiagramNodeView implements NodeView {
   #showingSource = false
   /** Guards against an out-of-order async render overwriting a newer one. */
   #renderToken = 0
+  /** The block's own context menu, while it is open. */
+  #menu: HTMLElement | undefined
 
   readonly #render: HTMLElement
   readonly #sheet: HTMLElement
@@ -146,6 +148,16 @@ export class DiagramNodeView implements NodeView {
     this.#sheet.append(this.#sheetHeader, this.#textarea)
     document.body.append(this.#sheet)
     this.dom.append(label, this.#toggle, this.#render, this.#error)
+
+    // A click anywhere on the figure selects the block. The Edit-source button
+    // and the source sheet are excluded — `stopEvent` already treats those as
+    // ours, and selecting the block from them would fight the textarea.
+    this.dom.addEventListener('click', (event) => {
+      if (this.#toggle.contains(event.target as Node)) return
+      if (this.#sheet.contains(event.target as Node)) return
+      this.#selectBlock()
+    })
+    this.dom.addEventListener('contextmenu', this.#openMenu)
     this.#sheetHeader.addEventListener('pointerdown', this.#beginDrag)
 
     // A rendered diagram bakes its colours into the SVG, so it does not follow
@@ -245,6 +257,99 @@ export class DiagramNodeView implements NodeView {
     const after = pos + this.#node.nodeSize
     const { state } = this.view
     this.view.dispatch(state.tr.setSelection(Selection.near(state.doc.resolve(after), 1)).scrollIntoView())
+    this.view.focus()
+  }
+
+  /**
+   * Puts a real selection on the block.
+   *
+   * Without it there was no way to remove a diagram at all: the NodeView has
+   * no `contentDOM`, so a click landed outside the editor content and
+   * Backspace had nothing to act on. A `NodeSelection` is the whole fix —
+   * ProseMirror deletes one on Backspace and Delete with no keymap of ours.
+   */
+  readonly #selectBlock = (): boolean => {
+    const pos = this.getPos()
+    if (pos === undefined) return false
+    const { state } = this.view
+    if (state.doc.nodeAt(pos) === null) return false
+    this.view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, pos)))
+    this.view.focus()
+    return true
+  }
+
+  /**
+   * The block's own context menu.
+   *
+   * `.note-context-menu` is the sidebar's menu styling, reused so this looks
+   * like the rest of the app rather than a second kind of menu. Both actions
+   * already exist — this is an affordance for them, not new behaviour.
+   */
+  readonly #openMenu = (event: MouseEvent): void => {
+    if (this.#sheet.contains(event.target as Node)) return
+    event.preventDefault()
+    if (!this.#selectBlock()) return
+    this.#closeMenu()
+
+    const menu = document.createElement('div')
+    menu.className = 'note-context-menu diagram-context-menu'
+    menu.style.left = `${event.clientX}px`
+    menu.style.top = `${event.clientY}px`
+
+    const item = (text: string, run: () => void): HTMLButtonElement => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'note-context-row'
+      button.textContent = text
+      button.addEventListener('click', () => {
+        this.#closeMenu()
+        run()
+      })
+      return button
+    }
+
+    menu.append(
+      item('Edit source', () => this.#setShowingSource(true)),
+      item('Delete', () => this.#deleteBlock()),
+    )
+    document.body.append(menu)
+    this.#menu = menu
+
+    // Any click or Escape outside dismisses it. Deferred by a tick so the
+    // right-click that opened it does not immediately close it.
+    setTimeout(() => {
+      document.addEventListener('pointerdown', this.#onOutsidePress)
+      document.addEventListener('keydown', this.#onMenuEscape)
+    }, 0)
+  }
+
+  readonly #closeMenu = (): void => {
+    this.#menu?.remove()
+    this.#menu = undefined
+    document.removeEventListener('pointerdown', this.#onOutsidePress)
+    document.removeEventListener('keydown', this.#onMenuEscape)
+  }
+
+  // A pointerdown on the menu's own buttons bubbles to document too, so
+  // closing unconditionally there would remove the menu before its click ever
+  // fires — Delete and Edit source would silently do nothing.
+  readonly #onOutsidePress = (event: PointerEvent): void => {
+    if (this.#menu?.contains(event.target as Node) === true) return
+    this.#closeMenu()
+  }
+
+  readonly #onMenuEscape = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') this.#closeMenu()
+  }
+
+  /** Selects the block, then removes it. */
+  #deleteBlock(): void {
+    const pos = this.getPos()
+    if (pos === undefined) return
+    const { state } = this.view
+    const node = state.doc.nodeAt(pos)
+    if (node === null) return
+    this.view.dispatch(state.tr.delete(pos, pos + node.nodeSize))
     this.view.focus()
   }
 
@@ -351,6 +456,15 @@ export class DiagramNodeView implements NodeView {
     return true
   }
 
+  /** ProseMirror tells us when the block is the selection; show it. */
+  selectNode(): void {
+    this.dom.classList.add('is-selected')
+  }
+
+  deselectNode(): void {
+    this.dom.classList.remove('is-selected')
+  }
+
   /** Inner control activity is ours, not ProseMirror's. */
   stopEvent(event: Event): boolean {
     return event.target === this.#toggle || this.#sheet.contains(event.target as Node)
@@ -370,5 +484,8 @@ export class DiagramNodeView implements NodeView {
     document.removeEventListener('keydown', this.#onEscape)
     this.#resize.disconnect()
     this.#sheet.remove()
+    // The menu lives on <body> too, so it would outlive its block just the same.
+    this.#closeMenu()
+    this.dom.removeEventListener('contextmenu', this.#openMenu)
   }
 }

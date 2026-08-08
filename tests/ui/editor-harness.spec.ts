@@ -573,3 +573,73 @@ test('Cmd+Z undoes an ordinary edit', async ({ page }) => {
   expect(after).toContain('application database.')
   expect(after).toContain('The live document boundary')
 })
+
+const PASTED_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><rect width="20" height="30"/></svg>'
+
+const RICH_HTML = `<meta charset="utf-8">
+<h2>A pasted heading</h2>
+<p>Some <strong>bold text</strong> and a <a href="https://example.test/">real link</a>.</p>
+<ul><li>first bullet</li><li>second bullet</li></ul>
+<table><thead><tr><th>Alert</th><th>Pad</th></tr></thead><tbody><tr><td>#854</td><td>GM A Pad</td></tr></tbody></table>
+<p>Closing prose.</p>`
+
+// What a browser actually puts in text/plain: no Markdown markers at all.
+const RICH_TEXT = 'A pasted heading\nSome bold text and a real link.\nfirst bullet\nsecond bullet\nAlert\tPad\n#854\tGM A Pad\nClosing prose.'
+
+test('a pasted document keeps its formatting (§4.2, HTML path)', async ({ page }) => {
+  await pasteAtEnd(page, RICH_TEXT, RICH_HTML)
+
+  await expect(page.locator(`${editor} h2`, { hasText: 'A pasted heading' })).toBeVisible()
+  await expect(page.locator(`${editor} strong`, { hasText: 'bold text' })).toBeVisible()
+  await expect(page.locator(`${editor} a[href="https://example.test/"]`)).toBeVisible()
+  await expect(page.locator(`${editor} li`, { hasText: 'first bullet' })).toBeVisible()
+  await expect(page.locator(`${editor} table`)).toHaveCount(1)
+  await expect(page.locator(editor)).toContainText('Closing prose.')
+})
+
+// The reported bug, end to end: the chart arrived and everything else did not.
+test('a pasted document containing a chart keeps both (§4.4 never lose the source)', async ({ page }) => {
+  const html = RICH_HTML.replace('<p>Closing prose.</p>', `<figure>${PASTED_SVG}</figure><p>Closing prose.</p>`)
+  await pasteAtEnd(page, RICH_TEXT, html)
+
+  await expect(page.locator(`${editor} h2`, { hasText: 'A pasted heading' })).toBeVisible()
+  await expect(page.locator(`${editor} table`)).toHaveCount(1)
+  await expect(page.locator(editor)).toContainText('Closing prose.')
+  // The chart survives in place, as the block the renderer already draws.
+  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram').last().locator('.diagram-render svg rect')).toHaveCount(1)
+})
+
+// BUG-1 regression guard: a plain-text copy of Markdown source is still parsed
+// as Markdown, not inserted verbatim and escaped on the way out.
+test('a plain-text Markdown paste still takes the Markdown path', async ({ page }) => {
+  await pasteAtEnd(page, '## Plain markdown heading\n\nWith **bold** in it.')
+
+  await expect(page.locator(`${editor} h2`, { hasText: 'Plain markdown heading' })).toBeVisible()
+  await expect(page.locator(`${editor} strong`, { hasText: 'bold' })).toBeVisible()
+})
+
+test('a rendered diagram can be selected and deleted', async ({ page }) => {
+  await pasteAtEnd(page, BARE_MERMAID)
+  await expect(page.locator('.diagram')).toHaveCount(2)
+
+  await page.locator('.diagram').last().locator('.diagram-render').click()
+  await expect(page.locator('.diagram.is-selected')).toHaveCount(1)
+
+  await page.keyboard.press('Backspace')
+  await expect(page.locator('.diagram')).toHaveCount(1)
+})
+
+test('right-clicking a diagram offers Delete', async ({ page }) => {
+  await pasteAtEnd(page, BARE_MERMAID)
+  await expect(page.locator('.diagram')).toHaveCount(2)
+
+  await page.locator('.diagram').last().locator('.diagram-render').click({ button: 'right' })
+
+  const menu = page.locator('.diagram-context-menu')
+  await expect(menu).toBeVisible()
+  await menu.getByRole('button', { name: 'Delete' }).click()
+
+  await expect(page.locator('.diagram')).toHaveCount(1)
+  await expect(menu).toHaveCount(0)
+})

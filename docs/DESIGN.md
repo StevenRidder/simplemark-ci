@@ -169,8 +169,8 @@ Cmd+V
  │      first sniffer to MATCH, VALIDATE and pass the
  │      standalone-block test wins
  │
- ├─ 3. No sniffer hit → remark parses as Markdown
- │      per-fence conversion for ```mermaid / ```svg blocks
+ ├─ 3. No sniffer hit → structured HTML: ProseMirror parses the DOM
+ │      (SVG becomes an svg fence in place); else remark parses text/plain as Markdown
  │
  └─ 4. Insert into the document → NodeViews render
         one Cmd+Z restores the raw pasted text
@@ -203,7 +203,8 @@ A sniffer may convert **only** when all four hold:
 | Case | Ruling |
 |---|---|
 | Clipboard has `text/html` wrapping an `<svg>` | `svg-in-html` claims it. HTML path is not consulted. |
-| Clipboard has both `text/html` and `text/plain`, no SVG | Markdown path on `text/plain` — pasted-from-browser HTML is not treated as a document. |
+| Clipboard `text/html` carries document structure (a heading, list, table, two or more paragraphs, or any mark) | **HTML path.** Real headings, marks, lists and tables. An inline `<svg>` becomes an `svg` block in place. |
+| Clipboard `text/html` is only a wrapper, or absent | Markdown path on `text/plain`. A plain-text copy of Markdown source must still parse as Markdown (BUG-1). |
 | Multi-block paste (prose + a ```mermaid fence + a table) | Markdown path. Fences convert per-block after parsing. Bare unfenced diagram source inside a larger paste stays text. |
 | Prose beginning with the word "graph" | `mermaid.parse()` rejects it; stays text. |
 | Valid Mermaid quoted inside a paragraph | Fails the standalone-block test; stays text. |
@@ -479,9 +480,11 @@ flowchart TB
   STANDALONE -->|yes| SNIFF{"Sniffer chain<br/>match AND validate"}
   SNIFF -->|"svg root ✓ · sanitised"| SVG["SVG block"]
   SNIFF -->|"mermaid.parse() ✓"| MER["Mermaid block"]
-  SNIFF -->|"no sniffer claims"| MD["remark parse<br/>per-fence conversion"]
+  SNIFF -->|"no claim, html structured"| HTML["ProseMirror DOM parse<br/>svg → fence in place"]
+  SNIFF -->|"no claim, no structure"| MD["remark parse<br/>per-fence conversion"]
   MER --> DOC["Insert into document"]
   SVG --> DOC
+  HTML --> DOC
   MD --> DOC
   DOC --> VIEW["NodeViews render on the canvas"]
   DOC --> DISK["Serialize dirty blocks only<br/>portable fence on disk"]

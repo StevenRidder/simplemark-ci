@@ -72,3 +72,33 @@ export function svgInHtml(html: string): string | null {
   const match = /<svg[\s>][\s\S]*?<\/svg\s*>/i.exec(html)
   return match === null ? null : match[0]
 }
+
+/** Escape HTML to prevent tag/entity interpretation in text nodes. */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+/**
+ * Rewrites every inline `<svg>` in an HTML clipboard flavour into the fenced
+ * form the renderer already draws.
+ *
+ * ProseMirror's clipboard parse has no rule for `<svg>`, so a pasted chart
+ * simply vanishes — measured on a report where the prose, table and headings
+ * all survived and the picture did not. Turning it into
+ * ```` ```svg ```` before the parse runs keeps it *where it was*, rather than
+ * appending it or dropping it.
+ *
+ * String rewriting rather than DOM surgery keeps this in `domain`, and the
+ * source is escaped because it is untrusted markup on the way to a text node.
+ * Sanitisation still happens later, at render (§7) — this only decides where
+ * the bytes land.
+ */
+export function svgToCodeFenceHtml(html: string): string {
+  return html.replace(
+    /<svg[\s>][\s\S]*?<\/svg\s*>/gi,
+    (svg) => `<pre><code class="language-svg">${escapeHtml(svg)}</code></pre>`,
+  )
+}

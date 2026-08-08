@@ -25,4 +25,21 @@ describe('paste sniffer chain', () => {
   it('leaves prose to the Markdown path', () => {
     expect(claimPaste('Just a sentence about charts.', '')).toBeNull()
   })
+
+  const SVG = '<svg viewBox="0 0 4 4"><rect/></svg>'
+
+  // The reported bug. svg-in-html matched an <svg> anywhere in the HTML, so a
+  // whole report — headings, prose, a table — was replaced by its one chart.
+  // DESIGN.md §4.4 rule 2: never lose the source.
+  it('declines a document that merely contains an SVG', () => {
+    const html = `<h1>Report</h1><p>Prose.</p><figure>${SVG}</figure><table><tr><td>1</td></tr></table>`
+    expect(claimPaste('Report\nProse.\n1', html)).toBeNull()
+  })
+
+  it('still claims HTML that is only a wrapped SVG', () => {
+    expect(claimPaste('irrelevant plain text', `<meta charset="utf-8"><div>${SVG}</div>`)).toEqual({
+      language: 'svg',
+      source: SVG,
+    })
+  })
 })

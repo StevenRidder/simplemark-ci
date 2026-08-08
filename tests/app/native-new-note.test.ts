@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest'
  *
  * The native shell composes a whole new app around every document transition,
  * and each transition has to say what the middle pane shows. `createNote` used
- * to answer that with `nativeWorkspace` — the welcome-screen shape, whose note
- * list is a single synthetic row for the current file. So a new note replaced
+ * to answer that with the welcome-screen shape, whose note list was a single
+ * synthetic row for the current file. So a new note replaced
  * the entire catalog with one "Untitled" row, and the real list only returned
  * when saving routed back through `install` and the catalog shape.
  *
@@ -34,8 +34,8 @@ function shellFunction(name: string): string {
 describe('creating a note in the native shell', () => {
   const createNote = shellFunction('createNote')
 
-  it('does not swap the catalog for the welcome screen shape', () => {
-    expect(createNote).not.toContain('nativeWorkspace(')
+  it('does not swap the catalog for the bundled sample shape', () => {
+    expect(createNote).not.toContain('mountSample(')
   })
 
   it('composes the new note against the real catalog', () => {
@@ -64,11 +64,6 @@ describe('creating a note in the native shell', () => {
     expect(createNote).toContain('current.editor.focusEnd()')
   })
 
-  it('keeps the welcome shape for the states that genuinely have no catalog', () => {
-    // The guard above is about `createNote`, not about deleting a shape the
-    // launch and empty-workspace states legitimately need.
-    expect(TAURI).toContain('function nativeWorkspace(')
-  })
 })
 
 describe('the unsaved note is never mistaken for a file', () => {

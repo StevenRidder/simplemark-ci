@@ -13,7 +13,7 @@ const EDITOR = '.milkdown .ProseMirror'
 
 /** Leaves the document ending in a rendered Mermaid diagram. */
 async function endWithDiagram(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.evaluate(() => window.simplemark!.editor.focusEnd())

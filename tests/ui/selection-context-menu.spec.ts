@@ -39,7 +39,7 @@ async function openNote(page: import('@playwright/test').Page): Promise<void> {
       return [handle]
     }
   }, NOTE)
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.getByRole('button', { name: 'Open file' }).click()

@@ -62,7 +62,7 @@ function diskContent(page: import('@playwright/test').Page): Promise<string> {
 }
 
 async function openTheFile(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.getByRole('button', { name: 'Open file' }).click()
   await expect(page.locator('.filename-title')).toHaveText('renderers-copy')
@@ -210,7 +210,7 @@ test('cancelling the picker leaves the current document untouched', async ({ pag
       throw new DOMException('The user aborted a request.', 'AbortError')
     }
   })
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
 
   await page.getByRole('button', { name: 'Open file' }).click()
@@ -222,7 +222,7 @@ test('a browser without the native API offers the Safari-compatible open fallbac
   await page.addInitScript(() => {
     Object.defineProperty(window, 'showOpenFilePicker', { configurable: true, value: undefined })
   })
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
 
   const button = page.getByRole('button', { name: 'Open file' })
@@ -234,7 +234,7 @@ test('the Safari fallback opens a file and saves an explicitly downloaded replac
   await page.addInitScript(() => {
     Object.defineProperty(window, 'showOpenFilePicker', { configurable: true, value: undefined })
   })
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
 
   const chooser = page.waitForEvent('filechooser')
@@ -258,7 +258,7 @@ test('the middle-panel Open Note control uses the real file-open path', async ({
   await page.addInitScript(() => {
     Object.defineProperty(window, 'showOpenFilePicker', { configurable: true, value: undefined })
   })
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
 
   const chooser = page.waitForEvent('filechooser')

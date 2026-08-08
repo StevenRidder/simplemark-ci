@@ -35,7 +35,7 @@ Workflow / Agent
 Everything normalizes to Atlas **FQTN + ToolResult**.`
 
 async function paste(page: import('@playwright/test').Page, text: string): Promise<void> {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.evaluate(() => window.simplemark!.editor.focusEnd())

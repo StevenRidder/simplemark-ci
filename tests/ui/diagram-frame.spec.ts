@@ -14,7 +14,7 @@ const editor = '.milkdown .ProseMirror'
 const render = '.diagram-render'
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await expect(page.locator(editor)).toBeVisible()
   await expect(page.locator(`${render} svg`).first()).toBeVisible()

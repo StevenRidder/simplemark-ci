@@ -20,7 +20,7 @@ const serialized = (page: import('@playwright/test').Page) =>
 test.beforeEach(async ({ page }) => {
   // Clear once, before the first navigation — addInitScript would also wipe
   // the preferences the persistence tests exist to check.
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.evaluate(() => window.localStorage.clear())
   await page.reload()
   await page.waitForFunction(() => window.simplemark !== undefined)

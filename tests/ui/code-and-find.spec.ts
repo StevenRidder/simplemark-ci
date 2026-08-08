@@ -13,7 +13,7 @@ const markdown = (page: import('@playwright/test').Page) =>
   page.evaluate(() => window.simplemark!.session.snapshot().markdown)
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.evaluate(() => window.localStorage.clear())
   await page.reload()
   await page.waitForFunction(() => window.simplemark !== undefined)

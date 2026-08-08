@@ -42,7 +42,7 @@ test('opens a table-heavy Markdown file promptly without losing its source', asy
     })
   }, REPORT)
 
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
 
   const startedAt = Date.now()

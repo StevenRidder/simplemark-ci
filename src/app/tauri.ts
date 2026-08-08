@@ -41,7 +41,8 @@ import { createPageZoomController } from './page-zoom.js'
 import type { PageZoomController } from './page-zoom.js'
 import { loadWindowGeometry, saveWindowGeometry } from './window-geometry.js'
 import { loadActiveCollection, saveActiveCollection } from './workspace-selection.js'
-import { WELCOME_MARKDOWN, WELCOME_NAME } from './welcome-note.js'
+import { SAMPLE_DOCUMENTS, WELCOME_SAMPLE, sampleDocument } from './sample-documents.js'
+import { sampleWorkspaceOptions } from './sample-workspace.js'
 import { WorkspacePins } from './workspace-pins.js'
 import { NoteWalk } from './note-walk.js'
 import { applySummariesToCatalog } from './note-summary-overlay.js'
@@ -196,6 +197,7 @@ async function startNative(
   let current: AppComposition
   let stopWatching: UnlistenFn | undefined
   let activeHandle: string | undefined
+  let activeSampleId = WELCOME_SAMPLE.id
   let workspaceHandle: string | undefined
   let activeCollectionId = loadActiveCollection(window.localStorage)
   let requestedSelection: { readonly path: string; readonly collectionId: string } | undefined
@@ -219,6 +221,12 @@ async function startNative(
   // so a walk held in there would restart on the step that needs it to continue.
   const noteWalk = new NoteWalk()
   const watchedFolders = new Set<string>()
+  const samplePorts = new Map(
+    SAMPLE_DOCUMENTS.map((sample) => [
+      sample.id,
+      new FixtureFilePort(sample.name, sample.markdown),
+    ]),
+  )
 
   // Shell-scoped like the walk: remounting the chrome per note must not drop
   // the subscription or re-ask the native side whether a model exists.
@@ -361,29 +369,6 @@ async function startNative(
       draft,
     )
   }
-
-  /**
-   * The note list to show while no document is open.
-   *
-   * The welcome shape is one synthetic row whose id is a display name, so
-   * nothing behind it can be opened — honest while there is no collection, and
-   * a dead end the moment there is one. On iOS there always is: the operating
-   * system supplies a document directory whether or not anybody chose it, so a
-   * person arriving with notes already in it would otherwise be shown a row
-   * that does nothing and no way to reach their own files.
-   *
-   * Real notes therefore win over the welcome note whenever they exist. The
-   * welcome note remains what an empty workspace shows.
-   */
-  const idleWorkspace = (): WorkspaceOptions =>
-    collections.collection(activeCollectionId, workspaceHandle ?? '').notes.length > 0
-      ? workspaceView('')
-      : nativeWorkspace(WELCOME_NAME, {
-        create: createNote,
-        addFolder,
-        selectCollection,
-        folders: collections.folders(),
-      })
 
   const reconcileWorkspace = (
     selectedHandle = activeHandle,
@@ -729,14 +714,7 @@ async function startNative(
       return
     }
     activeHandle = undefined
-    await current.destroy()
-    current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
-      filePath: 'Demo workspace · open a file to work with your own Markdown',
-      pageZoom,
-      settingsPanel,
-      onOpenFile: openFromPicker,
-      workspace: idleWorkspace(),
-    })
+    await mountSample()
     current.setStatus('saved', 'Discarded the new note')
   }
 
@@ -832,15 +810,7 @@ async function startNative(
     workspaceHandle = undefined
     activeCollectionId = 'recent'
     saveActiveCollection(window.localStorage, activeCollectionId)
-    await current.destroy()
-    current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
-      filePath: 'Demo workspace · open a file to work with your own Markdown',
-      pageZoom,
-      settingsPanel,
-      menuTarget: () => current,
-      onOpenFile: openFromPicker,
-      workspace: idleWorkspace(),
-    })
+    await mountSample()
   })
 
   const openFromPicker = (): void => {
@@ -858,6 +828,47 @@ async function startNative(
 
       if (!(await flush())) return
       await install(port, opened, 'recent')
+    })
+  }
+
+  /** Mounts one bundled sample without pretending it is a file on disk. */
+  const mountSample = async (id = WELCOME_SAMPLE.id): Promise<void> => {
+    const sample = sampleDocument(id) ?? WELCOME_SAMPLE
+    const port = samplePorts.get(sample.id)
+    if (port === undefined) throw new Error(`Missing bundled sample ${sample.id}`)
+
+    stopWatching?.()
+    stopWatching = undefined
+    if (current !== undefined) await current.destroy()
+    activeHandle = undefined
+    draft = false
+    workspaceHandle = undefined
+    activeSampleId = sample.id
+    current = await mount(root, port, {
+      filePath: 'Samples · changes reset when SimpleMark restarts · open a file to use your own Markdown',
+      pageZoom,
+      settingsPanel,
+      menuTarget: () => current,
+      onOpenFile: openFromPicker,
+      workspace: sampleWorkspaceOptions(sample.id, {
+        onSelectNote: selectSample,
+        onCreateNote: createNote,
+        onAddFolder: addFolder,
+        onSelectCollection: selectCollection,
+        folders: collections.folders().map((folder) => ({
+          id: folder.handle,
+          name: folder.name,
+          count: folder.notes.length,
+        })),
+      }),
+    })
+  }
+
+  const selectSample = (id: string): void => {
+    if (id === activeSampleId) return
+    void enqueue(async () => {
+      if (!(await flush())) return
+      await mountSample(id)
     })
   }
 
@@ -924,14 +935,7 @@ async function startNative(
     historyStore.save(history)
   }
 
-  current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
-    filePath: 'Demo workspace · open a file to work with your own Markdown',
-    pageZoom,
-    settingsPanel,
-    menuTarget: () => current,
-    onOpenFile: openFromPicker,
-    workspace: idleWorkspace(),
-  })
+  await mountSample()
 
   const mostRecent = collections.recentNotes('').notes[0]
   const restoredCatalog = activeCollectionId === 'recent'
@@ -984,15 +988,7 @@ async function startNative(
       }
 
       if (activeHandle === undefined) {
-        await current.destroy()
-        current = await mount(root, new FixtureFilePort(WELCOME_NAME, WELCOME_MARKDOWN), {
-          filePath: 'Demo workspace · open a file to work with your own Markdown',
-          pageZoom,
-          settingsPanel,
-          menuTarget: () => current,
-          onOpenFile: openFromPicker,
-          workspace: idleWorkspace(),
-        })
+        await mountSample(activeSampleId)
         return
       }
 
@@ -1213,44 +1209,6 @@ async function checkForUpdate(provenance: BuildProvenance | undefined): Promise<
     )
   } catch {
     return updateStatus(provenance, null, 'Could not reach GitHub')
-  }
-}
-
-/** The welcome state is honest until a real local note supplies a folder. */
-function nativeWorkspace(
-  fileName: string,
-  actions?: {
-    readonly create: () => void
-    readonly addFolder: () => void
-    readonly selectCollection: (id: string) => void
-    readonly folders: readonly WorkspaceCatalog[]
-  },
-): WorkspaceOptions {
-  return {
-    name: 'SimpleMark',
-    collectionLabel: 'Recent Notes',
-    activeCollectionId: 'recent',
-    activeNoteId: fileName,
-    recentNotesCount: 0,
-    ...(actions === undefined ? {} : {
-      onCreateNote: actions.create,
-      onAddFolder: actions.addFolder,
-      onSelectCollection: actions.selectCollection,
-      folders: actions.folders.map((folder) => ({
-        id: folder.handle,
-        name: folder.name,
-        count: folder.notes.length,
-      })),
-    }),
-    notes: [
-      {
-        id: fileName,
-        title: fileName.replace(/\.(md|markdown)$/i, ''),
-        preview: '',
-        updatedLabel: 'Open',
-        pinned: false,
-      },
-    ],
   }
 }
 

@@ -15,7 +15,7 @@ async function openLaunchPlan(page: import('@playwright/test').Page): Promise<vo
       return [handle]
     }
   }, { name: NAME, markdown: NOTE })
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.getByRole('button', { name: 'Open file' }).click()
   await expect(page.locator('.filename-title')).toHaveText('simplemark-1.0-launch-plan')

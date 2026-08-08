@@ -31,7 +31,7 @@ const CHART = JSON.stringify(
 )
 
 async function paste(page: import('@playwright/test').Page, text: string): Promise<void> {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.evaluate(() => window.simplemark!.editor.focusEnd())
@@ -87,7 +87,7 @@ test('a note with no chart never downloads the chart library', async ({ page }) 
     if (/vega/i.test(url) && /node_modules|\/assets\//.test(url)) chunks.push(url)
   })
 
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.locator(EDITOR).click()
   await page.keyboard.type('An ordinary note with no chart in it.')

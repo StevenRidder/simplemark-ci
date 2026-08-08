@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
   // Clear once, before the first navigation. addInitScript runs on *every*
   // navigation, so clearing there would wipe the preferences the reload test
   // exists to check.
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.evaluate(() => window.localStorage.clear())
   await page.reload()
   await page.waitForFunction(() => window.simplemark !== undefined)
@@ -597,13 +597,14 @@ test('a refusal reason is readable in the slot, not ellipsised away', async ({ p
 })
 
 test('the quiet gutter drag reorders document blocks through the editor transaction', async ({ page }) => {
-  const h1 = page.locator(`${editor} > h1`)
-  const h2 = page.locator(`${editor} > h2`)
-  await expect(h1).toHaveCount(1)
-  await expect(h2).toHaveCount(1)
-  const h1Box = await h1.boundingBox()
+  const h2 = page.locator(`${editor} > h2`).first()
+  await expect(h2).toHaveText('Fixture section heading')
+  await h2.scrollIntoViewIfNeeded()
+  const previousBlock = h2.locator('xpath=preceding-sibling::*[1]')
+  await expect(previousBlock).toHaveCount(1)
+  const previousBox = await previousBlock.boundingBox()
   const h2Box = await h2.boundingBox()
-  expect(h1Box).not.toBeNull()
+  expect(previousBox).not.toBeNull()
   expect(h2Box).not.toBeNull()
 
   // The handle is a six-dot visual in the left gutter. Dragging it moves the
@@ -611,12 +612,12 @@ test('the quiet gutter drag reorders document blocks through the editor transact
   const gutterX = h2Box!.x - 16
   await page.mouse.move(gutterX, h2Box!.y + 8)
   await page.mouse.down()
-  await page.mouse.move(gutterX, h1Box!.y + 4, { steps: 6 })
+  await page.mouse.move(gutterX, previousBox!.y, { steps: 6 })
   await page.mouse.up()
 
   await expect.poll(async () => {
     const value = await markdown(page)
-    return value.indexOf('## Fixture section heading') < value.indexOf('# Fixture heading')
+    return value.indexOf('## Fixture section heading') < value.indexOf('Fixture intro paragraph text for the harness.')
   }).toBe(true)
 })
 

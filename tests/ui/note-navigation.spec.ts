@@ -49,7 +49,7 @@ async function pinNote(page: Page, name: string): Promise<void> {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.evaluate(() => window.localStorage.clear())
   await page.reload()
   await page.waitForFunction(() => window.simplemark !== undefined)

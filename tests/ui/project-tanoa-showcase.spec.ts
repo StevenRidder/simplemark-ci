@@ -22,7 +22,7 @@ async function installFile(
 }
 
 async function openFile(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await page.getByRole('button', { name: 'Open file' }).click()
   await expect(page.locator('.filename-title')).toHaveText('project-tanoa')

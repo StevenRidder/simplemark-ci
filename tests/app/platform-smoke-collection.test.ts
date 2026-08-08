@@ -18,6 +18,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const script = join(process.cwd(), 'scripts', 'collect-platform-smoke.mjs');
 const SHA = 'a'.repeat(40);
+// These integration cases invoke macOS disk-image tooling. Under the complete
+// parallel suite, the OS call can cross Vitest's 5 s unit-test default even
+// though the collector itself remains bounded and finishes in a few seconds.
+const COLLECTOR_INTEGRATION_TIMEOUT_MS = 15_000;
 const made: string[] = [];
 
 function workspace(): string {
@@ -93,7 +97,7 @@ describe('refuses to be talked into a green result', () => {
       expect(evidence.checks[check], check).toBe(false);
       expect(evidence.collection.checkMethod[check].by).toBe('unperformed');
     }
-  });
+  }, COLLECTOR_INTEGRATION_TIMEOUT_MS);
 
   it('exits nonzero and says so when the evidence cannot pass the gate', () => {
     const w = workspace();
@@ -103,7 +107,7 @@ describe('refuses to be talked into a green result', () => {
     ]);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('will NOT pass the release trust gate');
-  });
+  }, COLLECTOR_INTEGRATION_TIMEOUT_MS);
 
   it('never reports a launch it did not attempt, and says why not', () => {
     const w = workspace();
@@ -119,7 +123,7 @@ describe('refuses to be talked into a green result', () => {
     expect(evidence.collection.checkMethod.open.by).toBe('machine');
     expect(evidence.collection.checkMethod.open.detail).not.toBe('');
     expect(evidence.checks.install).toBe(false);
-  });
+  }, COLLECTOR_INTEGRATION_TIMEOUT_MS);
 });
 
 describe('the facts it records are read off the artifact', () => {
@@ -130,7 +134,7 @@ describe('the facts it records are read off the artifact', () => {
     collect(['--target', 'macos', '--artifact', artifact, '--commit', SHA, '--out', out, '--skip-launch']);
     const expected = createHash('sha256').update(readFileSync(artifact)).digest('hex');
     expect(evidenceOf(out).artifact.sha256).toBe(expected);
-  });
+  }, COLLECTOR_INTEGRATION_TIMEOUT_MS);
 
   it('emits the schema and shape the trust gate reads', () => {
     const w = workspace();
@@ -144,7 +148,7 @@ describe('the facts it records are read off the artifact', () => {
       ['editSaveReopen', 'externalChangeHandled', 'install', 'open', 'openApprovedMarkdown'],
     );
     expect(Object.keys(evidence.trust).sort()).toEqual(['codeSigned', 'notarized', 'stapled']);
-  });
+  }, COLLECTOR_INTEGRATION_TIMEOUT_MS);
 
   it('omits the trust block for Linux, which has no signing lane', () => {
     const w = workspace();

@@ -13,6 +13,11 @@ import { expect, test } from '@playwright/test'
 
 const editor = '.milkdown .ProseMirror'
 
+const handbookMermaid = (page: import('@playwright/test').Page) =>
+  page.locator('.diagram').filter({
+    has: page.locator('.diagram-label', { hasText: 'mermaid' }),
+  }).first()
+
 /**
  * Caret at the end of the document, via the editor's own focusEnd.
  *
@@ -35,7 +40,7 @@ test.beforeEach(async ({ page }) => {
 test('renders the approved wireframe chrome', async ({ page }) => {
   await expect(page.locator('.window')).toBeVisible()
   await expect(page.locator('.titlebar .lights')).toHaveCount(0)
-  await expect(page.locator('.filename-title')).toHaveText('architecture')
+  await expect(page.locator('.filename-title')).toHaveText('welcome-to-simplemark')
   await expect(page.locator('.filename-title')).not.toContainText('.md')
   await expect(page.locator('.status')).toHaveAttribute('data-state', 'saved')
   await expect(page.getByRole('button', { name: 'Save file' })).toBeEnabled()
@@ -104,9 +109,9 @@ test('is the real ProseMirror candidate, not a contenteditable demo', async ({ p
   })
   expect(isProseMirror).toBe(true)
 
-  // The fixture's Markdown was parsed into real nodes, not shown as text.
-  await expect(page.locator(`${editor} h1`)).toContainText('Fixture heading')
-  await expect(page.locator(`${editor} h2`)).toContainText('Fixture section heading')
+  // The sample's Markdown was parsed into real nodes, not shown as text.
+  await expect(page.locator(`${editor} h1`)).toContainText('Welcome to SimpleMark')
+  await expect(page.locator(`${editor} h2`).first()).toContainText('Start here')
 })
 
 test('workspace controls are real while collaboration controls stay disabled', async ({ page }) => {
@@ -123,20 +128,20 @@ test('workspace controls are real while collaboration controls stay disabled', a
 })
 
 test('switches notes, filters the local index, creates a note, and can focus the page', async ({ page }) => {
-  await expect(page.getByLabel('Library')).toContainText('Recent Notes3')
-  await page.getByRole('button', { name: 'field-notes', exact: true }).click()
-  await expect(page.locator('.filename-title')).toHaveText('field-notes')
-  await expect(page.locator(`${editor} h1`)).toContainText('Field notes')
+  await expect(page.getByLabel('Library')).toContainText('Recent Notes2')
+  await page.getByRole('button', { name: 'Project Tanoa: Storm Atlas', exact: true }).click()
+  await expect(page.locator('.filename-title')).toHaveText('project-tanoa-storm-atlas')
+  await expect(page.locator(`${editor} h1`)).toContainText('Project Tanoa: the storm atlas')
 
   await page.getByRole('button', { name: 'Search' }).click()
-  await page.getByRole('searchbox', { name: 'Search notes' }).fill('ideas')
-  await expect(page.getByRole('button', { name: 'ideas', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'architecture', exact: true })).toBeHidden()
+  await page.getByRole('searchbox', { name: 'Search notes' }).fill('microgrid')
+  await expect(page.getByRole('button', { name: 'Project Tanoa: Storm Atlas', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Welcome to SimpleMark', exact: true })).toBeHidden()
 
-  const pinIdeas = page.getByRole('button', { name: 'Pin ideas' })
-  await pinIdeas.locator('..').hover()
-  await pinIdeas.click()
-  await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
+  const pinTanoa = page.getByRole('button', { name: 'Pin Project Tanoa: Storm Atlas' })
+  await pinTanoa.locator('..').hover()
+  await pinTanoa.click()
+  await expect(page.getByRole('button', { name: 'Unpin Project Tanoa: Storm Atlas' })).toBeVisible()
   // Pinning is an in-place sidebar state change, like Bear. It deliberately
   // does not remount the shell or dismiss an active search.
   await page.getByRole('button', { name: 'Close search' }).click()
@@ -145,15 +150,15 @@ test('switches notes, filters the local index, creates a note, and can focus the
   await expect(page.locator('.workspace-body')).toHaveClass(/navigation-hidden/)
   await page.getByRole('button', { name: 'Document list' }).click()
   await page.getByRole('button', { name: 'New note' }).click()
-  await expect(page.locator('.filename-title')).toHaveText('new-note-4')
+  await expect(page.locator('.filename-title')).toHaveText('new-note-3')
   await expect(page.locator(`${editor} h1`)).toContainText('New note')
 })
 
 test('note-list options provide Bear-like sorting, density, and pinned views', async ({ page }) => {
   await page.getByRole('button', { name: 'Note list options' }).click()
-  const options = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
+  const options = page.getByLabel('Note list options').filter({ has: page.getByText('2 notes') })
   await expect(options).toBeVisible()
-  await expect(options.getByText('3 notes')).toBeVisible()
+  await expect(options.getByText('2 notes')).toBeVisible()
 
   await options.getByRole('button', { name: 'Small preview' }).click()
   const notes = page.getByRole('complementary', { name: 'Notes' })
@@ -161,10 +166,9 @@ test('note-list options provide Bear-like sorting, density, and pinned views', a
   await expect(notes.locator('.note-select span').first()).toHaveCSS('display', 'none')
 
   await page.getByRole('button', { name: 'Note list options' }).click()
-  await page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') }).getByRole('button', { name: 'Pinned' }).click()
-  await expect(page.getByRole('button', { name: 'architecture', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'field-notes', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'ideas', exact: true })).toHaveCount(0)
+  await page.getByLabel('Note list options').filter({ has: page.getByText('2 notes') }).getByRole('button', { name: 'Pinned' }).click()
+  await expect(page.getByRole('button', { name: 'Welcome to SimpleMark', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Project Tanoa: Storm Atlas', exact: true })).toHaveCount(0)
 })
 
 test('typing flows through the application API and advances the document revision', async ({
@@ -218,7 +222,7 @@ test('a formatting command reaches the document as Markdown', async ({ page }) =
 // ADR-0003: the frame stays, its controls fade in. At rest a note is prose and
 // pictures with no chrome; hover or keyboard focus reveals the block bar.
 test('rendered-block controls are hidden at rest and revealed on hover', async ({ page }) => {
-  const diagram = page.locator('.diagram')
+  const diagram = handbookMermaid(page)
   const label = diagram.locator('.diagram-label')
   const editSource = diagram.getByRole('button', { name: 'Edit source' })
 
@@ -235,7 +239,7 @@ test('rendered-block controls are hidden at rest and revealed on hover', async (
 })
 
 test('the Mermaid fence renders as a diagram and toggles to editable source', async ({ page }) => {
-  const diagram = page.locator('.diagram')
+  const diagram = handbookMermaid(page)
   await expect(diagram).toBeVisible()
 
   // Rendered by the real engine, not a placeholder.
@@ -244,15 +248,16 @@ test('the Mermaid fence renders as a diagram and toggles to editable source', as
   await expect(diagram.locator('.diagram-label')).toHaveText('mermaid')
 
   await diagram.getByRole('button', { name: 'Edit source' }).click()
-  const source = page.locator('.diagram-source-sheet .diagram-source')
+  const sheet = page.locator('.diagram-source-sheet:not([hidden])')
+  const source = sheet.locator('.diagram-source')
   await expect(source).toBeVisible()
   await expect(source).toHaveValue(/flowchart LR/)
-  await expect(page.locator('.diagram-source-sheet')).toHaveCSS('resize', 'both')
+  await expect(sheet).toHaveCSS('resize', 'both')
 
   // Editing the source updates the document through ProseMirror.
   await source.click()
   await source.press('End')
-  await source.pressSequentially('\n  B --> OUT[Portable Markdown]')
+  await source.pressSequentially('\n  JUDGE --> OUT[Portable Markdown]')
 
   await expect
     .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
@@ -260,9 +265,9 @@ test('the Mermaid fence renders as a diagram and toggles to editable source', as
 })
 
 test('invalid diagram source fails visibly and keeps its source editable', async ({ page }) => {
-  const diagram = page.locator('.diagram')
+  const diagram = handbookMermaid(page)
   await diagram.getByRole('button', { name: 'Edit source' }).click()
-  const source = page.locator('.diagram-source-sheet .diagram-source')
+  const source = page.locator('.diagram-source-sheet:not([hidden]) .diagram-source')
 
   await source.click()
   await source.press('ControlOrMeta+a')
@@ -333,7 +338,7 @@ test('saving round-trips through the port and reopens as portable Markdown', asy
 })
 
 test('captures the calm state for wireframe comparison', async ({ page }, testInfo) => {
-  await expect(page.locator('.diagram-render svg')).toBeVisible()
+  await expect(handbookMermaid(page).locator('.diagram-render svg')).toBeVisible()
   const shot = await page.locator('.window').screenshot()
   await testInfo.attach('calm-state', { body: shot, contentType: 'image/png' })
 })
@@ -344,6 +349,7 @@ test('captures the calm state for wireframe comparison', async ({ page }, testIn
 // suite exercised typing and toolbar commands but never a paste, which is
 // exactly how it got through.
 test('pasted Markdown is parsed, not inserted as escaped literal text', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   const pasted = [
     '## Pasted heading',
     '',
@@ -379,7 +385,7 @@ test('pasted Markdown is parsed, not inserted as escaped literal text', async ({
   await expect(page.locator(`${editor} strong`, { hasText: 'bold' })).toBeVisible()
 
   // The fenced diagram went through the existing NodeView.
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
 
   // Poll: the DOM updates synchronously but Milkdown's markdownUpdated listener
   // — and therefore the DocumentSession transaction — lands just after.
@@ -393,7 +399,7 @@ test('pasted Markdown is parsed, not inserted as escaped literal text', async ({
   // No syntax the user pasted may come back escaped.
   expect(markdown).not.toContain('\\#')
   expect(markdown).not.toContain('\\*')
-  expect(markdown).not.toContain('\\[')
+  expect(markdown).not.toContain('PASTE\\[Pasted\\]')
 })
 
 // BUG-2, defect 1. Editors and viewers put a syntax-highlighted <pre> on the
@@ -464,12 +470,12 @@ test('GFM constructs render: tables, task lists, strikethrough', async ({ page }
   await page.keyboard.press('Enter')
   await page.keyboard.press('ControlOrMeta+v')
 
-  await expect(page.locator(`${editor} table`)).toBeVisible()
+  await expect(page.locator(`${editor} table`).filter({ has: page.getByText('The fence') })).toBeVisible()
   await expect(page.locator(`${editor} th`, { hasText: 'Take' })).toBeVisible()
   await expect(page.locator(`${editor} td`, { hasText: 'The fence' })).toBeVisible()
-  await expect(page.locator(`${editor} li[data-item-type="task"]`)).toHaveCount(2)
-  await expect(page.locator(`${editor} li[data-checked="true"]`)).toHaveCount(1)
-  await expect(page.locator(`${editor} del, ${editor} s`)).toBeVisible()
+  await expect(page.locator(`${editor} li[data-item-type="task"]`, { hasText: 'unchecked task' })).toHaveCount(1)
+  await expect(page.locator(`${editor} li[data-checked="true"]`, { hasText: 'checked task' })).toHaveCount(1)
+  await expect(page.locator(`${editor} del, ${editor} s`, { hasText: 'struck' })).toBeVisible()
 
   // Structure, not spacing. remark re-pads table cells, escapes underscores, and
   // rewrites `-` bullets to `*` on serialise — the normalisation D7 forbids and
@@ -514,11 +520,11 @@ async function pasteAtEnd(page: import('@playwright/test').Page, text: string, h
 const BARE_MERMAID = 'flowchart LR\n  PASTE[Bare paste] --> PIC[Becomes a picture]'
 
 test('bare Mermaid pasted at a block boundary becomes a rendered diagram', async ({ page }) => {
-  await expect(page.locator('.diagram')).toHaveCount(1)
+  const initialDiagrams = await page.locator('.diagram').count()
 
   await pasteAtEnd(page, BARE_MERMAID)
 
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
   await expect(page.locator('.diagram').last().locator('.diagram-render svg')).toBeVisible()
   await expect(page.locator('.diagram-error:visible')).toHaveCount(0)
 
@@ -534,6 +540,7 @@ test('bare Mermaid pasted at a block boundary becomes a rendered diagram', async
 // nothing: handlePaste had already claimed the event, so ProseMirror inserted
 // nothing either and the pasted text vanished.
 test('a renderer that rejects outright still lands the pasted text (§4.4)', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   await page.evaluate(() => {
     // The composition's editor holds the same renderer object the paste
     // plugin captured, so patching it here forces the rejection path.
@@ -548,7 +555,7 @@ test('a renderer that rejects outright still lands the pasted text (§4.4)', asy
   // The fallback is the ordinary Markdown path: prose lands, no diagram, and
   // the source survives into the document.
   await expect(page.locator(editor)).toContainText('Bare paste')
-  await expect(page.locator('.diagram')).toHaveCount(1)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams)
   await expect
     .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
     .toContain('Bare paste')
@@ -559,6 +566,7 @@ test('a renderer that rejects outright still lands the pasted text (§4.4)', asy
 })
 
 test('a bare <svg> pasted at a block boundary renders, sanitised', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   // §7: scripts and event handlers must not survive.
   const hostile =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" onload="window.__pwned=1">' +
@@ -567,7 +575,7 @@ test('a bare <svg> pasted at a block boundary renders, sanitised', async ({ page
 
   await pasteAtEnd(page, hostile)
 
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
   const rendered = page.locator('.diagram').last().locator('.diagram-render svg')
   await expect(rendered).toBeVisible()
 
@@ -580,10 +588,11 @@ test('a bare <svg> pasted at a block boundary renders, sanitised', async ({ page
 })
 
 test('prose beginning with a diagram keyword stays prose', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   // §4.2: "Prose beginning with the word 'graph' — mermaid.parse() rejects it."
   await pasteAtEnd(page, 'graph theory is the study of pairwise relations between objects.')
 
-  await expect(page.locator('.diagram')).toHaveCount(1)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams)
   await expect
     .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
     .toContain('graph theory is the study')
@@ -592,28 +601,31 @@ test('prose beginning with a diagram keyword stays prose', async ({ page }) => {
 test('a multi-block paste takes the Markdown path and leaves bare diagram source as text', async ({
   page,
 }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   // §4.2: "Bare unfenced diagram source inside a larger paste stays text."
   await pasteAtEnd(page, ['## A heading', '', BARE_MERMAID, '', 'Trailing prose.'].join('\n'))
 
   await expect(page.locator(`${editor} h2`, { hasText: 'A heading' })).toBeVisible()
-  await expect(page.locator('.diagram')).toHaveCount(1)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams)
 })
 
 test('svg-in-html wins over the text flavour (§4.2 priority 30)', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>'
   await pasteAtEnd(page, 'irrelevant plain text', `<meta charset="utf-8"><div>${svg}</div>`)
 
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
   await expect(page.locator('.diagram').last().locator('.diagram-render svg circle')).toHaveCount(1)
 })
 
 test('undo after conversion restores the raw pasted text (§4.3)', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   await pasteAtEnd(page, BARE_MERMAID)
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
 
   await page.keyboard.press('ControlOrMeta+z')
 
-  await expect(page.locator('.diagram')).toHaveCount(1)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams)
   await expect
     .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
     .toContain('flowchart LR')
@@ -637,7 +649,8 @@ test('Cmd+Z undoes an ordinary edit', async ({ page }) => {
 
   // The surrounding prose is intact — undo removed only the last edit.
   const after = await page.evaluate(() => window.simplemark!.session.snapshot().markdown)
-  expect(after).toContain('Fixture closing paragraph.')
+  expect(after).toContain('This document is the demo.')
+  expect(after).toContain('Paste technical material like magic')
 })
 
 const PASTED_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><rect width="20" height="30"/></svg>'
@@ -653,26 +666,29 @@ const RICH_HTML = `<meta charset="utf-8">
 const RICH_TEXT = 'A pasted heading\nSome bold text and a real link.\nfirst bullet\nsecond bullet\nAlert\tPad\n#854\tGM A Pad\nClosing prose.'
 
 test('a pasted document keeps its formatting (§4.2, HTML path)', async ({ page }) => {
+  const initialTables = await page.locator(`${editor} table`).count()
   await pasteAtEnd(page, RICH_TEXT, RICH_HTML)
 
   await expect(page.locator(`${editor} h2`, { hasText: 'A pasted heading' })).toBeVisible()
   await expect(page.locator(`${editor} strong`, { hasText: 'bold text' })).toBeVisible()
   await expect(page.locator(`${editor} a[href="https://example.test/"]`)).toBeVisible()
   await expect(page.locator(`${editor} li`, { hasText: 'first bullet' })).toBeVisible()
-  await expect(page.locator(`${editor} table`)).toHaveCount(1)
+  await expect(page.locator(`${editor} table`)).toHaveCount(initialTables + 1)
   await expect(page.locator(editor)).toContainText('Closing prose.')
 })
 
 // The reported bug, end to end: the chart arrived and everything else did not.
 test('a pasted document containing a chart keeps both (§4.4 never lose the source)', async ({ page }) => {
+  const initialTables = await page.locator(`${editor} table`).count()
+  const initialDiagrams = await page.locator('.diagram').count()
   const html = RICH_HTML.replace('<p>Closing prose.</p>', `<figure>${PASTED_SVG}</figure><p>Closing prose.</p>`)
   await pasteAtEnd(page, RICH_TEXT, html)
 
   await expect(page.locator(`${editor} h2`, { hasText: 'A pasted heading' })).toBeVisible()
-  await expect(page.locator(`${editor} table`)).toHaveCount(1)
+  await expect(page.locator(`${editor} table`)).toHaveCount(initialTables + 1)
   await expect(page.locator(editor)).toContainText('Closing prose.')
   // The chart survives in place, as the block the renderer already draws.
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
   await expect(page.locator('.diagram').last().locator('.diagram-render svg rect')).toHaveCount(1)
 })
 
@@ -686,19 +702,21 @@ test('a plain-text Markdown paste still takes the Markdown path', async ({ page 
 })
 
 test('a rendered diagram can be selected and deleted', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   await pasteAtEnd(page, BARE_MERMAID)
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
 
   await page.locator('.diagram').last().locator('.diagram-render').click()
   await expect(page.locator('.diagram.is-selected')).toHaveCount(1)
 
   await page.keyboard.press('Backspace')
-  await expect(page.locator('.diagram')).toHaveCount(1)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams)
 })
 
 test('right-clicking a diagram offers Delete', async ({ page }) => {
+  const initialDiagrams = await page.locator('.diagram').count()
   await pasteAtEnd(page, BARE_MERMAID)
-  await expect(page.locator('.diagram')).toHaveCount(2)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams + 1)
 
   await page.locator('.diagram').last().locator('.diagram-render').click({ button: 'right' })
 
@@ -706,7 +724,7 @@ test('right-clicking a diagram offers Delete', async ({ page }) => {
   await expect(menu).toBeVisible()
   await menu.getByRole('button', { name: 'Delete' }).click()
 
-  await expect(page.locator('.diagram')).toHaveCount(1)
+  await expect(page.locator('.diagram')).toHaveCount(initialDiagrams)
   await expect(menu).toHaveCount(0)
 })
 
@@ -1020,7 +1038,7 @@ test('clicking the checkbox toggles the task under it', async ({ page }) => {
   await page.keyboard.type('a thing to do')
   await page.getByLabel('Styles bar').getByRole('button', { name: 'Todo', exact: true }).click()
 
-  const item = page.locator(`${editor} li[data-item-type="task"]`)
+  const item = page.locator(`${editor} li[data-item-type="task"]`).filter({ hasText: 'a thing to do' })
   await expect(item).toHaveCount(1)
   await expect(item).toHaveAttribute('data-checked', 'false')
 

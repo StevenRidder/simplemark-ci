@@ -24,7 +24,7 @@ const sessionMarkdown = (page: import('@playwright/test').Page): Promise<string>
   page.evaluate(() => window.simplemark!.session.snapshot().markdown)
 
 test('a flush hands the last keystroke over immediately', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
 
   await page.locator(EDITOR).first().click()
@@ -41,7 +41,7 @@ test('a flush hands the last keystroke over immediately', async ({ page }) => {
 })
 
 test('a flush of an untouched document reports no edit', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
 
   const before = await sessionMarkdown(page)
@@ -57,7 +57,7 @@ test('a flush of an untouched document reports no edit', async ({ page }) => {
 })
 
 test('a flush after the debounce has already fired does not re-dirty the document', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
 
   await page.locator(EDITOR).first().click()

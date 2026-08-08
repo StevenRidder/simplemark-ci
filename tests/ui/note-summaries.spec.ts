@@ -15,7 +15,7 @@ import { expect, test } from '@playwright/test'
  */
 test.describe('note summaries', () => {
   test('replace one subtitle without reordering the list', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/?fixture=legacy')
     await page.waitForFunction(() => window.simplemark !== undefined)
 
     const rows = page.locator('.note-item')
@@ -40,7 +40,7 @@ test.describe('note summaries', () => {
   })
 
   test('a summary does not make a row vanish from under a live search', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/?fixture=legacy')
     await page.waitForFunction(() => window.simplemark !== undefined)
 
     const rows = page.locator('.note-item')
@@ -71,7 +71,7 @@ test.describe('note summaries', () => {
   })
 
   test('a long summary grows its row instead of spilling into the next', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/?fixture=legacy')
     await page.waitForFunction(() => window.simplemark !== undefined)
 
     const rows = page.locator('.note-item')
@@ -104,7 +104,7 @@ test.describe('note summaries', () => {
   })
 
   test('a short summary makes a shorter row than a long one', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/?fixture=legacy')
     await page.waitForFunction(() => window.simplemark !== undefined)
     await expect(page.locator('.note-item').first()).toBeVisible()
 
@@ -134,7 +134,7 @@ test.describe('note summaries', () => {
   })
 
   test('a summary for a note that is not listed changes nothing', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/?fixture=legacy')
     await page.waitForFunction(() => window.simplemark !== undefined)
 
     const rows = page.locator('.note-item')

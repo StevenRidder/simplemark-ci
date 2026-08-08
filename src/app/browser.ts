@@ -6,18 +6,20 @@ import { TextCardRenderer } from '../adapters/renderers/text-card-renderer.js'
 import { GraphvizRenderer } from '../adapters/renderers/graphviz-renderer.js'
 import { KatexRenderer } from '../adapters/renderers/katex-renderer.js'
 import { VegaLiteRenderer } from '../adapters/renderers/vega-lite-renderer.js'
+import { OpenAiCompatibleDiagramFixPort } from '../adapters/ai/openai-compatible-diagram-fix.js'
+import type { ChatCompletionTransport } from '../adapters/ai/openai-compatible-diagram-fix.js'
 import { BrowserFilePort } from '../adapters/filesystem/browser-file-port.js'
 import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
 import { BrowserDocumentLinkPort } from '../adapters/filesystem/browser-document-link-port.js'
 import { BrowserUploadFilePort } from '../adapters/filesystem/browser-upload-file-port.js'
 import { BrowserClipboardPort } from '../adapters/clipboard/browser-clipboard-port.js'
-import { OpenAiCompatibleDiagramFixPort } from '../adapters/ai/openai-compatible-diagram-fix.js'
-import type { ChatCompletionTransport } from '../adapters/ai/openai-compatible-diagram-fix.js'
-import { loadAiSettings } from './ai-settings.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
 import type { FilePort } from '../application/index.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
+import { SAMPLE_DOCUMENTS } from './sample-documents.js'
+import type { SampleDocument } from './sample-documents.js'
+import { loadAiSettings } from './ai-settings.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import { NoteWalk } from './note-walk.js'
 import { VisitHistory } from './workspace-history.js'
@@ -40,17 +42,39 @@ import './styles/print.css'
  * here can damage a document a person cares about.
  */
 
+interface DemoNote extends Omit<SampleDocument, 'pinned' | 'updatedLabel'> {
+  readonly updatedLabel: string
+  /**
+   * Hours ago, resolved to real stamps at start-up.
+   *
+   * The demo catalog is explicitly in-memory, but its timestamps are honest
+   * ones: the View menu's date sorts stay disabled for any catalog that cannot
+   * report them, so a demo without stamps would leave three menu items greyed
+   * out with nothing to try. Modification and creation order deliberately
+   * disagree, or the two sorts would be indistinguishable.
+   */
+  readonly modifiedHoursAgo: number
+  readonly createdHoursAgo: number
+  pinned: boolean
+}
+
+const HOUR = 60 * 60 * 1000
+
 /**
- * The note the harness opens — synthetic placeholder prose, not a product doc.
+ * Small, explicit UI-test baseline.
  *
- * The UI suite exercises real editor mechanics (folding, find, the reader
- * outline, paragraph-level CSS, an existing diagram, an existing rule) against
- * whatever this note contains, so it keeps the same shape those features need
- * — a heading, a subheading, paragraphs, a Mermaid fence, an image, a rule —
- * without the shape carrying any real content of its own.
+ * Renderer and editor interaction tests need to measure the block they add,
+ * not every chart, callout, table, and task in the real handbook. The normal
+ * app never selects this catalog: only `?fixture=legacy` does, and the sample
+ * experience itself has a dedicated end-to-end suite.
  */
-const FIXTURE_NAME = 'architecture.md'
-const FIXTURE_MARKDOWN = `# Fixture heading
+const LEGACY_HARNESS_NOTES: readonly DemoNote[] = [
+  {
+    id: 'architecture',
+    name: 'architecture.md',
+    title: 'architecture',
+    preview: '',
+    markdown: `# Fixture heading
 
 Fixture intro paragraph text for the harness.
 
@@ -70,35 +94,39 @@ Fixture paragraph after the diagram and image.
 ---
 
 Fixture closing paragraph.
-`
-
-interface DemoNote {
-  readonly id: string
-  readonly name: string
-  readonly preview: string
-  readonly markdown: string
-  readonly updatedLabel: string
-  /**
-   * Hours ago, resolved to real stamps at start-up.
-   *
-   * The demo catalog is explicitly in-memory, but its timestamps are honest
-   * ones: the View menu's date sorts stay disabled for any catalog that cannot
-   * report them, so a demo without stamps would leave three menu items greyed
-   * out with nothing to try. Modification and creation order deliberately
-   * disagree, or the two sorts would be indistinguishable.
-   */
-  readonly modifiedHoursAgo: number
-  readonly createdHoursAgo: number
-  pinned: boolean
-}
-
-const HOUR = 60 * 60 * 1000
-
-const DEMO_NOTES: DemoNote[] = [
-  { id: 'architecture', name: FIXTURE_NAME, preview: '', markdown: FIXTURE_MARKDOWN, updatedLabel: 'Now', modifiedHoursAgo: 0, createdHoursAgo: 52, pinned: true },
-  { id: 'field-notes', name: 'field-notes.md', preview: 'Small observations worth keeping close.', markdown: '# Field notes\n\nA quiet notebook should disappear while you think.\n', updatedLabel: 'Today', modifiedHoursAgo: 3, createdHoursAgo: 6, pinned: false },
-  { id: 'ideas', name: 'ideas.md', preview: 'Paste technical material; keep the source portable.', markdown: '# Ideas\n\n- Markdown is the durable result\n- Render the useful parts\n', updatedLabel: 'Yesterday', modifiedHoursAgo: 30, createdHoursAgo: 30, pinned: false },
+`,
+    updatedLabel: 'Now',
+    modifiedHoursAgo: 0,
+    createdHoursAgo: 52,
+    pinned: true,
+  },
+  {
+    id: 'field-notes',
+    name: 'field-notes.md',
+    title: 'field-notes',
+    preview: 'Small observations worth keeping close.',
+    markdown: '# Field notes\n\nA quiet notebook should disappear while you think.\n',
+    updatedLabel: 'Today',
+    modifiedHoursAgo: 3,
+    createdHoursAgo: 6,
+    pinned: false,
+  },
+  {
+    id: 'ideas',
+    name: 'ideas.md',
+    title: 'ideas',
+    preview: 'Paste technical material; keep the source portable.',
+    markdown: '# Ideas\n\n- Markdown is the durable result\n- Render the useful parts\n',
+    updatedLabel: 'Yesterday',
+    modifiedHoursAgo: 30,
+    createdHoursAgo: 30,
+    pinned: false,
+  },
 ]
+
+const LEGACY_HARNESS = new URLSearchParams(window.location.search).get('fixture') === 'legacy'
+const DEMO_NOTES: DemoNote[] = (LEGACY_HARNESS ? LEGACY_HARNESS_NOTES : SAMPLE_DOCUMENTS)
+  .map((sample) => ({ ...sample }))
 
 /** One clock reading for the session, so a sort cannot shuffle mid-render. */
 const DEMO_EPOCH = Date.now()
@@ -110,8 +138,8 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
 
   // In memory rather than persisted: the demo notes are rebuilt on every load,
   // so a stack that outlived the page would point at notes that no longer are.
-  // The native shell persists its own for the opposite reason — its notes are
-  // real files that survive.
+  // The native shell uses the same reset-on-restart sample rule. Real files in
+  // either shell leave this fixture catalog and keep their platform lifetime.
   const history = new VisitHistory()
   // Shell-scoped like the history: opening a note rebuilds the whole
   // composition, so a walk kept inside it would restart on every step.
@@ -131,7 +159,9 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     }
     activeId = id
     current = await mount(root, port, {
-      filePath: 'Demo workspace · open a file to work with your own Markdown',
+      filePath: LEGACY_HARNESS
+        ? 'Demo workspace · open a file to work with your own Markdown'
+        : 'Samples · changes reset when SimpleMark restarts · open a file to use your own Markdown',
       workspace: workspaceSnapshot(),
     })
   }
@@ -144,6 +174,7 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     DEMO_NOTES.unshift({
       id,
       name,
+      title: name.replace(/\.md$/, ''),
       preview: 'A new local note — start writing.',
       markdown: '# New note\n\n',
       updatedLabel: 'Now',
@@ -235,6 +266,7 @@ function workspaceOptions(
 ): WorkspaceOptions {
   return {
     name: 'SimpleMark',
+    collectionLabel: LEGACY_HARNESS ? 'Recent Notes' : 'Samples',
     activeNoteId,
     onSelectNote,
     onCreateNote,
@@ -247,7 +279,7 @@ function workspaceOptions(
       id: note.id,
       identifier: note.name,
       portableLink: `./${note.name}`,
-      title: note.name.replace(/\.md$/, ''),
+      title: note.title,
       preview: note.preview,
       updatedLabel: note.updatedLabel,
       updatedAt: DEMO_EPOCH - note.modifiedHoursAgo * HOUR,
@@ -277,7 +309,6 @@ async function mount(
   },
 ): Promise<AppComposition> {
   const canWriteOriginal = BrowserFilePort.isSupported()
-  let app: AppComposition
   const chatCompletionTransport: ChatCompletionTransport = async (baseUrl, apiKey, model, messages) => {
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -288,7 +319,7 @@ async function mount(
     if (!response.ok) throw new Error(`${baseUrl}/chat/completions returned ${response.status}: ${text}`)
     return text
   }
-
+  let app: AppComposition
   app = await composeApp({
     ports: {
       file,
@@ -296,7 +327,10 @@ async function mount(
       links: new BrowserDocumentLinkPort(window),
       // One port, several renderers. Markmap joins here.
       clipboard: new BrowserClipboardPort(),
-      diagramFix: new OpenAiCompatibleDiagramFixPort(chatCompletionTransport, () => loadAiSettings(window.localStorage)),
+      diagramFix: new OpenAiCompatibleDiagramFixPort(
+        chatCompletionTransport,
+        () => loadAiSettings(window.localStorage),
+      ),
       // Lets a save re-emit untouched blocks from the file's own bytes instead
       // of re-serializing the whole document (FIDELITY-1).
       blockBoundaries: new MdastBlockBoundaries(),

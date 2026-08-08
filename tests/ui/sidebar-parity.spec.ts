@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test'
 
+const WELCOME = 'Welcome to SimpleMark'
+const TANOA = 'Project Tanoa: Storm Atlas'
+
 const notes = (page: import('@playwright/test').Page) =>
   page.getByRole('complementary', { name: 'Notes' })
 
@@ -26,15 +29,14 @@ test('L2-020 selecting notes preserves the complete catalog and changes only the
   const initialOrder = await notes(page).locator('.note-select').evaluateAll((rows) =>
     rows.map((row) => row.getAttribute('aria-label')),
   )
-  await expect(notes(page).locator('.note-item')).toHaveCount(3)
+  await expect(notes(page).locator('.note-item')).toHaveCount(2)
 
   for (const [name, heading] of [
-    ['field-notes', 'Field notes'],
-    ['ideas', 'Ideas'],
-    ['architecture', 'Fixture heading'],
+    [TANOA, 'Project Tanoa: the storm atlas'],
+    [WELCOME, 'Welcome to SimpleMark'],
   ] as const) {
     await page.getByRole('button', { name, exact: true }).click()
-    await expect(notes(page).locator('.note-item')).toHaveCount(3)
+    await expect(notes(page).locator('.note-item')).toHaveCount(2)
     await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText(heading)
     await expect(page.getByRole('button', { name, exact: true })).toHaveAttribute('aria-current', 'page')
     await expect.poll(() => notes(page).locator('.note-select').evaluateAll((rows) =>
@@ -51,50 +53,49 @@ const rowOrder = (page: import('@playwright/test').Page) =>
 test('L2-010 each New Note accumulates instead of replacing the list', async ({ page }) => {
   const newNote = page.getByRole('button', { name: 'New note' })
   await newNote.click()
-  await expect(notes(page).locator('.note-item')).toHaveCount(4)
-  await expect(page.getByRole('button', { name: 'new-note-4', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(notes(page).locator('.note-item')).toHaveCount(3)
+  await expect(page.getByRole('button', { name: 'new-note-3', exact: true })).toHaveAttribute('aria-current', 'page')
 
   await newNote.click()
-  await expect(notes(page).locator('.note-item')).toHaveCount(5)
-  await expect(page.getByRole('button', { name: 'new-note-4', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'new-note-5', exact: true })).toHaveAttribute('aria-current', 'page')
-  await expect(page.getByLabel('Library')).toContainText('Recent Notes5')
+  await expect(notes(page).locator('.note-item')).toHaveCount(4)
+  await expect(page.getByRole('button', { name: 'new-note-3', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'new-note-4', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByLabel('Library')).toContainText('Recent Notes4')
 })
 
 test('L2-010 a new note arrives at the top of the notes it joins', async ({ page }) => {
-  // `architecture` ships pinned, and a pin outranks every other order — a new
+  // The handbook ships pinned, and a pin outranks every other date order — a new
   // note leads the notes it can lead, rather than displacing a pinned one.
-  expect(await rowOrder(page)).toEqual(['architecture', 'field-notes', 'ideas'])
+  expect(await rowOrder(page)).toEqual([WELCOME, TANOA])
 
   await page.getByRole('button', { name: 'New note' }).click()
-  expect(await rowOrder(page)).toEqual(['architecture', 'new-note-4', 'field-notes', 'ideas'])
+  expect(await rowOrder(page)).toEqual([WELCOME, 'new-note-3', TANOA])
 
   await page.getByRole('button', { name: 'New note' }).click()
   expect(await rowOrder(page)).toEqual([
-    'architecture',
-    'new-note-5',
+    WELCOME,
     'new-note-4',
-    'field-notes',
-    'ideas',
+    'new-note-3',
+    TANOA,
   ])
 })
 
 test('L2-040/L2-041 pinning reorders, filters, and unpins without closing the document', async ({ page }) => {
-  await page.getByRole('button', { name: 'ideas', exact: true }).click()
-  await togglePin(page, 'Pin ideas')
+  await page.getByRole('button', { name: TANOA, exact: true }).click()
+  await togglePin(page, `Pin ${TANOA}`)
 
-  await expect(notes(page).locator('.note-select').first()).toHaveAccessibleName('ideas')
-  await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'ideas', exact: true }).locator('..').getByRole('img', { name: 'Pinned' })).toBeVisible()
+  await expect(notes(page).locator('.note-select').first()).toHaveAccessibleName(TANOA)
+  await expect(page.getByRole('button', { name: `Unpin ${TANOA}` })).toBeVisible()
+  await expect(page.getByRole('button', { name: TANOA, exact: true }).locator('..').getByRole('img', { name: 'Pinned' })).toBeVisible()
   await expect(page.getByLabel('Library')).toContainText('Pinned2')
 
   await page.getByRole('button', { name: /Pinned\s*2/ }).click()
   await expect(notes(page).locator('.note-item')).toHaveCount(2)
-  await togglePin(page, 'Unpin ideas')
+  await togglePin(page, `Unpin ${TANOA}`)
 
   await expect(notes(page).locator('.note-item')).toHaveCount(1)
-  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Ideas')
-  await expect(page.getByRole('button', { name: 'ideas', exact: true }).locator('..').getByRole('img', { name: 'Pinned' })).toHaveCount(0)
+  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Project Tanoa: the storm atlas')
+  await expect(page.getByRole('button', { name: TANOA, exact: true })).toHaveCount(0)
   await expect(page.getByLabel('Library')).toContainText('Pinned1')
 })
 
@@ -102,47 +103,47 @@ test('L2-030/L2-031 search is scoped, live, clearable, and keeps the document op
   await page.getByRole('button', { name: 'Search' }).click()
   const search = page.getByRole('searchbox', { name: 'Search notes' })
   await expect(search).toBeFocused()
-  await search.fill('portable')
+  await search.fill('microgrid')
   await expect(notes(page).locator('.note-item')).toHaveCount(1)
-  await expect(page.getByRole('button', { name: 'ideas', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: TANOA, exact: true })).toBeVisible()
 
   await search.fill('no note has this phrase')
   await expect(notes(page).locator('.note-item')).toHaveCount(0)
-  await expect(page.locator('.filename-title')).toHaveText('architecture')
+  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Welcome to SimpleMark')
 
   await page.keyboard.press('Escape')
   await expect(search).toBeHidden()
-  await expect(notes(page).locator('.note-item')).toHaveCount(3)
+  await expect(notes(page).locator('.note-item')).toHaveCount(2)
   await expect(page.getByRole('button', { name: 'Search' })).toBeFocused()
 })
 
 test('L2-001/L2-050/L2-060 list options expose count, sorting, and all preview densities', async ({ page }) => {
   const open = page.getByRole('button', { name: 'Note list options' })
   await open.click()
-  let menu = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
-  await expect(menu.getByText('3 notes')).toBeVisible()
+  let menu = page.getByLabel('Note list options').filter({ has: page.getByText('2 notes') })
+  await expect(menu.getByText('2 notes')).toBeVisible()
   await expect(menu.getByText('Sort', { exact: true })).toBeVisible()
   await expect(menu.getByText('Layout', { exact: true })).toBeVisible()
   await expect(menu.getByText('Filter', { exact: true })).toBeVisible()
   await menu.getByRole('button', { name: 'Sort by title' }).click()
   await expect.poll(() => notes(page).locator('.note-select').evaluateAll((rows) =>
     rows.map((row) => row.getAttribute('aria-label')),
-  )).toEqual(['architecture', 'field-notes', 'ideas'])
+  )).toEqual([TANOA, WELCOME])
 
-  await togglePin(page, 'Unpin architecture')
+  await togglePin(page, `Unpin ${WELCOME}`)
   await open.click()
-  menu = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
+  menu = page.getByLabel('Note list options').filter({ has: page.getByText('2 notes') })
   await menu.getByRole('button', { name: 'Sort by creation date' }).click()
   await expect.poll(() => notes(page).locator('.note-select').evaluateAll((rows) =>
     rows.map((row) => row.getAttribute('aria-label')),
-  )).toEqual(['field-notes', 'ideas', 'architecture'])
+  )).toEqual([TANOA, WELCOME])
 
   await open.click()
-  menu = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
+  menu = page.getByLabel('Note list options').filter({ has: page.getByText('2 notes') })
   await menu.getByRole('button', { name: 'Sort by modification date' }).click()
   await expect.poll(() => notes(page).locator('.note-select').evaluateAll((rows) =>
     rows.map((row) => row.getAttribute('aria-label')),
-  )).toEqual(['architecture', 'field-notes', 'ideas'])
+  )).toEqual([WELCOME, TANOA])
 
   for (const [label, density] of [
     ['Small preview', 'small'],
@@ -150,17 +151,17 @@ test('L2-001/L2-050/L2-060 list options expose count, sorting, and all preview d
     ['Large preview', 'large'],
   ] as const) {
     await open.click()
-    menu = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
+    menu = page.getByLabel('Note list options').filter({ has: page.getByText('2 notes') })
     await menu.getByRole('button', { name: label }).click()
     await expect(notes(page)).toHaveAttribute('data-preview', density)
   }
 })
 
 test('Pinned only is a recoverable filter when no notes are pinned', async ({ page }) => {
-  await togglePin(page, 'Unpin architecture')
+  await togglePin(page, `Unpin ${WELCOME}`)
   const open = page.getByRole('button', { name: 'Note list options' })
   await open.click()
-  const menu = page.getByLabel('Note list options').filter({ has: page.getByText('3 notes') })
+  const menu = page.getByLabel('Note list options').filter({ has: page.getByText('2 notes') })
 
   await expect(menu.getByRole('button', { name: 'Pinned only (0)' })).toBeVisible()
   await menu.getByRole('button', { name: 'Pinned only (0)' }).click()
@@ -168,8 +169,8 @@ test('Pinned only is a recoverable filter when no notes are pinned', async ({ pa
   await expect(notes(page).getByText('No pinned notes')).toBeVisible()
 
   await notes(page).getByRole('button', { name: 'Show Recent Notes' }).click()
-  await expect(notes(page).locator('.note-item')).toHaveCount(3)
-  await expect(page.getByRole('button', { name: 'Note list options' })).toContainText('Recent Notes')
+  await expect(notes(page).locator('.note-item')).toHaveCount(2)
+  await expect(page.getByRole('button', { name: 'Note list options' })).toContainText('Samples')
 })
 
 test('L1-050 Recent Notes and Pinned keep collection title, selection, and count aligned', async ({ page }) => {
@@ -178,10 +179,10 @@ test('L1-050 Recent Notes and Pinned keep collection title, selection, and count
   await expect(notes(page).locator('.note-item')).toHaveCount(1)
   await expect(page.getByRole('button', { name: /Pinned\s*1/ })).toHaveClass(/selected/)
 
-  await page.getByRole('button', { name: /Recent Notes\s*3/ }).click()
-  await expect(page.getByRole('button', { name: 'Note list options' })).toContainText('Recent Notes')
-  await expect(notes(page).locator('.note-item')).toHaveCount(3)
-  await expect(page.getByRole('button', { name: /Recent Notes\s*3/ })).toHaveClass(/selected/)
+  await page.getByRole('button', { name: /Recent Notes\s*2/ }).click()
+  await expect(page.getByRole('button', { name: 'Note list options' })).toContainText('Samples')
+  await expect(notes(page).locator('.note-item')).toHaveCount(2)
+  await expect(page.getByRole('button', { name: /Recent Notes\s*2/ })).toHaveClass(/selected/)
 })
 
 test('L1-120 visible sidebar controls expose names and honest disabled states', async ({ page }) => {
@@ -279,7 +280,7 @@ test('active notes use a left selection rule while X and pin remain hover-only',
 })
 
 test('L2-070 right-click exposes only actions that really work on this client', async ({ page }) => {
-  await page.getByRole('button', { name: 'ideas', exact: true }).click({ button: 'right' })
+  await page.getByRole('button', { name: TANOA, exact: true }).click({ button: 'right' })
   const menu = page.getByRole('menu')
 
   await expect(menu).toBeVisible()
@@ -293,11 +294,11 @@ test('L2-070 right-click exposes only actions that really work on this client', 
   await expect(menu.getByRole('menuitem', { name: 'Duplicate' })).toHaveCount(0)
 
   await menu.getByRole('menuitem', { name: 'Pin To Top' }).click()
-  await expect(page.getByRole('button', { name: 'Unpin ideas' })).toBeVisible()
+  await expect(page.getByRole('button', { name: `Unpin ${TANOA}` })).toBeVisible()
 })
 
 test('closing a background note hides its row without remounting the active editor or invoking Trash', async ({ page }) => {
-  const close = page.getByRole('button', { name: 'Close ideas' })
+  const close = page.getByRole('button', { name: `Close ${TANOA}` })
   await page.locator('.milkdown .ProseMirror').evaluate((editor) => {
     ;(window as typeof window & { __simplemarkEditorBeforeClose?: Element }).__simplemarkEditorBeforeClose = editor
   })
@@ -310,8 +311,8 @@ test('closing a background note hides its row without remounting the active edit
   await expect(close).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await close.click()
 
-  await expect(page.getByRole('button', { name: 'ideas', exact: true })).toHaveCount(0)
-  await expect(page.getByLabel('Library')).toContainText('Recent Notes2')
+  await expect(page.getByRole('button', { name: TANOA, exact: true })).toHaveCount(0)
+  await expect(page.getByLabel('Library')).toContainText('Recent Notes1')
   await expect(page.getByText('Closed note — file remains on disk')).toBeVisible()
   expect(await page.locator('.milkdown .ProseMirror').evaluate((editor) =>
     editor === (window as typeof window & { __simplemarkEditorBeforeClose?: Element }).__simplemarkEditorBeforeClose,
@@ -319,22 +320,22 @@ test('closing a background note hides its row without remounting the active edit
 })
 
 test('closing the active note removes it from both the list and reading pane', async ({ page }) => {
-  await expect(page.locator('.filename-title')).toHaveText('architecture')
-  await closeNote(page, 'architecture')
+  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Welcome to SimpleMark')
+  await closeNote(page, WELCOME)
 
-  await expect(page.getByRole('button', { name: 'architecture', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'field-notes', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: WELCOME, exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: TANOA, exact: true })).toHaveAttribute(
     'aria-current',
     'page',
   )
-  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Field notes')
+  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Project Tanoa: the storm atlas')
+  await expect(page.locator('.milkdown .ProseMirror')).not.toContainText('Welcome to SimpleMark')
   await expect(page.getByText('Closed note — file remains on disk')).toBeVisible()
 })
 
 test('closing the final visible note leaves a clean no-selection pane', async ({ page }) => {
-  await closeNote(page, 'architecture')
-  await closeNote(page, 'field-notes')
-  await closeNote(page, 'ideas')
+  await closeNote(page, WELCOME)
+  await closeNote(page, TANOA)
 
   await expect(notes(page).locator('.note-item')).toHaveCount(0)
   await expect(page.locator('.milkdown .ProseMirror')).toBeEmpty()
@@ -342,7 +343,7 @@ test('closing the final visible note leaves a clean no-selection pane', async ({
   await expect(page.getByText('Closed note — file remains on disk')).toBeVisible()
 })
 
-test('Recent Notes disclosure is a centred Tabler chevron and both columns expose resize handles', async ({ page }) => {
+test('Samples disclosure is a centred Tabler chevron and both columns expose resize handles', async ({ page }) => {
   const title = page.getByRole('button', { name: 'Note list options' })
   await expect(title.locator('svg')).toHaveCount(1)
   await expect(title).toHaveCSS('align-items', 'center')

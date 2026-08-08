@@ -19,6 +19,7 @@
     "test:ui": "playwright test",
     "demo": "node scripts/record-demo.mjs",
     "showcase:tanoa": "node scripts/record-tanoa-showcase.mjs",
+    "showcase:tanoa:atlas": "node scripts/record-tanoa-storm-atlas.mjs",
     "icons:generate": "bash scripts/generate-alternate-icons.sh",
     "tauri": "tauri",
     "dev:native": "tauri dev",

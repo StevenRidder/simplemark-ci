@@ -156,6 +156,21 @@ else
   fail "git diff --check reported problems"
 fi
 
+# `git diff --check` only reports whitespace damage and conflict markers, so a
+# genuinely dirty tree walked past it and surfaced later as a publish-mirror
+# error about a clean checkout — a message that points at the mirror machinery
+# rather than at the offending path. Check the same condition the mirror step
+# enforces (tracked files only; untracked scratch is fine), and name the paths.
+# The usual cause is something the install step above rewrote: a committed
+# `node_modules` symlink that `npm ci` replaced with a real directory.
+if dirty="$(git status --porcelain --untracked-files=no)"; [ -z "$dirty" ]; then
+  record "git-clean-tree" "passed" ""
+else
+  printf '%s\n' "$dirty" >&2
+  record "git-clean-tree" "failed" "tracked files differ from HEAD"
+  fail "git hygiene: tracked files differ from HEAD (paths above); commit, revert, or ignore them"
+fi
+
 section "public mirror hygiene"
 if bash scripts/mirror/test-public-mirror-hygiene.sh; then
   record "public-mirror-hygiene" "passed" "website and private repository identity excluded"

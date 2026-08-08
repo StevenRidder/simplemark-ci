@@ -45,7 +45,7 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["N
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSApplication", "NSEvent", "NSMenu", "NSMenuItem", "NSResponder", "NSUserInterfaceItemIdentification", "NSButton", "NSControl", "NSImage", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSApplication", "NSEvent", "NSMenu", "NSMenuItem", "NSResponder", "NSUserInterfaceItemIdentification", "NSButton", "NSControl", "NSImage", "NSView", "NSWindow", "NSWorkspace"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSData", "NSNotification", "NSObject", "NSString", "NSUserDefaults"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = ["WKWebView"] }
 block2 = "0.6.2"

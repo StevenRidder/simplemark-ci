@@ -203,7 +203,10 @@
   /* sheet */
   .scrim { position: absolute; inset: 80px 0 0; z-index: 4; background: rgba(30, 27, 22, .2); }
   .sheet {
-    position: absolute; right: 8px; bottom: 8px; left: 8px; z-index: 5; overflow: hidden;
+    position: absolute; right: 8px; bottom: 8px; left: 8px; z-index: 5;
+    /* The shipped sheet stops at 76dvh and scrolls past it, so this one is
+       capped and scrolls too rather than growing taller than the phone. */
+    max-height: calc(100% - 52px); overflow-y: auto;
     border: 1px solid var(--line); border-radius: 20px; background: var(--toolbar);
     box-shadow: 0 -12px 45px rgba(30, 27, 22, .2);
   }
@@ -222,6 +225,9 @@
   .scope.cur .ico { color: var(--accent); }
   .scope.off { color: var(--quiet); }
   .scope.off .ico { color: var(--quiet); }
+  /* A display option carries no icon and no count, so it takes the whole row
+     rather than being squeezed into the 22px icon column. */
+  .scope.opt { grid-template-columns: minmax(0, 1fr); min-height: 38px; }
   .scope.tall { min-height: 62px; grid-template-rows: auto auto; padding-top: 8px; padding-bottom: 8px; }
   .scope.tall small { grid-column: 2 / -1; margin-top: -2px; color: var(--soft-ink); font-size: 10.5px; line-height: 1.35; }
 
@@ -499,22 +505,36 @@
     </div>
     <div class="foot" style="opacity:.5"><span>12 recent notes</span></div>
     <div class="scrim"></div>
+    <!--
+      Shipped in #172. This is the built sheet, not a proposal: it is the
+      desktop Library column's own rows, lent to the sheet while it is open
+      and returned to the column on close, so there is only ever one folder
+      list. That is why the fixed rows below are exactly the column's fixed
+      rows — including the ones that are not implemented yet — rather than a
+      tidier set invented for the phone.
+    -->
     <section class="sheet" aria-label="Library">
       <div class="grab"></div>
-      <div class="sheet-head"><strong>Library</strong><span>Done</span></div>
 
-      <div class="sec">Your notes</div>
-      <div class="scope cur">
-        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
-             stroke-linecap="round" stroke-linejoin="round"><use href="#i-cloud"/></svg>
-        <span>SimpleMark · iCloud</span><span class="n">41</span>
-      </div>
-
-      <div class="sec">Views</div>
       <div class="scope">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
              stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock"/></svg>
         <span>Recent Notes</span><span class="n">12</span>
+      </div>
+      <div class="scope off">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+             stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>
+        <span>Untagged</span><span class="n">—</span>
+      </div>
+      <div class="scope off">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+             stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>
+        <span>Todo</span><span class="n">—</span>
+      </div>
+      <div class="scope off">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+             stroke-linecap="round" stroke-linejoin="round"><use href="#i-cal"/></svg>
+        <span>Today</span><span class="n">—</span>
       </div>
       <div class="scope">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
@@ -523,21 +543,29 @@
       </div>
       <div class="scope off">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
-             stroke-linecap="round" stroke-linejoin="round"><use href="#i-cal"/></svg>
-        <span>Today</span><span class="n">later</span>
-      </div>
-      <div class="scope off">
-        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
-             stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>
-        <span>Todo</span><span class="n">later</span>
+             stroke-linecap="round" stroke-linejoin="round"><use href="#i-folder"/></svg>
+        <span>Trash</span><span class="n">—</span>
       </div>
 
-      <div class="sec">Folders inside SimpleMark</div>
+      <div class="sec">Folders</div>
+      <div class="scope cur">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+             stroke-linecap="round" stroke-linejoin="round"><use href="#i-folder"/></svg>
+        <span>Documents</span><span class="n">12</span>
+      </div>
       <div class="scope">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
              stroke-linecap="round" stroke-linejoin="round"><use href="#i-folder"/></svg>
         <span>project-notes</span><span class="n">28</span>
       </div>
+
+      <div class="sec">How this list is shown</div>
+      <div class="scope opt"><span>✓&nbsp;&nbsp;Sort by modification date</span></div>
+      <div class="scope opt"><span>Sort by title</span></div>
+      <div class="scope opt"><span>✓&nbsp;&nbsp;Medium preview</span></div>
+      <div class="scope opt"><span>Pinned only (3)</span></div>
+
+      <div class="sec">Elsewhere</div>
       <div class="scope tall off">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
              stroke-linecap="round" stroke-linejoin="round"><use href="#i-folder-plus"/></svg>
@@ -831,12 +859,20 @@
       otherwise know.</p>
   </div>
   <div class="note-card state-note changed" data-note="library">
-    <div class="k">Changed — the storage decision</div>
-    <p><strong>SimpleMark's own iCloud folder is now the first row</strong>, because it is where notes
-      actually are. Folders are folders <em>inside</em> it.</p>
-    <p><strong>“Add Folder from Files” is demoted to a disabled row with its reason written on it.</strong>
-      It previously promised iCloud, Dropbox, OneDrive “or any Files provider”. Bring-your-own-cloud stays
-      the goal; the row says why it is not here yet instead of implying it works.</p>
+    <div class="k">Shipped — #172</div>
+    <p><strong>These are the desktop Library column's own rows.</strong> The sheet borrows the same node
+      while it is open and returns it on close, so one folder list exists rather than two that can
+      disagree about names, counts or which folder is selected. That is why the greyed rows are here:
+      they are the column's real placeholders, not a tidier set invented for the phone.</p>
+    <p><strong>The title carries this, so no icon is added to the toolbar.</strong> Beside
+      <em>Open&nbsp;Note</em>, an <em>Open&nbsp;Folder</em> button would have been a near-identical control
+      differing only in what the picker returns. Notes, Bear and iA&nbsp;Writer all put location-switching
+      one level above the list instead — behind a back chevron, a sidebar, or an Organizer.</p>
+    <p><strong>The display options moved in under the folders.</strong> The title already owned sort and
+      preview density; taking the control for the Library could not quietly cost them.</p>
+    <p><strong>“Use a folder outside SimpleMark” stays a disabled row with its reason on it.</strong>
+      Bring-your-own-cloud remains the goal; the row says why it is not here yet instead of implying it
+      works.</p>
     <span class="cite">DESIGN.md §12 open question · ADR-0006 provider-neutral materialization</span>
   </div>
   <div class="note-card state-note" data-note="folder">
@@ -901,8 +937,8 @@
 <table class="matrix">
   <thead><tr><th style="width:22%">Desktop</th><th style="width:26%">iPhone</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td><strong>Library rail</strong> (left)</td><td>Bottom sheet, summoned from the title</td>
-      <td>A permanent rail costs a third of the screen. As a sheet it satisfies DESIGN §10.1 without an exception.</td></tr>
+    <tr><td><strong>Library rail</strong> (left)</td><td>Bottom sheet, summoned from the title <span class="cite">shipped</span></td>
+      <td>A permanent rail costs a third of the screen. As a sheet it satisfies DESIGN §10.1 without an exception. The sheet borrows the rail's own rows and returns them on close, so one folder list exists rather than two that can disagree. Location-switching sits one level above the list — where Notes, Bear and iA Writer all put it — never as another icon in the list's toolbar.</td></tr>
     <tr><td><strong>Notes pane</strong> (middle)</td><td>The root list</td>
       <td>It is the only pane that survives as itself; a phone list <em>is</em> a note index.</td></tr>
     <tr><td><strong>Document</strong> (right)</td><td>A pushed screen with a labelled back</td>
@@ -919,10 +955,10 @@
 </table>
 </div>
 
-<h2><span class="num">3</span>What the first working iOS build proved</h2>
+<h2><span class="num">3</span>What building on device has proved</h2>
 <p class="lede">
-  These are not predictions. Each was observed on device during the first successful
-  <code class="inline">tauri ios build</code>, and each constrains the design above.
+  These are not predictions. Each was observed on a real build — the first successful
+  <code class="inline">tauri ios build</code> and the ones since — and each constrains the design above.
 </p>
 
 <div class="rule warn">
@@ -944,8 +980,19 @@
     <tr><td>Errors are written into an element the phone hides</td><td>The banner in §1 is the error surface, above the document and impossible to miss.</td></tr>
     <tr><td class="yes">Document picker reaches the app's own folder</td><td class="yes">“Bring a file in from Files…” on first run is proven to work.</td></tr>
     <tr><td class="yes">File associations carry over from <code class="inline">tauri.conf.json</code></td><td class="yes">Markdown opened elsewhere can hand off to SimpleMark.</td></tr>
+    <tr><td>A webview cannot ask for an <code class="inline">inputAccessoryView</code></td><td><code class="inline">visualViewport</code> reports the keyboard's top edge instead, and the app's own height is measured from it — so no caret can hide underneath and iOS never pans the viewport looking for one. Shipped in #159.</td></tr>
+    <tr><td>WebKit adds its own accessory bar over the keyboard</td><td>It is for tabbing between form fields, and this is a document. Suppressed at runtime, or the phone shows two stacked toolbars where Bear shows one. Shipped in #159.</td></tr>
+    <tr><td class="no">A pane hidden at this width may be styled for a surface that no longer applies</td><td class="no">The Library column is a dark sidebar whose inks were light literals. Lent to a sheet on paper it rendered white on white — blank rows, a selected folder with no visible name — and every automated test still passed. Those values are named now. <strong>Screenshot the phone; the suite cannot see colour.</strong></td></tr>
   </tbody>
 </table>
+</div>
+
+<div class="rule warn">
+  <strong>The shipped Library sheet has no visible way out.</strong> It is dismissed by choosing a folder,
+  tapping the list behind it, or Escape from a hardware keyboard — all of which work, none of which is
+  drawn on screen. The sheet above shows the grab handle only, because that is what ships; a
+  <em>Done</em> control belongs here and does not exist yet.
+  <span class="cite">Tracked as a gap, not drawn as if it were built.</span>
 </div>
 
 <h2><span class="num">4</span>What would have to be true for bring-your-own-cloud</h2>

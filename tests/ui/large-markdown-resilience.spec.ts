@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { perfBudget } from './perf-budget'
+
 const EDITOR = '.milkdown .ProseMirror'
 
 /**
@@ -63,7 +65,7 @@ test('opens a table-heavy Markdown file promptly without losing its source', asy
   const firstVirtualTable = page.locator('[data-deferred-table]').first()
   await firstVirtualTable.scrollIntoViewIfNeeded()
   await expect(firstVirtualTable.locator('.virtual-markdown-table')).toHaveCount(1)
-  expect(Date.now() - startedAt).toBeLessThan(8_000)
+  expect(Date.now() - startedAt).toBeLessThan(perfBudget(8_000))
 
   // Two normal tables remain interactive; each virtual table owns only a
   // viewport-sized row window, never the full 80,000-cell document at once.

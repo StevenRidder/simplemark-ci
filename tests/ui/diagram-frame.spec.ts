@@ -17,7 +17,10 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await expect(page.locator(editor)).toBeVisible()
-  await expect(page.locator(`${render} svg`).first()).toBeVisible()
+  // A large Mermaid render has been measured at 12–16s on CI (see
+  // figure-viewer.spec.ts); every diagram spec gives render waits an explicit
+  // 30s budget instead of racing the default.
+  await expect(page.locator(`${render} svg`).first()).toBeVisible({ timeout: 30_000 })
 })
 
 /**
@@ -37,8 +40,9 @@ async function setSource(page: import('@playwright/test').Page, source: string) 
   await textarea.fill(source)
   // Mermaid re-renders asynchronously; the viewBox is what settles last.
   await expect
-    .poll(async () =>
-      page.locator(`${render} svg`).first().getAttribute('viewBox'),
+    .poll(
+      async () => page.locator(`${render} svg`).first().getAttribute('viewBox'),
+      { timeout: 30_000 },
     )
     .not.toBe(null)
 }
@@ -82,7 +86,9 @@ test('a diagram too wide to squeeze keeps its size and scrolls inside its own bo
   ].join('\n')
   await setSource(page, chain)
 
-  await expect.poll(async () => (await metrics(page)).isWide).toBe(true)
+  // This poll bounced three merge-queue runs on its 5s default while the
+  // re-render was still laying out; same 30s budget as every render wait here.
+  await expect.poll(async () => (await metrics(page)).isWide, { timeout: 30_000 }).toBe(true)
   const { container, natural, drawn, scrollsInside, pageScrollsSideways } = await metrics(page)
 
   expect(natural).toBeGreaterThan(container * 1.6)

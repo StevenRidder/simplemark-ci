@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { perfBudget } from './perf-budget'
+
 /**
  * A document may not stall the main thread because it contains a lot of table.
  *
@@ -54,8 +56,10 @@ test('a table-heavy document opens without stalling the main thread', async ({ p
 
   // Before the guard this document took ~45s and rendered every one of its
   // ~78,000 cells. The ceiling is generous on purpose: it fails on a stall,
-  // not on a slow CI machine.
-  expect(elapsed).toBeLessThan(8_000)
+  // not on a slow CI machine — but saturated queue runners measured 8,246ms
+  // and 8,577ms against a flat 8,000ms, so CI takes the ADR 0009 multiplier
+  // (12s there, still nowhere near the 45s stall signature).
+  expect(elapsed).toBeLessThan(perfBudget(8_000))
 
   const cells = await page.locator(`${EDITOR} td, ${EDITOR} th`).count()
   expect(cells).toBeLessThan(3_000)

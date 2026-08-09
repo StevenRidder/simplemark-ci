@@ -24,6 +24,13 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: process.env['CI'] === 'true',
   retries: 0,
+  // ADR 0009: correctness waits get CI headroom at the framework level.
+  // Saturated shared runners run 2–3× slower than a developer machine; a
+  // widened wait can hide no bug because the assertion still demands the same
+  // end state, while a 30.9s honest run against the 30s default dequeues a PR.
+  // Local runs keep Playwright's tight defaults. Perf guards do NOT inherit
+  // this headroom — they use tests/ui/perf-budget.ts explicitly.
+  ...(process.env['CI'] === 'true' ? { timeout: 60_000, expect: { timeout: 15_000 } } : {}),
   ...workerConfig,
   reporter: process.env['CI'] === 'true' ? [['list'], ['json', { outputFile: '.artifacts/ui-playwright-receipt.json' }]] : [['list']],
   use: {

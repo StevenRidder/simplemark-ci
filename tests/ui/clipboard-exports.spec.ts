@@ -64,9 +64,11 @@ const clipboardText = (page: import('@playwright/test').Page): Promise<string> =
  * this app reports success, so there is no stronger completion signal than
  * the clipboard bytes themselves to poll on. The fix is headroom, not a
  * better signal: give the poll enough attempts to land on a clean sample
- * between sibling writes instead of racing a default ~5s budget.
+ * between sibling writes instead of racing a default ~5s budget. The first
+ * 15s budget (PR #178) still lost a queue run at 18.7s, so it is doubled —
+ * the poll exits the moment the bytes match, so a passing run pays nothing.
  */
-const CLIPBOARD_SETTLE_TIMEOUT_MS = 15_000
+const CLIPBOARD_SETTLE_TIMEOUT_MS = 30_000
 
 async function expectClipboard(
   page: import('@playwright/test').Page,

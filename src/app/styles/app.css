@@ -973,7 +973,26 @@ section.editor::-webkit-scrollbar {
   background: var(--paper);
 }
 
+/*
+ * The Library's own palette, named rather than repeated.
+ *
+ * This column is a dark sidebar on an otherwise light app, so its ink was
+ * written as light literals in every rule that needed it. That was fine while
+ * the rows only ever appeared here — and wrong the moment the phone borrowed
+ * them for a sheet on paper, where near-white text on white simply vanished.
+ * The values are unchanged; they just have names now, so a second surface can
+ * restate them instead of overriding eight separate declarations.
+ */
 .workspace-folders {
+  --library-row-ink: #d0d2cc;
+  --library-root-ink: #dedfd9;
+  --library-muted: #aeb0aa;
+  --library-count-ink: #9ea09a;
+  --library-hover-bg: rgb(255 255 255 / 7%);
+  --library-hover-ink: #f4f2eb;
+  --library-selected-bg: rgb(255 255 255 / 12%);
+  --library-selected-ink: #fff;
+
   position: relative;
   min-width: 0;
   padding: 0 10px 54px;
@@ -1137,7 +1156,7 @@ section.editor::-webkit-scrollbar {
 }
 
 .library-section-label {
-  color: #aeb0aa;
+  color: var(--library-muted, #aeb0aa);
   font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
@@ -1154,12 +1173,12 @@ section.editor::-webkit-scrollbar {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #aeb0aa;
+  color: var(--library-muted, #aeb0aa);
 }
 
 .library-section-action:not(:disabled):hover {
-  background: rgb(255 255 255 / 8%);
-  color: #fff;
+  background: var(--library-hover-bg, rgb(255 255 255 / 8%));
+  color: var(--library-selected-ink, #fff);
 }
 
 .library-section-action svg {
@@ -1183,7 +1202,7 @@ section.editor::-webkit-scrollbar {
   min-height: 32px;
   padding: 6px 9px;
   background: transparent;
-  color: #d0d2cc;
+  color: var(--library-row-ink, #d0d2cc);
   text-align: left;
   font: 450 15.5px/1.25 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
   letter-spacing: -0.005em;
@@ -1201,7 +1220,7 @@ section.editor::-webkit-scrollbar {
   place-items: center;
   width: 18px;
   height: 18px;
-  color: #aeb0aa;
+  color: var(--library-muted, #aeb0aa);
 }
 
 .library-icon svg {
@@ -1230,24 +1249,24 @@ section.editor::-webkit-scrollbar {
 }
 
 .folder-row:not(:disabled):hover {
-  background: rgb(255 255 255 / 7%);
-  color: #f4f2eb;
+  background: var(--library-hover-bg, rgb(255 255 255 / 7%));
+  color: var(--library-hover-ink, #f4f2eb);
 }
 
 .folder-row.selected {
-  background: rgb(255 255 255 / 12%);
-  color: #fff;
+  background: var(--library-selected-bg, rgb(255 255 255 / 12%));
+  color: var(--library-selected-ink, #fff);
   font-weight: 600;
 }
 
 .folder-count {
-  color: #9ea09a;
+  color: var(--library-count-ink, #9ea09a);
   font-size: 11px;
   font-weight: 500;
 }
 
 .folder-root {
-  color: #dedfd9;
+  color: var(--library-root-ink, #dedfd9);
   font-size: 15.5px;
   line-height: 1.25;
 }
@@ -1884,6 +1903,68 @@ section.editor::-webkit-scrollbar {
     grid-template-columns: minmax(0, 1fr);
   }
   .document-surface { display: none; }
+
+  /*
+   * The note-list menu becomes a sheet, because on a phone it is carrying the
+   * Library — the folders that are otherwise unreachable at this width. A
+   * dropdown anchored under the title would have run off the bottom of the
+   * screen as soon as a person had more than a handful of folders; a sheet
+   * grows to what it needs, stops at three-quarters of the screen, and
+   * scrolls beyond that.
+   */
+  .notes-menu {
+    position: fixed;
+    z-index: 70;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 76dvh;
+    overflow-y: auto;
+    padding: 8px 10px calc(14px + env(safe-area-inset-bottom));
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 15px 15px 0 0;
+    box-shadow: 0 -14px 40px rgb(34 29 22 / 22%);
+  }
+
+  /*
+   * The borrowed Library rows, restated for paper.
+   *
+   * They are authored for a dark sidebar, so every one of their inks is a
+   * light literal — on this sheet that is white text on white, which read as
+   * a column of blank rows with only the counts showing. Restating the named
+   * palette is the whole fix: the rows keep the column's markup, spacing and
+   * behaviour, and only stop being the wrong colour for the surface they are
+   * currently standing on.
+   */
+  .notes-menu.has-library {
+    --library-row-ink: var(--ink);
+    --library-root-ink: var(--ink);
+    --library-muted: var(--ink-3);
+    --library-count-ink: var(--ink-3);
+    --library-hover-bg: color-mix(in srgb, var(--ink-3) 15%, transparent);
+    --library-hover-ink: var(--ink);
+    --library-selected-bg: color-mix(in srgb, var(--accent) 16%, transparent);
+    --library-selected-ink: var(--ink);
+  }
+
+  /* A row that cannot be chosen has to look it. In the column these carry a
+     tooltip instead, which a thumb never sees. */
+  .notes-menu.has-library .folder-row:disabled {
+    opacity: 0.42;
+  }
+
+  .notes-menu.has-library > .library-rows {
+    padding-bottom: 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* Sized for the column, which is 190px wide and never touched by a thumb. */
+  .notes-menu .folder-row {
+    min-height: 38px;
+  }
   /* Editor Only is the escape hatch at every effective viewport size. Browser
      magnification, a narrow window, or accessibility scaling must never make
      the open document disappear with no way to zoom it back. */

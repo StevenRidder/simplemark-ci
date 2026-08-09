@@ -2505,14 +2505,56 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       }
     }
 
+    /*
+     * On a phone the Library column is `display: none` (it has been below
+     * 820px since the workspace became two columns), so every folder on disk
+     * is unreachable — the one place a person goes to answer "which notes am
+     * I even looking at". The phone has exactly one control that governs that
+     * question, the list title, and it already owns sort and preview density.
+     * So the title opens both: the folders first, the display options under
+     * them, in a single sheet.
+     *
+     * The sheet *borrows the very same `libraryRows` element* rather than
+     * rendering a second folder list beside it. A copy would be a second
+     * source of truth for names, counts and which folder is selected, free to
+     * drift from the column the desktop shows; lending the node means
+     * `paintFolderRows`, the selection classes and the counts keep working
+     * untouched, and there is only ever one list.
+     */
+    const PHONE_WIDTH = '(max-width: 620px)'
+    const isPhone = (): boolean => globalThis.matchMedia?.(PHONE_WIDTH).matches === true
+
+    const restoreLibraryColumn = (): void => {
+      if (!notesMenu.contains(libraryRows)) return
+      folders.insertBefore(libraryRows, libraryFooter)
+    }
+
     const closeNotesMenu = (): void => {
+      restoreLibraryColumn()
+      notesMenu.classList.remove('has-library')
       notesMenu.hidden = true
       notesTitle.setAttribute('aria-expanded', 'false')
     }
     notesTitle.addEventListener('click', () => {
       const open = notesMenu.hidden
+      if (open && isPhone()) {
+        notesMenu.insertBefore(libraryRows, notesMenu.firstChild)
+        notesMenu.classList.add('has-library')
+      } else if (!open) {
+        restoreLibraryColumn()
+        notesMenu.classList.remove('has-library')
+      }
       notesMenu.hidden = !open
       notesTitle.setAttribute('aria-expanded', String(open))
+    })
+    // Choosing where you are is the end of the errand: the sheet gets out of
+    // the way so the list it just changed is visible. Delegated, so it covers
+    // the fixed rows (Recent, Pinned, Trash) and folders alike, including
+    // folders that appear on disk later.
+    libraryRows.addEventListener('click', (event) => {
+      if (!(event.target instanceof Element)) return
+      if (event.target.closest('.folder-row') === null) return
+      if (notesMenu.contains(libraryRows)) closeNotesMenu()
     })
     windowEl.addEventListener('mousedown', (event) => {
       const target = event.target

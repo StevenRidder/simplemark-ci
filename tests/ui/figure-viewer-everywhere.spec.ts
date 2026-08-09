@@ -24,6 +24,19 @@ async function paste(page: import('@playwright/test').Page, text: string): Promi
   await page.keyboard.press('Enter')
   await page.evaluate((t) => navigator.clipboard.writeText(t), text)
   await page.keyboard.press('ControlOrMeta+v')
+  // Paste conversion is asynchronous — the sniffer claims the event, then
+  // validates a tick later and replaces the empty paragraph Enter just made.
+  // Clicking before that lands selects the *previous* block, and the
+  // conversion transaction then clears that selection, taking its chips with
+  // it. Wait for the placeholder to become the converted block.
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const last = document.querySelector('.milkdown .ProseMirror')?.lastElementChild
+        return last !== null && last !== undefined && !(last.tagName === 'P' && last.textContent === '')
+      }),
+    )
+    .toBe(true)
 }
 
 const BARE_MERMAID = 'flowchart LR\n  A[Start] --> B[Middle]'

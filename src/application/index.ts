@@ -31,6 +31,13 @@ export type {
   DiagramFixPort,
   AiSettings,
   BlockBoundaryPort,
+  StepJson,
+  StepBatch,
+  StepDocumentRange,
+  StepDocumentError,
+  StepApplicationResult,
+  MarkdownStepResult,
+  StepDocumentPort,
 } from './ports.js'
 export { isAiConfigured } from './ports.js'
 export { DocumentSession } from './document-session.js'

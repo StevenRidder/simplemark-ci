@@ -326,3 +326,51 @@ export interface BlockBoundaryPort {
    */
   equivalent(a: string, b: string): boolean
 }
+
+/** A JSON object emitted by an editor step without exposing its editor type. */
+export type StepJson = Readonly<Record<string, unknown>>
+
+/** One ordered batch of opaque editor operations. */
+export type StepBatch = readonly StepJson[]
+
+/** A document coordinate supplied by an editor adapter, never interpreted here. */
+export interface StepDocumentRange {
+  readonly from: number
+  readonly to: number
+}
+
+/** Failures that must remain visible rather than becoming an assumed edit. */
+export type StepDocumentError = 'invalid_step' | 'invalid_schema' | 'rebase_failed'
+
+/** A successfully applied batch, serialized by the adapter that owns the schema. */
+export type StepApplicationResult =
+  | { readonly ok: true; readonly markdown: string; readonly steps: StepBatch }
+  | { readonly ok: false; readonly kind: StepDocumentError }
+
+/** The structural replacement emitted for agent-supplied Markdown. */
+export type MarkdownStepResult =
+  | { readonly ok: true; readonly steps: StepBatch }
+  | { readonly ok: false; readonly kind: StepDocumentError }
+
+/**
+ * The application boundary for structural document changes (AUTHORITY-3).
+ *
+ * Editor steps cross as the JSON their owning editor emits. The application
+ * can store, sequence, and send them to this port, but can never interpret a
+ * step: decoding, schema validation, rebasing, inversion, and Markdown
+ * parsing are all editor-adapter responsibilities.
+ */
+export interface StepDocumentPort {
+  applySteps(markdown: string, steps: StepBatch): StepApplicationResult
+  rebaseSteps(
+    baseMarkdown: string,
+    localSteps: StepBatch,
+    committedBatches: readonly StepBatch[],
+  ): StepApplicationResult
+  invertSteps(markdown: string, steps: StepBatch): StepBatch | null
+  markdownToSteps(
+    markdown: string,
+    replacement: string,
+    range?: StepDocumentRange,
+  ): MarkdownStepResult
+}

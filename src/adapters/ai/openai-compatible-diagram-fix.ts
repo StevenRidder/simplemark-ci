@@ -28,6 +28,46 @@ const SYSTEM_PROMPT =
   'Reply with ONLY the corrected source in that same language — no explanation, no surrounding prose, ' +
   'no Markdown code fence.'
 
+/**
+ * The Markdown-repair counterpart of `SYSTEM_PROMPT`.
+ *
+ * Deliberately asks for a fenced answer, where the diagram prompt forbids one:
+ * the correction here IS Markdown, and its fences are the repair. That is also
+ * why this path must not reuse `stripCodeFence` — see `extractCorrectedMarkdown`.
+ */
+const MARKDOWN_SYSTEM_PROMPT =
+  'You repair a span of Markdown that parsed into the wrong structure. ' +
+  'You will be given the source as written, the structure it produced, and the structure it was meant to produce. ' +
+  'Reply with ONLY the corrected Markdown for that span — no explanation and no commentary. ' +
+  'Preserve the author’s bytes: change only what is required to fix the structure.'
+
+/**
+ * Parses a Markdown-repair reply.
+ *
+ * Unlike `extractFixedSource`, this must NOT strip an outer fence: a correct
+ * answer routinely begins with ```` ```mermaid ```` and ends with ```` ``` ````,
+ * and those delimiters are the fix. Stripping them would return the same broken
+ * span the model was asked to repair.
+ */
+export function extractCorrectedMarkdown(responseText: string): DiagramFixResult {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(responseText)
+  } catch {
+    return { ok: false, message: 'The API response was not valid JSON.' }
+  }
+  const content = (parsed as { choices?: Array<{ message?: { content?: unknown } }> })
+    ?.choices?.[0]?.message?.content
+  if (typeof content !== 'string') {
+    return { ok: false, message: 'The API response did not include a message.' }
+  }
+  const source = content.trim()
+  if (source === '') {
+    return { ok: false, message: 'The API returned an empty answer.' }
+  }
+  return { ok: true, source }
+}
+
 function userTurn(language: string, source: string, errorMessage: string): string {
   return [
     `Diagram type: ${language}`,
@@ -139,6 +179,23 @@ export class OpenAiCompatibleDiagramFixPort implements DiagramFixPort {
         { role: 'user', content: userTurn(language, source, errorMessage) },
       ])
       return extractFixedSource(responseText)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { ok: false, message }
+    }
+  }
+
+  async fixMarkdown(complaint: string): Promise<DiagramFixResult> {
+    const settings = this.getSettings()
+    if (!isAiConfigured(settings)) {
+      return { ok: false, message: 'Add an API key in Settings before using Fix it.' }
+    }
+    try {
+      const responseText = await this.transport(settings.baseUrl, settings.apiKey, settings.model, [
+        { role: 'system', content: MARKDOWN_SYSTEM_PROMPT },
+        { role: 'user', content: complaint },
+      ])
+      return extractCorrectedMarkdown(responseText)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       return { ok: false, message }

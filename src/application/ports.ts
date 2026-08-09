@@ -270,6 +270,15 @@ export interface DiagramFixPort {
   isConfigured(): boolean
   /** Never throws; a transport or parsing failure resolves `{ ok: false, message }`. */
   fix(language: string, source: string, errorMessage: string): Promise<DiagramFixResult>
+  /**
+   * Repairs a span of Markdown whose structure is wrong, given a complaint that
+   * carries its own before-and-after evidence.
+   *
+   * Separate from `fix` because there is no renderer error to pass and the
+   * answer is Markdown, not diagram source — so the reply keeps its fences
+   * instead of being unwrapped. Never throws.
+   */
+  fixMarkdown(complaint: string): Promise<DiagramFixResult>
 }
 
 /**

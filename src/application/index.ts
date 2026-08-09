@@ -57,3 +57,4 @@ export type {
   MenuEntry,
   MenuSpec,
 } from './commands.js'
+export { MAX_HIDDEN_DIAGRAM_FIX_ATTEMPTS, repairHiddenDiagram } from './repair-hidden-diagram.js'

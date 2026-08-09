@@ -11,6 +11,11 @@ export type { TableRenderPlan } from './render/table-budget.js'
 export { firstByteDifference } from './source/byte-diff.js'
 export { buildSourceMap, emitDocument } from './source/source-map.js'
 export { parseFenceLayout, withFenceMetaKey } from './source/fence-meta.js'
+export { findHiddenDiagramFences } from './source/hidden-diagram-fence.js'
+export type { HiddenDiagramFence, HiddenDiagramScanOptions } from './source/hidden-diagram-fence.js'
+export { describeHiddenDiagramFence, hiddenDiagramSpan } from './source/hidden-diagram-complaint.js'
+export { applyHiddenDiagramFix } from './source/hidden-diagram-apply.js'
+export type { HiddenDiagramFixResult } from './source/hidden-diagram-apply.js'
 export { suggestedMarkdownFileName } from './document-title.js'
 export {
   MERMAID_SIGNATURE,

@@ -3330,6 +3330,49 @@ section.editor::-webkit-scrollbar {
   cursor: pointer;
 }
 
+/* A diagram swallowed by a stray fence is not an error — the Markdown is legal,
+   it just means something the author did not intend. Advisory `--accent`, not
+   `--danger`, so it reads as "look at this" rather than "something failed". */
+.hidden-diagram-notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 11.5px/1.5 var(--mono);
+}
+
+.hidden-diagram-notice-message {
+  margin: 0 0 8px;
+  font: inherit;
+  white-space: pre-wrap;
+}
+
+.hidden-diagram-notice-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.hidden-diagram-notice-actions button {
+  padding: 3px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--accent);
+  font: 600 11px/1.4 var(--sans);
+  cursor: pointer;
+}
+
+.hidden-diagram-notice-actions button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 14%, var(--paper));
+}
+
+.hidden-diagram-notice-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* A broken diagram shows the parser's own message and keeps its source
    editable. Never a blank rectangle (DESIGN.md §4.4). */
 .diagram-error {

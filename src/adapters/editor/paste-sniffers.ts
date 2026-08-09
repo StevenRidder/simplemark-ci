@@ -162,6 +162,15 @@ export interface PasteSnifferOptions {
   readonly renderer: DiagramRenderer
   /** Absent in hosts that cannot keep images beside the note. */
   readonly images?: NoteImageStore
+  /**
+   * Observes the raw clipboard text before anything normalises it.
+   *
+   * The swallowed-diagram mistake is only provable from these bytes: the moment
+   * the paste lands, the serializer rewrites the stray fence into a form that
+   * is legitimate on its face. Purely an observation — it never claims the
+   * paste or changes what gets inserted.
+   */
+  readonly onPastedText?: (text: string) => void
 }
 
 export const pasteSniffers = (options: PasteSnifferOptions) =>
@@ -301,6 +310,7 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
 
           const text = clipboard.getData('text/plain')
           const html = clipboard.getData('text/html')
+          options.onPastedText?.(text)
           if (text.trim() === '' && html.trim() === '') return false
 
           // Inside a code block the clipboard is literal by definition.

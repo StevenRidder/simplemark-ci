@@ -33,7 +33,8 @@ import {
   footnoteDefinitionSchema,
   footnoteReferenceSchema,
 } from '@milkdown/kit/preset/gfm'
-import { $prose, $useKeymap, $view, callCommand, getMarkdown } from '@milkdown/kit/utils'
+import { $prose, $useKeymap, $view, callCommand, getMarkdown, replaceAll } from '@milkdown/kit/utils'
+import { HiddenDiagramNotice } from './hidden-diagram-notice.js'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import { DOMSerializer, Fragment } from '@milkdown/kit/prose/model'
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
@@ -469,10 +470,12 @@ export class MilkdownEditor {
      * looks dirty again for an edit that was already delivered.
      */
     let lastEmitted: string | undefined
+    let notice: HiddenDiagramNotice | undefined
     const emitMarkdown = (editorMarkdown: string): void => {
       const markdown = preparedMarkdown.restoreMarkdown(editorMarkdown)
       if (markdown === lastEmitted) return
       lastEmitted = markdown
+      notice?.refresh(markdown)
       options.onMarkdownChanged(markdown)
     }
 
@@ -518,6 +521,7 @@ export class MilkdownEditor {
       // order and the first handler to return true wins, so the sniffer chain
       // must precede the clipboard plugin to see the payload at all.
       .use(pasteSniffers({
+        onPastedText: (text) => notice?.armFromPaste(text),
         renderer: options.renderer,
         ...(options.images === undefined ? {} : { images: options.images }),
       }))
@@ -582,11 +586,36 @@ export class MilkdownEditor {
     lastEmitted = preparedMarkdown.restoreMarkdown(editor.action(getMarkdown()))
 
     const instance = new MilkdownEditor(editor, options.renderer, emitMarkdown, diagramViews)
+    notice = instance.installHiddenDiagramNotice(options.mount, options.initialMarkdown, options.diagramFix)
     instance.installLinkOpening(options.mount, options.onOpenLink)
     instance.installTaskToggling()
     instance.installBlockReordering()
     instance.installTableControls()
     return instance
+  }
+
+  /**
+   * Shows the swallowed-diagram notice above the document.
+   *
+   * Refreshed from `serialize()` rather than from the raw file, so it reflects
+   * what the editor actually holds — including a paste that only just landed,
+   * which is when this mistake usually arrives.
+   */
+  private installHiddenDiagramNotice(
+    mount: HTMLElement,
+    initialMarkdown: string,
+    diagramFix: DiagramFixPort | undefined,
+  ): HiddenDiagramNotice {
+    const notice = new HiddenDiagramNotice(
+      (markdown) => {
+        this.editor.action(replaceAll(markdown))
+        this.flushPendingChanges()
+      },
+      diagramFix,
+    )
+    mount.prepend(notice.element)
+    notice.refresh(initialMarkdown)
+    return notice
   }
 
   private installLinkOpening(

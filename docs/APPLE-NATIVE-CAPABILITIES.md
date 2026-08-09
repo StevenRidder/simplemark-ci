@@ -3,16 +3,17 @@
 **What the Swift bridge actually unlocks, what each remaining Apple capability is worth,
 and what it costs to build now that the bridge exists.**
 
-* **Status:** Draft 1 — scoping only, no accepted decision
+* **Status:** Draft 2 — two decisions accepted, recorded in §2.1, §2.6 and §4
 
-* **Date:** 2026-08-07
+* **Date:** 2026-08-07, revised 2026-08-09
 
 * **Companion to:** [`APPLE-NATIVE-AI.md`](APPLE-NATIVE-AI.md) (the AI surface),
   [`NATIVE-WORKSPACE.md`](NATIVE-WORKSPACE.md) (shell and menus),
   [`PRODUCT.md`](PRODUCT.md) (product authority)
 
-* **Scope:** macOS capabilities that are **not** Foundation Models. The four AI candidates are
-  scoped in `APPLE-NATIVE-AI.md` §5 and are not repeated here.
+* **Scope:** Apple platform capabilities that are **not** Foundation Models. Draft 1 said macOS
+  only; §4 explains why that is no longer the boundary. The four AI candidates are scoped in
+  `APPLE-NATIVE-AI.md` §5 and are not repeated here.
 
 ***
 
@@ -62,6 +63,11 @@ packaging.
 
 ### 2.1 Quick Look preview — *best commercial case, highest cost*
 
+> **Decision, 2026-08-09: approved, for macOS and iOS.** The product owner accepted the cost
+> below on the strength of the reach argument. Draft 1 covered macOS only, because iOS did not
+> exist when it was written; it does now — see §4. Tracked as NATIVE-6 (macOS) and NATIVE-10
+> (iOS), both behind the NATIVE-5 spike and the NATIVE-1 packaging ADR.
+
 **What it is.** Every `.md` file on the Mac renders as a real document — in Finder's preview
 pane, on spacebar, in Mail attachments, in AirDrop and Messages — with diagrams, using
 SimpleMark's own renderer, whether or not SimpleMark is running.
@@ -90,6 +96,15 @@ problems, in descending order of nastiness:
 
 **Risk if it goes wrong:** a bundle that fails notarization, or an extension that works locally
 and not on a customer's Mac. Both are release-blocking rather than cosmetic.
+
+**On iOS (NATIVE-10).** The same `QLPreviewingController`, a different distribution problem. What
+it buys is arguably more than on the Mac: iOS previewing is where most shared documents are
+actually opened — Files, Mail, Messages, AirDrop — and a `.md` attachment there currently renders
+as plain text or not at all. What it costs differently: App Store review rather than
+notarization, and an extension memory budget far tighter than the Mac's, which makes problem 2
+above — a second `WKWebView` composition root — the binding constraint rather than an annoyance.
+That sharpens the §5 question instead of adding a new one: if the renderer can emit static HTML
+ahead of time, both platforms get cheaper, and iOS gets *feasible*. Do the spike once, for both.
 
 ### 2.2 Sentence segmentation — *do this regardless*
 
@@ -175,9 +190,11 @@ app bundle, which is the same packaging fight as §2.1.
 **Effort:** \~1 week for the index-only half. The querying half inherits §3's unknown and should
 not be sized until §3 is settled.
 
-**Precondition, unchanged from §5.3:** it requires accepting that we keep an index of the user's
-content. That is a positioning decision, not an engineering one, and it belongs in `PRODUCT.md`
-before any code.
+**Precondition, answered 2026-08-09: yes.** The product owner accepted that SimpleMark keeps an
+index of the user's content. This was the only thing blocking the index-only half, so that half
+is schedulable now; the querying half still inherits §3. The decision is a stated product promise
+rather than an implementation detail, so it belongs in `PRODUCT.md` before the feature ships —
+not merely on the board. Tracked as NATIVE-7.
 
 ### 2.7 Translation — *narrow*
 
@@ -247,21 +264,36 @@ are in-process, both are bounded, and between them they add an occasion of use a
 class. Roughly a week together. Worth doing alongside §2.1 rather than after it, because they
 share nothing: one is packaging, the other two are product.
 
-**Unblocked by §3's decision, and now the largest piece of work here.** §2.1 Quick Look. With
-option 1 chosen it is no longer waiting on anything — it is a fortnight of packaging work whose
-first step should be the §5 question below, since answering it may halve the estimate.
+**Approved, and now the largest piece of work here.** §2.1 Quick Look, on both platforms. With
+option 1 chosen and the cost accepted it is no longer waiting on a decision — it is a fortnight
+of packaging work per platform whose first step should be the §5 question below, since answering
+it may halve the Mac estimate and is close to a precondition for the iOS one.
 
-**Still blocked, on a different gate.** §2.6 Spotlight. §3 removed its packaging blocker, but both
-halves still wait on the `PRODUCT.md` question about whether SimpleMark holds an index of the
-user's content. That is a positioning decision, not an engineering one.
+**Unblocked.** §2.6 Spotlight, index-only half. The positioning question is answered yes, so the
+week of `CSSearchableIndex` work can be scheduled; write the commitment into `PRODUCT.md` as part
+of it. The querying half still inherits §3.
 
 **Not scheduled.** §2.7.
 
-**Deliberately excluded from this document.** Handoff and PencilKit both presume an iOS app, and
-`APPLE-NATIVE-AI.md` §4.1 is explicit that iOS is a product decision nobody has made — the
-file-watching loop that defines SimpleMark does not exist there. Writing Tools remains
-unreachable for the reason recorded in `APPLE-NATIVE-AI.md`: it is a user-invoked text service
-acting on a focused field, not a callable API.
+**iOS is no longer an exclusion.** Draft 1 excluded Handoff, PencilKit and anything else
+iOS-shaped on the grounds that iOS "is a product decision nobody has made," citing
+`APPLE-NATIVE-AI.md` §4.1. That was true on 2026-08-07 and false by 2026-08-08: `Build and run
+SimpleMark on iOS` (9e97fcc) landed the next day, and iOS work has been landing continuously
+since — the Xcode project at `src-tauri/gen/apple/`, `src-tauri/Info.ios.plist`, the iCloud Drive
+notes folder, the phone's formatting palette (#159), the wireframe realignment (#173). The
+exclusion was not a mistake; it had a shelf life of one day, which nothing in the document
+disclosed.
+
+What this does *not* mean is that every iOS capability is now in scope. §4.1's substantive point
+survives its stale framing: **the file-watching loop that defines SimpleMark on the desktop does
+not exist on iOS**, and capabilities that assume it — file coordination in §2.4 most directly —
+do not port without an answer to what "the folder" means there. Quick Look is exempt because it
+reads a document handed to it and assumes nothing about a workspace. Handoff and PencilKit are
+still unscheduled, but on their merits now rather than on a false premise; they need their own
+pass against the iOS app that actually exists.
+
+Writing Tools remains unreachable for the reason recorded in `APPLE-NATIVE-AI.md`: it is a
+user-invoked text service acting on a focused field, not a callable API.
 
 ***
 
@@ -280,3 +312,11 @@ Stated so it can be checked rather than trusted:
 * **If `NLTokenizer` proves unavailable or unsuitable** for Markdown's mixed prose and code, §2.2
   falls back to the current splitter with better abbreviation handling, which is a day rather
   than half of one.
+
+* **One entry fired within a day of Draft 1, and it is the instructive one.** Draft 1 excluded a
+  class of capabilities because iOS did not exist. It shipped the following day. The claim was
+  true when written, sourced from a companion document, and stale before anyone acted on it —
+  which is worse than a plain error, because nothing about it looked wrong on re-reading. The
+  standing check: **an exclusion resting on what the product does not yet have must be re-tested
+  against the tree, not against another document**, and should carry the date it was last
+  verified. Anything here excluded on a platform premise is due for that re-test.

@@ -31,6 +31,6 @@ describe('native window capabilities', () => {
   })
 
   it('uses the default-scale pane-header baseline before native zoom adjustment', () => {
-    expect(config.app.windows[0]?.trafficLightPosition).toEqual({ x: 18, y: 32 })
+    expect(config.app.windows[0]?.trafficLightPosition).toEqual({ x: 18, y: 31 })
   })
 })

@@ -131,6 +131,12 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   }
   await nativeWindow.onMoved(rememberGeometry)
   await nativeWindow.onResized(rememberGeometry)
+  // The geometry restore above (setSize/setPosition/maximize) resizes the
+  // window before these listeners existed to catch it, so whichever finished
+  // last — Wry's own reset or pageZoom's constructor-time sync — silently
+  // decided where the traffic lights landed. Listeners are live now; correct
+  // once more so a restored window is deterministic instead of a coin flip.
+  rememberGeometry()
   await installNativeContextMenuBridge(controller)
   await installNativeNoteNavigationBridge(controller)
   await installOpenRequestBridge(controller)

@@ -8,7 +8,7 @@ use objc2_app_kit::{NSWindow, NSWindowButton};
 use tauri::WebviewWindow;
 
 const TRAFFIC_LIGHT_X: f64 = 18.0;
-const TRAFFIC_LIGHT_Y_AT_ACTUAL_SIZE: f64 = 32.0;
+const TRAFFIC_LIGHT_Y_AT_ACTUAL_SIZE: f64 = 31.0;
 
 pub fn sync_to_page_zoom(window: &WebviewWindow, magnification: f64) -> Result<(), String> {
     if !magnification.is_finite() || !(0.2..=5.0).contains(&magnification) {
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn native_chrome_uses_the_same_scale_as_the_reader() {
-        assert_eq!(TRAFFIC_LIGHT_Y_AT_ACTUAL_SIZE * 1.0, 32.0);
-        assert_eq!(TRAFFIC_LIGHT_Y_AT_ACTUAL_SIZE * 1.5, 48.0);
+        assert_eq!(TRAFFIC_LIGHT_Y_AT_ACTUAL_SIZE * 1.0, 31.0);
+        assert_eq!(TRAFFIC_LIGHT_Y_AT_ACTUAL_SIZE * 1.5, 46.5);
     }
 }

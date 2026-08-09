@@ -64,6 +64,19 @@ for (const [name, source] of [
   test(`the chip opens the viewer for a narrow ${name} figure`, async ({ page }) => {
     await paste(page, source)
     await selectLastBlock(page)
+    // Selecting only waits for the ProseMirror conversion and the chip
+    // toolbar — not for the diagram's own async render — and "not wide"
+    // below is trivially true before anything has rendered, so it does not
+    // wait either. Without a real wait here, "Open figure" can fire before
+    // #openViewer() (diagram-node-view.ts) has any content to hand the
+    // viewer: it bails out silently (`content === null`) rather than
+    // erroring, which then dooms the final assertion below to its own
+    // timeout. Vega-Lite is the slow one of the three — its renderer loads
+    // ~800 KB of modules on demand and compiles the spec before it ever
+    // produces an <svg> (vega-lite-renderer.ts) — so wait on the actual
+    // render output directly, with a deliberately wide budget rather than
+    // Playwright's plain 5s default.
+    await expect(page.locator(`${RENDER} svg`).last()).toBeVisible({ timeout: 15_000 })
     // Not wide — this is exactly the case the too-wide-only gate used to hide.
     await expect(page.locator('.diagram').last()).not.toHaveClass(/has-wide-figure/)
     await page.locator('.diagram-chips').last().getByRole('button', { name: 'Open figure' }).click()

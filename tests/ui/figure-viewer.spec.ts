@@ -67,8 +67,15 @@ function tallAndWideMermaid(): string {
 
 async function openViewer(page: import('@playwright/test').Page, source: string = wideMermaid()) {
   await setFirstDiagramSource(page, source)
-  // The expand button only shows on a figure too wide for its column.
-  await expect(page.locator('.diagram').first()).toHaveClass(/has-wide-figure/)
+  // The expand button only shows on a figure too wide for its column. The
+  // class itself is a synchronous computation (diagram-node-view.ts's
+  // #fitDiagram, toggled the instant the render promise resolves) — the wait
+  // here is really for Mermaid's own async render/layout, which for a large
+  // diagram (tallAndWideMermaid's 20 nodes, one with a 140-char label) has
+  // been measured at 12-16s on CI. That is legitimate external variance, not
+  // a bug, so this assertion gets a deliberately wide budget instead of
+  // racing Playwright's plain 5s default.
+  await expect(page.locator('.diagram').first()).toHaveClass(/has-wide-figure/, { timeout: 20_000 })
   await page.locator('.diagram-expand').first().click()
   await expect(page.locator('.figure-viewer')).toBeVisible()
 }

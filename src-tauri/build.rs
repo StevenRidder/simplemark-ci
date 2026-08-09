@@ -44,16 +44,125 @@ fn main() {
     tauri_build::build()
 }
 
+/// Which Apple SDK, OS name and target-triple suffix this cargo target needs.
+///
+/// `None` means no bridge: either not an Apple platform, or Intel, where Apple
+/// Intelligence does not exist at any price.
+///
+/// The `-sim` arm must be tested before the device arm — `aarch64-apple-ios-sim`
+/// also starts with `aarch64-apple-ios`, and building simulator code against
+/// the device SDK fails at link time rather than here, which is a long way to
+/// travel for a prefix. Catalyst is named and refused for the same reason: it
+/// would otherwise fall into the device arm and build against the wrong SDK.
+fn bridge_target(target: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    match target {
+        t if t.starts_with("aarch64-apple-darwin") => Some(("macosx", "macosx", "")),
+        t if t.starts_with("aarch64-apple-ios-macabi") => None,
+        t if t.starts_with("aarch64-apple-ios-sim") => {
+            Some(("iphonesimulator", "ios", "-simulator"))
+        }
+        t if t.starts_with("aarch64-apple-ios") => Some(("iphoneos", "ios", "")),
+        _ => None,
+    }
+}
+
+/// The OS version the bridge is compiled *for*, which is not the SDK it is
+/// compiled *against*.
+///
+/// This distinction is the whole reason this function exists, and getting it
+/// wrong is invisible until someone runs the app on an older OS.
+///
+/// FoundationModels exists only on 26. Compile the bridge with a deployment
+/// target of 26 and the linker records it as a hard `LC_LOAD_DYLIB`, so dyld
+/// must find the framework at launch — and on macOS 25 or iOS 25 it cannot, so
+/// the app does not start at all. Not the summary feature: the app. Compile it
+/// with the deployment target the app actually ships, and the linker weak-links
+/// both FoundationModels and `libswift_Concurrency` on its own, because their
+/// availability is newer than the floor. The `#available` guards in the Swift
+/// then do exactly what they were written for. Measured both ways before
+/// choosing; the library's own compile target decides it, and the final link
+/// target has no say.
+///
+/// There is a floor as well as a ceiling, and it is why these are 13 and 15
+/// rather than the lowest number that builds. Below macOS 12 / iOS 15 Swift
+/// concurrency is not in the OS, so `Task` — which every Foundation Models call
+/// needs — is satisfied by a back-deployment copy of `libswift_Concurrency`
+/// that Xcode then embeds in the bundle. On a modern OS that copy collides with
+/// the system one: duplicate Objective-C classes, and the app segfaults during
+/// launch. Measured, not feared — iOS 14 crashed on an iPhone 17 simulator with
+/// `EXC_BAD_ACCESS` while iOS 15 ran clean, the only difference being whether
+/// the dylib resolved to `@rpath` or to `/usr/lib/swift`.
+///
+/// macOS sits one step higher again, at 13 rather than 12, and for a different
+/// reason: at 12 the Swift objects demand `swiftCompatibility56`, which lives
+/// in the Xcode toolchain rather than on the system. Xcode would find it, but
+/// on macOS this crate is linked by rustc, which does not know that directory
+/// exists — so the leg fails with an undefined `__swift_FORCE_LOAD_$_
+/// swiftCompatibility56`. 13 needs no compatibility library at all.
+///
+/// So the bridge must be compiled below 26 and at or above 13/15, and both
+/// bounds are load-bearing in opposite directions.
+///
+/// Xcode supplies the real value when it drives cargo, which is the iOS path,
+/// and `gen/apple/project.yml` is therefore the single source of truth there.
+/// A direct `cargo build` has no such caller, hence the fallbacks.
+fn deployment_target(sdk_name: &str) -> String {
+    let (variable, fallback) = if sdk_name == "macosx" {
+        ("MACOSX_DEPLOYMENT_TARGET", "13.0")
+    } else {
+        ("IPHONEOS_DEPLOYMENT_TARGET", "15.0")
+    };
+    println!("cargo:rerun-if-env-changed={variable}");
+    supplied(variable).unwrap_or_else(|| fallback.to_string())
+}
+
+/// Where the Swift toolchain keeps its static compatibility shims.
+///
+/// Deployment targets below the running toolchain's threshold make Swift ask
+/// for `swiftCompatibility56` and friends — small static archives that
+/// back-deploy newer runtime behaviour. They live in the Xcode toolchain, not
+/// on the system, so Xcode finds them and rustc, which links this crate on
+/// macOS, does not: the leg dies on an undefined
+/// `__swift_FORCE_LOAD_$_swiftCompatibility56`.
+///
+/// This is asked of the toolchain rather than pinned to a version because the
+/// threshold moves with the toolchain. macOS 13 needs no shims under Swift
+/// 6.3, and needs two under the older Swift on CI — the same source, the same
+/// target, a different answer. A deployment number tuned on a developer's Mac
+/// is therefore not a fact about the project, and choosing one broke CI while
+/// every local check stayed green. Supplying the search path is true under any
+/// toolchain, which a number cannot be.
+fn swift_toolchain_libraries(platform: &str) -> Option<String> {
+    let swiftc = run("xcrun", &["-f", "swiftc"])?;
+    let toolchain = Path::new(&swiftc).parent()?.parent()?;
+    let libraries = toolchain.join("lib").join("swift").join(platform);
+    libraries
+        .is_dir()
+        .then(|| libraries.to_string_lossy().into_owned())
+}
+
 /// Compiles the Foundation Models bridge and links it into this binary.
 ///
-/// Apple silicon macOS only. Apple Intelligence requires Apple silicon, so the
-/// x86_64 leg is not a gap to fill later — the feature genuinely cannot exist
-/// there, and gating on the architecture keeps that leg building untouched.
+/// Apple silicon macOS and iOS. Apple Intelligence requires Apple silicon, so
+/// the x86_64 leg is not a gap to fill later — the feature genuinely cannot
+/// exist there, and gating on the architecture keeps that leg building
+/// untouched.
+///
+/// On iOS the same `.a` is produced and handed to rustc identically, but the
+/// final link belongs to Xcode rather than to us: the crate builds as a
+/// `staticlib`, so rustc performs no link at all. What makes this work is that
+/// `-l static=` defaults to `+bundle`, which copies the Swift objects *into*
+/// `libapp.a`. Xcode then links one archive and gets both halves, and the
+/// `LC_LINKER_OPTION` autolink directives Swift wrote into those objects pull
+/// in FoundationModels without the Xcode project naming it. That is why
+/// `project.yml` needs no new framework dependency — and it is worth knowing,
+/// because if it were ever untrue the symptom would be an undefined-symbol
+/// error at the very end of a long iOS build.
 ///
 /// A missing or too-old Swift toolchain is not a build failure. It sets no
 /// `simplemark_intelligence` cfg, the Rust side compiles its unavailable path,
-/// and the app ships with extracted previews only — the same outcome as a Mac
-/// with Apple Intelligence switched off.
+/// and the app ships with extracted previews only — the same outcome as a
+/// device with Apple Intelligence switched off.
 fn build_intelligence_bridge() {
     println!("cargo:rerun-if-changed=swift/SimpleMarkIntelligence.swift");
     println!("cargo:rustc-check-cfg=cfg(simplemark_intelligence)");
@@ -68,14 +177,14 @@ fn build_intelligence_bridge() {
         .is_some_and(|value| value != "0" && !value.eq_ignore_ascii_case("false"));
 
     let target = std::env::var("TARGET").unwrap_or_default();
-    if !target.starts_with("aarch64-apple-darwin") {
+    let Some((sdk_name, os, suffix)) = bridge_target(&target) else {
         assert!(
             !required,
             "SIMPLEMARK_REQUIRE_INTELLIGENCE is set but TARGET is {target}. \
-             Foundation Models needs aarch64-apple-darwin; set it only on that leg."
+             Foundation Models needs arm64 macOS or iOS; set it only on those legs."
         );
         return;
-    }
+    };
 
     let Ok(out_dir) = std::env::var("OUT_DIR") else {
         return;
@@ -91,27 +200,37 @@ fn build_intelligence_bridge() {
         println!("cargo:warning={reason}; note summaries disabled");
     };
 
-    // FoundationModels ships in the macOS 26 SDK. An older SDK compiles every
-    // other file in this crate perfectly well, so probe rather than assume.
-    let sdk = match run("xcrun", &["--show-sdk-version"]) {
+    // FoundationModels ships in the 26 SDKs. An older SDK compiles every other
+    // file in this crate perfectly well, so probe rather than assume — and
+    // probe the SDK we are about to build against, not whichever one `xcrun`
+    // considers the default, which on an iOS build is the macOS one.
+    let sdk = match run("xcrun", &["--sdk", sdk_name, "--show-sdk-version"]) {
         Some(version) => version,
         None => {
-            refuse("no macOS SDK found");
+            refuse(&format!("no {sdk_name} SDK found"));
             return;
         }
     };
     let major: u32 = sdk.split('.').next().unwrap_or("0").parse().unwrap_or(0);
     if major < 26 {
-        refuse(&format!("macOS SDK {sdk} predates FoundationModels"));
+        refuse(&format!("{sdk_name} SDK {sdk} predates FoundationModels"));
         return;
     }
+    let Some(sdk_path) = run("xcrun", &["--sdk", sdk_name, "--show-sdk-path"]) else {
+        refuse(&format!("no {sdk_name} SDK path"));
+        return;
+    };
+
+    let triple = format!("arm64-apple-{os}{}{suffix}", deployment_target(sdk_name));
 
     let library = format!("{out_dir}/libSimpleMarkIntelligence.a");
     let compiled = Command::new("swiftc")
         .args([
             "-O",
+            "-sdk",
+            &sdk_path,
             "-target",
-            "arm64-apple-macosx26.0",
+            &triple,
             "-emit-library",
             "-static",
             "-module-name",
@@ -131,9 +250,17 @@ fn build_intelligence_bridge() {
 
     println!("cargo:rustc-link-search=native={out_dir}");
     println!("cargo:rustc-link-lib=static=SimpleMarkIntelligence");
-    // The Swift runtime the static library depends on.
-    println!("cargo:rustc-link-search=native=/usr/lib/swift");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+    // The Swift runtime the static library depends on. macOS only: this crate
+    // is a `staticlib` on iOS, so rustc runs no linker for these to reach, and
+    // Xcode already carries its own Swift runtime search paths. Emitting them
+    // anyway would be a directive that looks load-bearing and does nothing.
+    if sdk_name == "macosx" {
+        println!("cargo:rustc-link-search=native=/usr/lib/swift");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+        if let Some(path) = swift_toolchain_libraries("macosx") {
+            println!("cargo:rustc-link-search=native={path}");
+        }
+    }
     println!("cargo:rustc-cfg=simplemark_intelligence");
 }
 

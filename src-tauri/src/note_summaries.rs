@@ -317,12 +317,17 @@ impl Summarizer for NoSummarizer {
 }
 
 /// Whichever summarizer this build actually has.
+///
+/// Apple silicon macOS and iOS. The two platforms share every line behind this
+/// call: the same Swift bridge, the same distillation, the same cache. Nothing
+/// in the summary path touches a window or a file watcher, which is why iOS
+/// needed a gate widened rather than an implementation.
 pub fn active_summarizer() -> Box<dyn Summarizer + Send + Sync> {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[cfg(all(any(target_os = "macos", target_os = "ios"), target_arch = "aarch64"))]
     {
         Box::new(crate::foundation_models::FoundationModelsSummarizer)
     }
-    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+    #[cfg(not(all(any(target_os = "macos", target_os = "ios"), target_arch = "aarch64")))]
     {
         Box::new(NoSummarizer)
     }

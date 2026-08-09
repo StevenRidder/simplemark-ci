@@ -60,7 +60,7 @@ pub mod note_images;
 pub mod note_preview;
 pub mod note_summaries;
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[cfg(all(any(target_os = "macos", target_os = "ios"), target_arch = "aarch64"))]
 pub mod foundation_models;
 
 #[cfg(target_os = "macos")]

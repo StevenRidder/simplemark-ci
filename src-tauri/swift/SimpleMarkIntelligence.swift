@@ -5,9 +5,13 @@
 // crate uses) cannot reach it at any price. Hence one Swift compilation unit,
 // linked as a static library by build.rs.
 //
-// Compiled only for macOS on Apple silicon. Apple Intelligence requires Apple
+// Compiled for macOS and iOS, on arm64 only. Apple Intelligence requires Apple
 // silicon, so excluding Intel is honest rather than a workaround — and it
 // leaves the x86_64 CI leg building exactly as it does today.
+//
+// One source file serves both platforms because nothing in it is
+// platform-shaped: no view, no window, no file system. The availability
+// annotations name both, and `build.rs` picks the SDK and target triple.
 //
 // Nothing here may trap across the FFI boundary. Every failure returns false
 // or a null pointer; a model that cannot answer must never take down the app.
@@ -28,7 +32,7 @@ import FoundationModels
 ///
 /// Every instruction is positive. The model reliably ignored prohibitions:
 /// "never begin with 'This document'" was violated in 7 of 12 documents.
-@available(macOS 26, *)
+@available(macOS 26, iOS 26, *)
 @Generable
 struct NoteSubtitle {
     @Guide(description: "Copy, word for word, the one sentence from the document that best states its main point. Copy it exactly; do not rewrite it.")
@@ -57,7 +61,7 @@ constraint the document commits to.
 /// supported on this machine.
 @_cdecl("simplemark_intelligence_available")
 public func simplemark_intelligence_available() -> Bool {
-    guard #available(macOS 26, *) else { return false }
+    guard #available(macOS 26, iOS 26, *) else { return false }
     if case .available = SystemLanguageModel.default.availability { return true }
     return false
 }
@@ -72,7 +76,7 @@ public func simplemark_intelligence_available() -> Bool {
 public func simplemark_intelligence_summarize(
     _ input: UnsafePointer<CChar>?
 ) -> UnsafeMutablePointer<CChar>? {
-    guard #available(macOS 26, *), let input else { return nil }
+    guard #available(macOS 26, iOS 26, *), let input else { return nil }
     let prompt = String(cString: input)
     guard !prompt.isEmpty else { return nil }
 

@@ -33,7 +33,8 @@ import { resolve } from 'node:path';
 const CAPABILITIES = {
   'note-summaries': {
     symbol: '_simplemark_intelligence_available',
-    requiredOn: ['macos-arm64'],
+    requiredOn: ['macos-arm64', 'ios-arm64'],
+    weakFramework: 'FoundationModels',
     why: 'Foundation Models bridge (src-tauri/swift/SimpleMarkIntelligence.swift)',
   },
 };
@@ -101,6 +102,47 @@ function minimumMacos(binary) {
       load.match(/LC_BUILD_VERSION[\s\S]{0,200}?minos\s+([0-9]+(?:\.[0-9]+)*)/) ??
       load.match(/LC_VERSION_MIN_MACOSX[\s\S]{0,200}?version\s+([0-9]+(?:\.[0-9]+)*)/);
     return match === null ? null : match[1];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether `framework` is loaded weakly, strongly, or not at all.
+ *
+ * `minimumMacos` above was written to catch a mac-only capability raising the
+ * floor for everyone, and it watched the wrong number. `minos` stayed at 11.0
+ * exactly as it was supposed to — and the app still could not launch on
+ * anything below macOS 26, because the Swift bridge was compiled with a
+ * deployment target of 26 and the linker recorded FoundationModels as a hard
+ * `LC_LOAD_DYLIB`. dyld then required a framework that does not exist there.
+ * The floor the contract cared about was real; it simply was not spelled
+ * `minos`. Both checks now run, because they fail independently.
+ *
+ * Returns null when the load commands cannot be read at all.
+ */
+function frameworkLinkage(binary, framework) {
+  try {
+    const load = execFileSync('otool', ['-l', binary], {
+      encoding: 'utf8',
+      maxBuffer: 512 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    // Load commands appear as a `cmd` line followed by the `name` of the dylib,
+    // so the most recent command seen before the name is the one that owns it.
+    let command = '';
+    for (const line of load.split('\n')) {
+      const kind = line.match(/^\s*cmd\s+(LC_LOAD_WEAK_DYLIB|LC_LOAD_DYLIB)\s*$/);
+      if (kind !== null) {
+        command = kind[1];
+        continue;
+      }
+      const name = line.match(/^\s*name\s+(\S+)/);
+      if (name !== null && name[1].includes(framework)) {
+        return command === 'LC_LOAD_WEAK_DYLIB' ? 'weak' : 'strong';
+      }
+    }
+    return 'absent';
   } catch {
     return null;
   }
@@ -174,6 +216,29 @@ function main() {
     }
     if (symbols.includes(capability.symbol)) {
       process.stdout.write(`native-capabilities: ${name} present (${capability.symbol})\n`);
+      if (capability.weakFramework !== undefined) {
+        const linkage = frameworkLinkage(path, capability.weakFramework);
+        if (linkage === null) {
+          fail(`could not read load commands from ${binary}`);
+        } else if (linkage === 'strong') {
+          fail(
+            `${binary} hard-links ${capability.weakFramework} (LC_LOAD_DYLIB). That framework ` +
+              'exists only on macOS/iOS 26, so dyld will refuse to launch the app on every ' +
+              'earlier OS — not just disable the feature, refuse to start. Compile the Swift ' +
+              "bridge with the app's deployment target rather than 26 (build.rs " +
+              '`deployment_target`) so the linker weak-links it.',
+          );
+        } else if (linkage === 'absent') {
+          fail(
+            `${binary} does not link ${capability.weakFramework} at all, yet exports ` +
+              `${capability.symbol}. The bridge cannot work; something linked a stub.`,
+          );
+        } else {
+          process.stdout.write(
+            `native-capabilities: ${capability.weakFramework} weak-linked (launches below 26)\n`,
+          );
+        }
+      }
       continue;
     }
     fail(

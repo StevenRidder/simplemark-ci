@@ -4,8 +4,12 @@
 //! *when* lives in `note_summaries.rs`; this file only crosses the boundary.
 //!
 //! Present only when `build.rs` set `simplemark_intelligence`, which requires
-//! Apple silicon macOS and a macOS 26 SDK. Everywhere else the crate compiles
+//! Apple silicon macOS or iOS and a 26 SDK. Everywhere else the crate compiles
 //! `NoSummarizer` instead and the note list shows extracted previews.
+//!
+//! Nothing below is platform-specific, and that is the point: the FFI surface
+//! is three C functions over a Swift file that knows nothing about windows or
+//! files, so iOS reuses it whole.
 
 use crate::note_summaries::Summarizer;
 

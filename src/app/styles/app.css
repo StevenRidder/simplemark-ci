@@ -562,7 +562,21 @@ button[disabled] {
   position: absolute;
   z-index: 27;
   left: calc(100% + 5px);
-  top: -6px;
+  /*
+   * Bottom-anchor, not top-anchor: every trigger that owns a nested submenu
+   * (Todo, Callout, Transform, Current Date) lives low in an already
+   * upward-opening parent menu, close to `.window`'s bottom edge. A
+   * top-anchored submenu grows *downward* from there and its lowest items
+   * — Callout's "Caution" was the one this bit — can land past `.window`'s
+   * `overflow: hidden` clip, present in the DOM but unpaintable and
+   * unclickable: the real click lands on the editor underneath, which also
+   * drops the `:hover` that was keeping the submenu open, so it then reads
+   * as genuinely not visible and never recovers. Anchoring to the bottom
+   * mirrors how the parent `.styles-menu` already opens upward from this
+   * same bottom-anchored bar, which keeps every nested submenu inside the
+   * safe area above it too.
+   */
+  bottom: -6px;
   min-width: 176px;
   padding: 6px;
   border: 1px solid var(--line);

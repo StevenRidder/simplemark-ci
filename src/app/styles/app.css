@@ -3965,6 +3965,19 @@ section.editor::-webkit-scrollbar {
   padding-left: 90px;
 }
 
+/*
+ * `.workspace-folders` also disappears below this width on its own (see the
+ * general breakpoint above), independent of `data-layout`. That leaves
+ * `.notes-header` just as physically leftmost as the explicit two-pane mode
+ * above, so it needs the same clearance even though the attribute selector
+ * never matches here.
+ */
+@media (max-width: 820px) {
+  :root[data-shell='native'] .notes-header {
+    padding-left: 90px;
+  }
+}
+
 :root[data-shell='native'] .workspace-body.navigation-hidden .native-editor-head {
   padding-left: 78px;
 }

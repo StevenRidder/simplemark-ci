@@ -23,7 +23,17 @@ function generatedReport(): string {
 const REPORT = generatedReport()
 
 test('opens a table-heavy Markdown file promptly without losing its source', async ({ page }) => {
-  test.setTimeout(15_000)
+  // No test.setTimeout() override here: this test was the only one in the suite
+  // that ever shortened it, to 15_000 — half the framework default with no
+  // recorded rationale — and CI evidence shows that budget was the flake, not
+  // a real regression. Real merge-group failures timed out at varying, late
+  // assertions (the post-copy snapshot poll, the post-edit poll), never at the
+  // `Date.now() - startedAt` perf guard just below, while passing runs
+  // routinely land at 13-14.7s against the old 15s cap. That perf guard is the
+  // actual BUG-3 regression check (it isolates just the open-and-first-render
+  // phase) and stays tight on purpose; the framework's 30_000ms default gives
+  // the full sequential scroll/copy/poll/type flow that follows honest
+  // headroom instead.
   await page.addInitScript((content: string) => {
     const file = new File([content], 'generated-financial-report.md', { type: 'text/markdown' })
     const handle = {

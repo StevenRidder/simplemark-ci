@@ -64,9 +64,15 @@ pub mod note_summaries;
 pub mod foundation_models;
 
 #[cfg(target_os = "macos")]
-use objc2::{sel, MainThreadMarker};
+use objc2::{runtime::AnyObject, sel, MainThreadMarker};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSApplication;
+#[cfg(target_os = "macos")]
+use objc2_foundation::{
+    NSNumber, NSString, NSURLIsUbiquitousItemKey, NSURLResourceKey,
+    NSURLUbiquitousItemDownloadingStatusKey, NSURLUbiquitousItemDownloadingStatusNotDownloaded,
+    NSURL,
+};
 #[cfg(target_os = "macos")]
 use tauri::RunEvent;
 
@@ -550,9 +556,95 @@ fn read_note_at(path: String) -> Result<OpenedNote, String> {
     read_note(Path::new(&path))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LocalFileAvailability {
+    Available,
+    ICloudNotDownloaded,
+    Unknown,
+}
+
+fn require_local_note_bytes(
+    path: &Path,
+    availability: LocalFileAvailability,
+) -> Result<(), String> {
+    if availability == LocalFileAvailability::ICloudNotDownloaded {
+        return Err(format!(
+            "{} is stored in iCloud but has not been downloaded. Download it in Finder, then open it again.",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_resource_value(
+    url: &NSURL,
+    key: &NSURLResourceKey,
+) -> Option<objc2::rc::Retained<AnyObject>> {
+    let mut value = None;
+    // SAFETY: Foundation documents both requested URL resource keys as object
+    // values. The result is dynamically checked before this module interprets it.
+    unsafe { url.getResourceValue_forKey_error(&mut value, key).ok()? };
+    value
+}
+
+#[cfg(target_os = "macos")]
+fn macos_note_availability(path: &Path) -> LocalFileAvailability {
+    let Some(path) = path.to_str() else {
+        return LocalFileAvailability::Unknown;
+    };
+    let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+    // SAFETY: These Foundation global resource keys are immutable constants.
+    let ubiquitous_key = unsafe { NSURLIsUbiquitousItemKey };
+    let Some(ubiquitous) = macos_resource_value(&url, ubiquitous_key)
+        .and_then(|value| value.downcast::<NSNumber>().ok())
+    else {
+        return LocalFileAvailability::Unknown;
+    };
+    if !ubiquitous.boolValue() {
+        return LocalFileAvailability::Available;
+    }
+    // SAFETY: These Foundation global resource keys are immutable constants.
+    let downloading_status_key = unsafe { NSURLUbiquitousItemDownloadingStatusKey };
+    let Some(status) = macos_resource_value(&url, downloading_status_key)
+        .and_then(|value| value.downcast::<NSString>().ok())
+    else {
+        return LocalFileAvailability::Unknown;
+    };
+    // SAFETY: Foundation exposes this status as an immutable global string.
+    let not_downloaded = unsafe { NSURLUbiquitousItemDownloadingStatusNotDownloaded };
+    if &*status == not_downloaded {
+        LocalFileAvailability::ICloudNotDownloaded
+    } else {
+        LocalFileAvailability::Available
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn local_note_availability(path: &Path) -> LocalFileAvailability {
+    macos_note_availability(path)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn local_note_availability(_path: &Path) -> LocalFileAvailability {
+    LocalFileAvailability::Unknown
+}
+
 fn read_note(path: &Path) -> Result<OpenedNote, String> {
-    let bytes =
-        fs::read(path).map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+    read_note_after_availability_check(path, local_note_availability(path), || fs::read(path))
+}
+
+fn read_note_after_availability_check(
+    path: &Path,
+    availability: LocalFileAvailability,
+    read: impl FnOnce() -> Result<Vec<u8>, std::io::Error>,
+) -> Result<OpenedNote, String> {
+    require_local_note_bytes(path, availability)?;
+    let bytes = read().map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+    opened_note_from_bytes(path, bytes)
+}
+
+fn opened_note_from_bytes(path: &Path, bytes: Vec<u8>) -> Result<OpenedNote, String> {
     let name = path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -1917,6 +2009,80 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_an_icloud_note_that_has_not_been_downloaded_before_reading() {
+        let error = require_local_note_bytes(
+            Path::new("/iCloudDrive/plan.md"),
+            LocalFileAvailability::ICloudNotDownloaded,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("plan.md"));
+        assert!(error.contains("Download it in Finder"));
+    }
+
+    #[test]
+    fn permits_a_locally_available_note() {
+        assert!(require_local_note_bytes(
+            Path::new("/notes/plan.md"),
+            LocalFileAvailability::Available,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn leaves_unknown_availability_to_the_existing_filesystem_read() {
+        assert!(require_local_note_bytes(
+            Path::new("/notes/plan.md"),
+            LocalFileAvailability::Unknown,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn available_note_state_runs_the_normal_note_reader() {
+        let opened = read_note_after_availability_check(
+            Path::new("/notes/plan.md"),
+            LocalFileAvailability::Available,
+            || Ok(b"# Plan\n".to_vec()),
+        )
+        .unwrap();
+
+        assert_eq!(opened.name, "plan.md");
+        assert_eq!(opened.bytes, BASE64.encode(b"# Plan\n"));
+    }
+
+    #[test]
+    fn unknown_note_availability_runs_the_normal_note_reader() {
+        let opened = read_note_after_availability_check(
+            Path::new("/notes/unknown.md"),
+            LocalFileAvailability::Unknown,
+            || Ok(b"# Unknown\n".to_vec()),
+        )
+        .unwrap();
+
+        assert_eq!(opened.name, "unknown.md");
+        assert_eq!(opened.bytes, BASE64.encode(b"# Unknown\n"));
+    }
+
+    #[test]
+    fn unavailable_icloud_state_is_rejected_before_the_note_reader_runs() {
+        let path = Path::new("/iCloudDrive/plan.md");
+        let result = read_note_after_availability_check(
+            path,
+            LocalFileAvailability::ICloudNotDownloaded,
+            || -> Result<Vec<u8>, std::io::Error> {
+                panic!("an unavailable iCloud note must not be read")
+            },
+        );
+
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("an unavailable iCloud note must be rejected"),
+        };
+        assert!(error.contains("Download it in Finder"));
+    }
 
     /// The D7 contract in the one place this crate can break it.
     #[test]

@@ -4162,12 +4162,25 @@ section.editor::-webkit-scrollbar {
   mask-image: none;
 }
 
+/*
+ * Field report (real-world-fixes, bug 1): visibility used to gate on
+ * `.has-wide-figure`, which `#fitDiagram` (diagram-node-view.ts) only ever
+ * sets when it finds an `<svg>` to measure — so a math block or a
+ * paste-exhaust text card (no `<svg>` at all), or a narrow dot/vega figure
+ * that never trips the "too wide" threshold, never got this button at all.
+ * Mermaid diagrams are commonly wide enough to trip that threshold, which is
+ * what made "only mermaid opens" the reported symptom: every other kind
+ * *did* open (via the selection chip), but had no directly-clickable
+ * affordance to discover that with. The corner button is cheap chrome — it
+ * no longer depends on the drawing's own measured width, so every rendered
+ * kind gets one, always.
+ */
 .diagram-expand {
   position: absolute;
   z-index: 3;
   top: 6px;
   right: 8px;
-  display: none;
+  display: block;
   min-height: 26px;
   padding: 0 10px;
   border: 1px solid var(--line);
@@ -4178,21 +4191,16 @@ section.editor::-webkit-scrollbar {
   cursor: pointer;
 }
 
-/* Only a figure that does not fit has somewhere to go. */
-.diagram.has-wide-figure .diagram-expand {
-  display: block;
-}
-
 /*
- * Selecting a too-wide figure puts `.diagram-chips` in the same top-right
- * corner `.diagram-expand` already occupies — both anchor `top`/`right` (§2
- * chip-chrome vs. the wide-figure affordance above), and collide. The chips
- * are the active mode's controls; `.diagram-expand` steps aside rather than
+ * Selecting a figure puts `.diagram-chips` in the same top-right corner
+ * `.diagram-expand` already occupies — both anchor `top`/`right` (§2
+ * chip-chrome vs. the corner affordance above), and collide. The chips are
+ * the active mode's controls; `.diagram-expand` steps aside rather than
  * fight them for the corner. The action is not lost: `#buildChips`
  * (diagram-node-view.ts) adds an "Open figure" chip to this very toolbar
- * whenever `.has-wide-figure` is set, so `#openViewer` stays reachable.
+ * unconditionally, so `#openViewer` stays reachable while selected too.
  */
-.diagram.has-wide-figure.is-selected .diagram-expand {
+.diagram.is-selected .diagram-expand {
   display: none;
 }
 
@@ -4217,22 +4225,38 @@ section.editor::-webkit-scrollbar {
  * (rather than the default `auto`) keeps a single-finger touch swipe as a
  * plain scroll while still letting pointer events reach the pinch-to-zoom
  * handling in figure-viewer.ts for a second finger.
+ *
+ * Bug 3 fix (zoomed content hides its own top edge): `align-items`/
+ * `justify-content: center` on a flex container clips overflow on the
+ * *start* side — a well-known flex gotcha — so once `.figure-viewer-stage`
+ * grew past the viewport at high zoom, its top/left edge became
+ * permanently unreachable no matter how far `scrollTop`/`scrollLeft` were
+ * driven, in code or by a real scroll gesture. `margin: auto` on the stage
+ * itself (below) is the one centering method that still leaves the full
+ * scrollable range reachable in both axes once the content outgrows the
+ * viewport, so the flex centering here is dropped in favour of it.
  */
 .figure-viewer-scroll {
   position: absolute;
   inset: 0;
   overflow: auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
   touch-action: pan-x pan-y;
 }
 
 .figure-viewer-stage {
-  /* Transformed on every gesture frame, so it must not also be laying out. */
-  will-change: transform;
-  transform-origin: center center;
+  /* figure-viewer.ts sizes this to the actual scaled footprint (content ×
+     scale) on every zoom step, so the scrollable region always covers the
+     whole zoomed drawing — a plain `transform: scale()` here never grows the
+     layout box the scroll container measures for its overflow. */
+  margin: auto;
   padding: 24px;
+}
+
+.figure-viewer-stage > * {
+  /* Transformed on every gesture frame (figure-viewer.ts), so it must not
+     also be laying out. */
+  will-change: transform;
 }
 
 .figure-viewer-stage svg {

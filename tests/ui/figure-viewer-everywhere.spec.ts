@@ -327,3 +327,161 @@ test('Copy image either lands image/png on the clipboard, or shows a visible sta
     await expect(button).toHaveText(/Copied|Copy failed/)
   }
 })
+
+/**
+ * Real-world-fixes bug 1: "open image only works on mermaid". Root cause —
+ * the always-present corner `.diagram-expand` button used to only become
+ * visible once `.has-wide-figure` was set, and `#fitDiagram`
+ * (diagram-node-view.ts) only ever sets that class when it finds an `<svg>`
+ * to measure. A narrow dot/vega figure, and math/text-card kinds (no `<svg>`
+ * at all), never got the button — only the selection-chip route worked for
+ * them. Mermaid diagrams are commonly wide enough at rest to get the button
+ * "for free", which is what made mermaid look like the only kind that
+ * worked. These fixtures are deliberately narrow/small (not the
+ * `wideMermaid()` fixture figure-viewer.spec.ts uses), so `has-wide-figure`
+ * never gets set — the corner button has to work anyway.
+ */
+for (const [name, source] of [
+  ['mermaid', BARE_MERMAID],
+  ['svg', SVG],
+  ['vega-lite', VEGA_LITE],
+] as const) {
+  test(`the corner Open figure button opens the viewer for a narrow ${name} figure, with visible content`, async ({
+    page,
+  }) => {
+    await paste(page, source)
+    await expect(page.locator('.diagram').last()).not.toHaveClass(/has-wide-figure/)
+    await page.locator('.diagram-expand').last().click()
+    await expect(page.locator('.figure-viewer')).toBeVisible()
+
+    const rect = await page
+      .locator('.figure-viewer-stage')
+      .evaluate((stage) => stage.firstElementChild?.getBoundingClientRect())
+    expect(rect?.width).toBeGreaterThan(0)
+    expect(rect?.height).toBeGreaterThan(0)
+  })
+}
+
+test('the corner Open figure button opens the viewer for display math, with visible content', async ({ page }) => {
+  await paste(page, MATH)
+  await expect(page.locator('.diagram').last()).not.toHaveClass(/has-wide-figure/)
+  await page.locator('.diagram-expand').last().click()
+  await expect(page.locator('.figure-viewer')).toBeVisible()
+
+  const rect = await page
+    .locator('.figure-viewer-stage')
+    .evaluate((stage) => stage.firstElementChild?.getBoundingClientRect())
+  expect(rect?.width).toBeGreaterThan(0)
+  expect(rect?.height).toBeGreaterThan(0)
+})
+
+test('the corner Open figure button opens the viewer for an ansi text card, with visible content', async ({
+  page,
+}) => {
+  await paste(page, ANSI)
+  await expect(page.locator('.diagram').last()).not.toHaveClass(/has-wide-figure/)
+  await page.locator('.diagram-expand').last().click()
+  await expect(page.locator('.figure-viewer')).toBeVisible()
+
+  const rect = await page
+    .locator('.figure-viewer-stage')
+    .evaluate((stage) => stage.firstElementChild?.getBoundingClientRect())
+  expect(rect?.width).toBeGreaterThan(0)
+  expect(rect?.height).toBeGreaterThan(0)
+})
+
+/**
+ * Bug 2: trackpad pinch did nothing — the old handling only tracked
+ * two-pointer touch semantics. Chromium (and Playwright) delivers a
+ * trackpad pinch as a synthetic `wheel` event with `ctrlKey: true`; the
+ * WebKit `gesturestart`/`gesturechange` path cannot be synthesized outside
+ * WebKit, so it is covered by a unit test on the pure `gestureScale`
+ * function instead (tests/adapters/figure-viewer-zoom.test.ts) and needs
+ * manual verification in the packaged macOS app.
+ */
+test('ctrl+wheel (Chromium trackpad-pinch delivery) zooms the figure within the 50-400% clamp', async ({ page }) => {
+  await paste(page, BARE_MERMAID)
+  await selectLastBlock(page)
+  await page.locator('.diagram-chips').last().getByRole('button', { name: 'Open figure' }).click()
+  await expect(page.locator('.figure-viewer')).toBeVisible()
+  await expect(page.locator('.figure-viewer-zoom-level')).toHaveText('100%')
+
+  // Negative deltaY = pinch-out = zoom in.
+  await page.locator('.figure-viewer-scroll').dispatchEvent('wheel', { deltaY: -200, ctrlKey: true })
+  await expect
+    .poll(async () => page.locator('.figure-viewer-zoom-level').textContent())
+    .not.toBe('100%')
+  const zoomedInText = await page.locator('.figure-viewer-zoom-level').textContent()
+  const zoomedInPct = Number(zoomedInText?.replace('%', ''))
+  expect(zoomedInPct).toBeGreaterThan(100)
+  expect(zoomedInPct).toBeLessThanOrEqual(400)
+
+  // Positive deltaY = pinch-in = zoom out, clamps at 50%.
+  for (let i = 0; i < 40; i += 1) {
+    await page.locator('.figure-viewer-scroll').dispatchEvent('wheel', { deltaY: 400, ctrlKey: true })
+  }
+  await expect(page.locator('.figure-viewer-zoom-level')).toHaveText('50%')
+
+  // A plain (non-ctrl) wheel must not zoom — it is an ordinary scroll.
+  await page.locator('.figure-viewer').getByRole('button', { name: 'Reset zoom' }).click()
+  await expect(page.locator('.figure-viewer-zoom-level')).toHaveText('100%')
+  await page.locator('.figure-viewer-scroll').dispatchEvent('wheel', { deltaY: -200, ctrlKey: false })
+  await expect(page.locator('.figure-viewer-zoom-level')).toHaveText('100%')
+})
+
+/**
+ * Bug 3: zooming in via the on-screen controls could permanently hide the
+ * top (and left) of the drawing — `transform: scale()` never grows the
+ * layout box `.figure-viewer-scroll` measures for scroll, and flex
+ * `align-items`/`justify-content: center` clips overflow on the start side,
+ * so no `scrollTop`/`scrollLeft` could ever reach it.
+ */
+test('zooming in leaves the whole figure reachable by scroll, in both axes', async ({ page }) => {
+  await paste(page, BARE_MERMAID)
+  await selectLastBlock(page)
+  await page.locator('.diagram-chips').last().getByRole('button', { name: 'Open figure' }).click()
+  await expect(page.locator('.figure-viewer')).toBeVisible()
+
+  for (let i = 0; i < 3; i += 1) {
+    await page.locator('.figure-viewer').getByRole('button', { name: 'Zoom in' }).click()
+  }
+  await expect(page.locator('.figure-viewer-zoom-level')).toHaveText('195%')
+
+  const metrics = await page.evaluate(() => {
+    const scroll = document.querySelector('.figure-viewer-scroll') as HTMLElement
+    const stage = document.querySelector('.figure-viewer-stage') as HTMLElement
+    const content = stage.firstElementChild as HTMLElement
+    const contentRect = content.getBoundingClientRect()
+    return {
+      scrollWidth: scroll.scrollWidth,
+      scrollHeight: scroll.scrollHeight,
+      clientWidth: scroll.clientWidth,
+      clientHeight: scroll.clientHeight,
+      contentWidth: contentRect.width,
+      contentHeight: contentRect.height,
+    }
+  })
+  // The scroll container's overflow must cover at least the whole scaled
+  // drawing in both axes, not just the unscaled layout box.
+  expect(metrics.scrollWidth).toBeGreaterThanOrEqual(metrics.contentWidth - 1)
+  expect(metrics.scrollHeight).toBeGreaterThanOrEqual(metrics.contentHeight - 1)
+
+  // The top-left corner of the drawing must be programmatically reachable —
+  // this is the exact symptom report: "can't scroll up and see, it gets
+  // blocked."
+  const reached = await page.evaluate(() => {
+    const scroll = document.querySelector('.figure-viewer-scroll') as HTMLElement
+    scroll.scrollTop = 0
+    scroll.scrollLeft = 0
+    return { top: scroll.scrollTop, left: scroll.scrollLeft }
+  })
+  expect(reached.top).toBe(0)
+  expect(reached.left).toBe(0)
+
+  const stageRect = await page.locator('.figure-viewer-stage').evaluate((el) => el.getBoundingClientRect())
+  const scrollRect = await page.locator('.figure-viewer-scroll').evaluate((el) => el.getBoundingClientRect())
+  // With scrollTop/scrollLeft at 0, the stage's own top-left edge must be at
+  // (or past) the viewport's top-left — not clipped above/left of it.
+  expect(stageRect.top).toBeGreaterThanOrEqual(scrollRect.top - 1)
+  expect(stageRect.left).toBeGreaterThanOrEqual(scrollRect.left - 1)
+})

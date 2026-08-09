@@ -48,6 +48,35 @@ function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
+/** Clamps to the shared 50–400% range, snapping the float-error band around 1 back to exactly 1. */
+export function clampScale(next: number): number {
+  const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next))
+  return Math.abs(clamped - 1) < 0.001 ? 1 : clamped
+}
+
+/**
+ * WKWebView's native trackpad-pinch path: `gesturestart` captures `scale`
+ * (the ratio the platform tracks internally, always 1 at gesture start) and
+ * `baseScale` is whatever this viewer's own `scale` was at that moment —
+ * multiplying the two turns the platform's *relative* pinch back into this
+ * viewer's *absolute* one. Pure so it can be unit-tested without a WebKit
+ * runtime (`GestureEvent` cannot be constructed in jsdom or Chromium).
+ */
+export function gestureScale(baseScale: number, eventScale: number): number {
+  return clampScale(baseScale * eventScale)
+}
+
+/**
+ * Chromium's trackpad-pinch path: delivered as a synthetic `wheel` event
+ * with `ctrlKey: true` and `deltaY` carrying the pinch's magnitude/direction
+ * (negative = zoom in, matching a real ctrl+wheel zoom gesture everywhere
+ * else on the platform). Exponential rather than linear so a fast pinch
+ * still feels proportionate near both clamp ends.
+ */
+export function wheelZoomScale(currentScale: number, deltaY: number, k = 0.01): number {
+  return clampScale(currentScale * Math.exp(-deltaY * k))
+}
+
 /**
  * Copies fence source through the shell's clipboard boundary when a
  * `ClipboardPort` is available (`DiagramNodeView#openViewer`), or falls back
@@ -118,7 +147,7 @@ export function openFigureViewer(content: Element, title: string, options: Figur
   const stage = document.createElement('div')
   stage.className = `figure-viewer-stage${options.isTextCard ? ' is-text-card' : ''}`
 
-  const clone = content.cloneNode(true) as Element
+  const clone = content.cloneNode(true) as HTMLElement | SVGElement
   if (content instanceof SVGElement && clone instanceof SVGElement) {
     const size = naturalSize(content)
     // The document sizes its figures to a column; here the only constraint is
@@ -264,17 +293,42 @@ export function openFigureViewer(content: Element, title: string, options: Figur
   document.body.append(overlay)
 
   let scale = 1
+
+  // Bug 3 (zoom hides the top of the drawing): `transform: scale()` is
+  // purely visual — it never changes the layout box `.figure-viewer-scroll`
+  // measures for its scrollable overflow, so a zoomed-in drawing grew
+  // visually past the viewport on every side while the scroll container
+  // still thought it only needed room for the *unscaled* box. Combined with
+  // centering the stage via flex `align-items`/`justify-content`, the
+  // "extra" content above/left of center had nowhere in the scrollable
+  // range to go — no scrollTop could ever reach it. The fix sizes `stage`
+  // itself to the actual scaled footprint (`content*scale`) so the
+  // scrollable region always covers the full zoomed drawing in both axes,
+  // and centers it in the flow via `margin: auto` (app.css) instead of flex
+  // centering, which is the one centering method that does not clip
+  // overflow on the start side.
+  //
+  // Measured once, from the clone's own natural (unscaled, untransformed)
+  // layout box — this covers every kind uniformly: the svg path already sets
+  // an explicit natural width/height above, and math/text-card markup gets
+  // whatever size its own layout gives it, exactly the box that needs to
+  // grow when scaled.
+  const contentRect = clone.getBoundingClientRect()
+  const contentWidth = contentRect.width
+  const contentHeight = contentRect.height
+
   const paint = (): void => {
-    stage.style.transform = `scale(${scale})`
+    clone.style.transformOrigin = 'top left'
+    clone.style.transform = `scale(${scale})`
+    if (!options.isTextCard && contentWidth > 0 && contentHeight > 0) {
+      stage.style.width = `${contentWidth * scale}px`
+      stage.style.height = `${contentHeight * scale}px`
+    }
     zoomLevel.textContent = `${Math.round(scale * 100)}%`
   }
 
   const setScale = (next: number): void => {
-    const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next))
-    // Repeated in/out steps accumulate float error the same way the block's
-    // own `#setZoom` guards against — close enough to read "100%" but never
-    // `=== 1`.
-    scale = Math.abs(clamped - 1) < 0.001 ? 1 : clamped
+    scale = clampScale(next)
     paint()
   }
 
@@ -333,6 +387,38 @@ export function openFigureViewer(content: Element, title: string, options: Figur
     if (pointers.size < 2) pinchDistance = 0
   }
 
+  /**
+   * Bug 2 (trackpad pinch does nothing): the two-pointer handlers above
+   * track touchscreen semantics — a real touch pinch delivers two
+   * `PointerEvent`s. A macOS trackpad pinch never does; WKWebView (the
+   * packaged app) delivers it as native `gesturestart`/`gesturechange`
+   * events carrying an absolute `scale`, while Chromium (dev environment,
+   * Playwright) delivers the same gesture as a synthetic `wheel` event with
+   * `ctrlKey: true`. Both paths drive the same `setScale`/clamp the zoom
+   * buttons use; neither replaces the touch-pointer path above.
+   */
+  let gestureBaseScale = 1
+
+  const onGestureStart = (event: Event): void => {
+    if (isChrome(event.target)) return
+    event.preventDefault()
+    gestureBaseScale = scale
+  }
+
+  const onGestureChange = (event: Event): void => {
+    if (isChrome(event.target)) return
+    event.preventDefault()
+    const eventScale = (event as unknown as { scale: number }).scale
+    setScale(gestureScale(gestureBaseScale, eventScale))
+  }
+
+  const onWheel = (event: WheelEvent): void => {
+    if (!event.ctrlKey) return
+    if (isChrome(event.target)) return
+    event.preventDefault()
+    setScale(wheelZoomScale(scale, event.deltaY))
+  }
+
   // A tap that neither zoomed nor panned is a request to leave, which is how
   // every full-screen photo on this platform behaves. A double tap is the
   // shortcut between fitted and close-up.
@@ -363,6 +449,9 @@ export function openFigureViewer(content: Element, title: string, options: Figur
     overlay.removeEventListener('pointerup', onPointerUp)
     overlay.removeEventListener('pointercancel', onPointerUp)
     overlay.removeEventListener('click', onClick)
+    overlay.removeEventListener('wheel', onWheel)
+    overlay.removeEventListener('gesturestart', onGestureStart)
+    overlay.removeEventListener('gesturechange', onGestureChange)
     document.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('afterprint', onAfterPrint)
     window.clearTimeout(copyResetTimer)
@@ -377,6 +466,11 @@ export function openFigureViewer(content: Element, title: string, options: Figur
   overlay.addEventListener('pointerup', onPointerUp)
   overlay.addEventListener('pointercancel', onPointerUp)
   overlay.addEventListener('click', onClick)
+  overlay.addEventListener('wheel', onWheel, { passive: false })
+  // Not in TypeScript's DOM lib (WebKit-only): cast the event name/handler
+  // rather than widening the handler's own parameter type.
+  overlay.addEventListener('gesturestart', onGestureStart as EventListener)
+  overlay.addEventListener('gesturechange', onGestureChange as EventListener)
   document.addEventListener('keydown', onKeyDown)
   close.addEventListener('click', dismiss)
 

@@ -10,10 +10,12 @@
 1. **Open figure is offered on every rendered block** — `mermaid`, `dot`,
    `graphviz`, `vega-lite`, `svg`, display math, and the text cards
    (`ansi`, `diff`, `json`, `tree`, `stacktrace`): always present in the
-   selection chip toolbar with a tooltip, regardless of width. The
-   too-wide-only gate dies for the chip; the standalone corner button and the
-   touch tap-to-open keep their existing overflow-only gates (an unselected
-   fitting figure stays chrome-free). Plain editable fences (```yaml`,
+   selection chip toolbar with a tooltip, regardless of width — and, revised
+   by field use (2026-08-09): the standalone corner button is universal too.
+   The overflow-only gate matched "wide mermaid" and nothing else, so the
+   visible affordance read as mermaid-only; the corner button now appears on
+   every rendered block, and only the touch tap-to-open keeps its overflow
+   gate. Plain editable fences (```yaml`,
    ```python`) get nothing — they are already text in the note.
 2. **Text cards open as a reading overlay**: the same viewer shell, the
    card's rendered content at readable width, native two-axis scrolling.

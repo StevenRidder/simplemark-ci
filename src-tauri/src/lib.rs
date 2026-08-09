@@ -342,21 +342,107 @@ async fn open_note(app: AppHandle) -> Result<Option<OpenedNote>, String> {
     read_note(&path).map(Some)
 }
 
-/// The folder this platform supplies without anyone choosing it.
+/// iCloud Drive's on-disk name for the container this app declares in
+/// `NSUbiquitousContainers`. The daemon writes `iCloud.app.simplemark.ios` as a
+/// directory by replacing every `.` with `~`, and both platforms must name the
+/// same container or "the same notes on a phone and a Mac" is not true.
+#[cfg(target_os = "macos")]
+const ICLOUD_CONTAINER_DIRECTORY: &str = "iCloud~app~simplemark~ios";
+
+/// The folder this app keeps at the top of iCloud Drive, beside the container.
 ///
-/// Desktop has none: a folder becomes a collection because the person picked
-/// it, and inventing one would adopt a directory nobody pointed at. iOS is the
-/// opposite — the operating system hands the application exactly one document
-/// directory, published to the Files app and replicated by iCloud, and there
-/// is no picker that could choose a different one. Returning it is a statement
-/// of fact rather than a guess.
+/// Both spellings are tried because only one of them is this product's name and
+/// the other is what a person actually types. On the case-insensitive volume
+/// iCloud Drive lives on, the first match answers for both; the second entry is
+/// what makes the lookup survive a case-sensitive one.
+#[cfg(target_os = "macos")]
+const ICLOUD_DRIVE_FOLDER_NAMES: [&str; 2] = ["SimpleMark", "Simplemark"];
+
+/// The folders in iCloud Drive this app answers for without anyone choosing.
 ///
-/// The shell adopts this only when no folder has been adopted already, so a
-/// person's own choice always outranks the platform's.
+/// Two, in the order the sidebar should show them:
+///
+/// 1. The ubiquity container, as macOS mirrors it on disk.
+///    `URLForUbiquityContainerIdentifier` is the API for this and is what iOS
+///    calls, but it answers only for a build carrying the iCloud entitlement and
+///    the Mac build carries none. The mirror is not a workaround for that: macOS
+///    materialises every container under `Mobile Documents` for the signed-in
+///    person regardless of which app asks, and this app is not sandboxed, so the
+///    folder it published from the phone is simply readable.
+/// 2. `iCloud Drive/SimpleMark`, the ordinary folder a person makes when they
+///    want the app's notes somewhere they can see. It is not this app's
+///    container and nothing about it is guaranteed — which is why it is matched
+///    by name and skipped in silence when it is not there.
+///
+/// Split from its caller so the lookup can be tested against a temporary home
+/// rather than the machine's real one. Absent is the ordinary answer, not a
+/// fault: signed out of iCloud, iCloud Drive switched off, the phone has never
+/// run the app.
+#[cfg(target_os = "macos")]
+fn icloud_workspaces_in(home: &Path) -> Vec<PathBuf> {
+    let mobile_documents = home.join("Library/Mobile Documents");
+    let mut candidates = vec![mobile_documents
+        .join(ICLOUD_CONTAINER_DIRECTORY)
+        .join("Documents")];
+    let icloud_drive = mobile_documents.join("com~apple~CloudDocs");
+    candidates.extend(
+        ICLOUD_DRIVE_FOLDER_NAMES
+            .iter()
+            .map(|name| icloud_drive.join(name)),
+    );
+
+    let mut found: Vec<PathBuf> = Vec::new();
+    for candidate in candidates {
+        // `canonicalize` rather than the literal path: on a case-insensitive
+        // volume both spellings resolve to one directory, and adopting it twice
+        // would put the same folder in the sidebar twice under two names.
+        let Ok(resolved) = candidate.canonicalize() else {
+            continue;
+        };
+        if resolved.is_dir() && !found.contains(&resolved) {
+            found.push(resolved);
+        }
+    }
+    found
+}
+
+#[cfg(target_os = "macos")]
+fn icloud_workspaces() -> Vec<PathBuf> {
+    match std::env::var_os("HOME") {
+        Some(home) => icloud_workspaces_in(&PathBuf::from(home)),
+        None => Vec::new(),
+    }
+}
+
+/// The folders this platform supplies without anyone choosing them.
+///
+/// An arbitrary directory would be a guess, and desktop makes none: it has a
+/// picker, and a folder becomes a collection because a person chose it. This
+/// app's folders in iCloud Drive are the exception and are not guesses. The
+/// application publishes one of them, the phone writes notes into it, and both
+/// carry the app's name. A Mac that ignores them breaks the single promise the
+/// folders were created to make — that a note written on a phone is on the Mac
+/// too — and leaves a person to discover, through a file picker, a directory
+/// the app itself created.
+///
+/// Everywhere else this is empty and the shell stays in its welcome state
+/// rather than claiming a directory nobody pointed at.
 #[cfg(desktop)]
 #[tauri::command]
-async fn default_workspace() -> Result<Option<WorkspaceCatalog>, String> {
-    Ok(None)
+async fn default_workspaces() -> Result<Vec<WorkspaceCatalog>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        // A folder that will not list is left out rather than failing the
+        // launch: this is the platform volunteering folders, and a volunteered
+        // folder nobody can read is not worth an error a person did not ask for.
+        return Ok(icloud_workspaces()
+            .iter()
+            .filter_map(|directory| workspace_catalog_for_directory(directory).ok())
+            .collect());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    Ok(Vec::new())
 }
 
 /// The app's folder in iCloud Drive, when the platform will grant one.
@@ -387,9 +473,12 @@ fn icloud_documents() -> Option<PathBuf> {
     None
 }
 
+/// Mobile supplies exactly one folder, so the list it returns holds one entry.
+/// The shell adopts every folder a platform names and does not care how many
+/// that is.
 #[cfg(mobile)]
 #[tauri::command]
-async fn default_workspace(app: AppHandle) -> Result<Option<WorkspaceCatalog>, String> {
+async fn default_workspaces(app: AppHandle) -> Result<Vec<WorkspaceCatalog>, String> {
     // iCloud first, because the same notes on a phone and a Mac is the whole
     // point of the folder; on-device second, because a person without iCloud
     // still has notes. Whichever answers, the shell receives one ordinary
@@ -401,7 +490,7 @@ async fn default_workspace(app: AppHandle) -> Result<Option<WorkspaceCatalog>, S
             .document_dir()
             .map_err(|error| format!("This device exposed no documents directory: {error}"))?,
     };
-    workspace_catalog_for_directory(&directory).map(Some)
+    workspace_catalog_for_directory(&directory).map(|catalog| vec![catalog])
 }
 
 /// Prompts for a folder whose direct Markdown children become one collection.
@@ -686,9 +775,18 @@ fn millis(time: Result<SystemTime, std::io::Error>) -> u64 {
 /// folder must not wait on I/O — so this is deliberately small.
 const PREVIEW_READ_LIMIT: u64 = 8 * 1024;
 
+/// Inspects one candidate note.
+///
+/// The single stat answers both questions a catalog asks — is this a file, and
+/// when did it change — so a caller never has to ask twice about a path that
+/// may not survive between the asking. A directory called `notes.md` is not a
+/// note, and neither is a name whose file has already gone.
 fn catalog_entry(path: &Path) -> Result<WorkspaceCatalogEntry, String> {
     let metadata = fs::metadata(path)
         .map_err(|error| format!("Could not inspect {}: {error}", path.display()))?;
+    if !metadata.is_file() {
+        return Err(format!("{} is not a file", path.display()));
+    }
     Ok(WorkspaceCatalogEntry {
         handle: path.display().to_string(),
         name: path
@@ -737,12 +835,28 @@ fn workspace_catalog_for_directory(directory: &Path) -> Result<WorkspaceCatalog,
     for entry in fs::read_dir(directory)
         .map_err(|error| format!("Could not list {}: {error}", directory.display()))?
     {
-        let entry = entry.map_err(|error| format!("Could not read folder entry: {error}"))?;
+        // One unreadable entry is not a folder that cannot be listed. A
+        // directory being read while iCloud materialises or evicts files in it
+        // hands back entries that stop existing between the listing and the
+        // inspection, and failing the whole call there makes the collection
+        // disappear over a single file. The note is left out; the folder opens.
+        // One unreadable entry is not a folder that cannot be listed. A folder
+        // read while iCloud materialises or evicts files in it yields entries
+        // that stop existing before they can be inspected, and failing the
+        // whole call there loses the collection over a single file.
+        let Ok(entry) = entry else { continue };
         let note_path = entry.path();
-        if !note_path.is_file() || !is_markdown(&note_path) {
+        if !is_markdown(&note_path) {
             continue;
         }
-        notes.push(catalog_entry(&note_path)?);
+        // The inspection decides whether this is a note, rather than a
+        // separate `is_file` first. Two stats of the same path are not just a
+        // wasted syscall — they are a window the file can vanish through, and
+        // vanishing is ordinary here.
+        let Ok(note) = catalog_entry(&note_path) else {
+            continue;
+        };
+        notes.push(note);
     }
     notes.sort_by(|left, right| {
         right
@@ -1708,7 +1822,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_note,
             open_workspace_folder,
-            default_workspace,
+            default_workspaces,
             read_note_at,
             read_note_data,
             open_document_link,
@@ -2141,6 +2255,122 @@ mod tests {
             .notes
             .iter()
             .any(|note| note.name == "second.markdown"));
+    }
+
+    /// The Mac must look in the same container the phone writes to, or the
+    /// folder's whole reason for existing is unmet. This pins the mirrored
+    /// path, because a typo here fails silently: the app simply supplies no
+    /// folder, which is indistinguishable from not being signed in to iCloud.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_icloud_folder_is_the_container_published_from_the_phone() {
+        let home = tempfile::tempdir().unwrap();
+        let documents = home
+            .path()
+            .join("Library/Mobile Documents/iCloud~app~simplemark~ios/Documents");
+        fs::create_dir_all(&documents).unwrap();
+
+        assert_eq!(
+            icloud_workspaces_in(home.path()),
+            vec![documents.canonicalize().unwrap()],
+        );
+    }
+
+    /// The folder a person keeps at the top of iCloud Drive counts too, and
+    /// comes after the container the app publishes.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_icloud_drive_folder_is_supplied_after_the_container() {
+        let home = tempfile::tempdir().unwrap();
+        let mobile = home.path().join("Library/Mobile Documents");
+        let container = mobile.join("iCloud~app~simplemark~ios/Documents");
+        let drive_folder = mobile.join("com~apple~CloudDocs/SimpleMark");
+        fs::create_dir_all(&container).unwrap();
+        fs::create_dir_all(&drive_folder).unwrap();
+
+        assert_eq!(
+            icloud_workspaces_in(home.path()),
+            vec![
+                container.canonicalize().unwrap(),
+                drive_folder.canonicalize().unwrap(),
+            ],
+        );
+    }
+
+    /// Two spellings of one name on a case-insensitive volume are one folder.
+    /// Adopting it twice would put the same notes in the sidebar under two
+    /// headings, each with its own watcher.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn one_folder_is_supplied_once_however_it_is_spelled() {
+        let home = tempfile::tempdir().unwrap();
+        let drive_folder = home
+            .path()
+            .join("Library/Mobile Documents/com~apple~CloudDocs/Simplemark");
+        fs::create_dir_all(&drive_folder).unwrap();
+
+        let supplied = icloud_workspaces_in(home.path());
+        assert_eq!(supplied.len(), 1, "supplied {supplied:?}");
+    }
+
+    /// Signed out of iCloud, iCloud Drive off, or the phone has never run the
+    /// app. None of those is an error to report — desktop simply supplies no
+    /// folder and the shell stays where it was.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn no_icloud_folder_is_an_answer_rather_than_a_failure() {
+        let home = tempfile::tempdir().unwrap();
+
+        assert!(icloud_workspaces_in(home.path()).is_empty());
+    }
+
+    /// A file that stops existing between the listing and the inspection must
+    /// cost that one note, never the folder. Simulated with a symlink whose
+    /// target is deleted, which `read_dir` still reports and `metadata` cannot
+    /// answer for — the same pair of facts iCloud produces while it evicts a
+    /// directory, and the reason a whole collection could vanish over one file.
+    #[test]
+    fn a_note_that_cannot_be_inspected_does_not_fail_the_folder() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("real.md"), b"# Real\n").unwrap();
+
+        let vanished = directory.path().join("vanished.md");
+        fs::write(&vanished, b"# Gone\n").unwrap();
+        let dangling = directory.path().join("dangling.md");
+        std::os::unix::fs::symlink(&vanished, &dangling).unwrap();
+        fs::remove_file(&vanished).unwrap();
+
+        let catalog = workspace_catalog_for_directory(directory.path()).unwrap();
+        assert_eq!(catalog.notes.len(), 1);
+        assert_eq!(catalog.notes[0].name, "real.md");
+    }
+
+    /// Following symlinks is the existing behaviour and stays that way: a note
+    /// reached through a link is a note. Only the broken ones are skipped.
+    #[test]
+    fn a_note_reached_through_a_symlink_is_still_listed() {
+        let directory = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let target = elsewhere.path().join("target.md");
+        fs::write(&target, b"# Target\n").unwrap();
+        std::os::unix::fs::symlink(&target, directory.path().join("linked.md")).unwrap();
+
+        let catalog = workspace_catalog_for_directory(directory.path()).unwrap();
+        assert_eq!(catalog.notes.len(), 1);
+        assert_eq!(catalog.notes[0].name, "linked.md");
+    }
+
+    /// Dropping the separate `is_file` check must not let a directory whose
+    /// name ends in `.md` be listed as a note.
+    #[test]
+    fn a_directory_named_like_a_note_is_not_a_note() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir(directory.path().join("archive.md")).unwrap();
+        fs::write(directory.path().join("real.md"), b"# Real\n").unwrap();
+
+        let catalog = workspace_catalog_for_directory(directory.path()).unwrap();
+        assert_eq!(catalog.notes.len(), 1);
+        assert_eq!(catalog.notes[0].name, "real.md");
     }
 
     #[test]

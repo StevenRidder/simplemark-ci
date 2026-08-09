@@ -9,6 +9,27 @@ export interface WorkspaceStorage {
   setItem(key: string, value: string): void
 }
 
+/**
+ * What the folder store should hold after a launch.
+ *
+ * Listing a folder can fail for reasons that have nothing to do with what the
+ * person wants: iCloud reports an error while it is still materialising a
+ * directory, an external disk is not mounted yet, a network volume is asleep.
+ * Saving only the folders that listed successfully turns any such moment into a
+ * permanent removal — the handle is gone, the sidebar never mentions the folder
+ * again, and nothing anywhere says it happened.
+ *
+ * So an unreachable handle is kept and retried next launch. Only an explicit
+ * removal should ever drop one. Adopted handles come first and keep their
+ * order, since that is the order the sidebar shows.
+ */
+export function retainedFolderHandles(
+  adopted: readonly string[],
+  unreachable: readonly string[],
+): readonly string[] {
+  return [...new Set([...adopted, ...unreachable])]
+}
+
 /** Persists only adopted folder handles; the filesystem remains authoritative. */
 export class WorkspaceFolderStore {
   constructor(private readonly storage: WorkspaceStorage) {}

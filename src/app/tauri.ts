@@ -59,6 +59,7 @@ import { WorkspaceHistoryStore } from './workspace-history.js'
 import type { Visit } from './workspace-history.js'
 import { DRAFT_NOTE_ID, noteRows } from './workspace-view.js'
 import {
+  retainedFolderHandles,
   WorkspaceCollections,
   WorkspaceFolderStore,
   WorkspaceHiddenStore,
@@ -317,8 +318,20 @@ async function startNative(
     watchedFolders.add(handle)
   }
 
+  /**
+   * Handles that could not be listed this launch.
+   *
+   * Kept because failing to list is not the same as being given up on, and
+   * only the person removing a folder should remove it. See
+   * `retainedFolderHandles`.
+   */
+  const unreachableFolders: string[] = []
+
   const persistFolders = (): void => {
-    folderStore.save(collections.folders().map((folder) => folder.handle))
+    folderStore.save(retainedFolderHandles(
+      collections.folders().map((folder) => folder.handle),
+      unreachableFolders,
+    ))
   }
 
   const persistRecentNotes = (): void => {
@@ -887,24 +900,40 @@ async function startNative(
       collections.addFolder(catalog)
       await watchFolder(catalog.handle)
     } catch {
-      // A moved or disconnected folder is omitted rather than resurrected
-      // from stale metadata. The next successful save repairs persistence.
+      // This folder is not listable *right now*, which says nothing about
+      // whether the person still wants it. A folder in iCloud answers with an
+      // error while the daemon is still materialising it, an external disk is
+      // not mounted yet, a network volume is asleep. Dropping the handle here
+      // would be silent and permanent — the sidebar simply never mentions the
+      // folder again — so it is held and retried on the next launch instead.
+      unreachableFolders.push(handle)
     }
   }
-  // A platform that supplies its own document directory has no folder picker
-  // and no folder sidebar narrow enough to reach, so nothing else could ever
-  // adopt one: on iOS the operating system hands the application exactly one
-  // documents directory, published to the Files app. Asked only when the person
-  // has adopted nothing themselves, so their own choice always outranks the
-  // platform's — and desktop, which has a picker, always answers null.
-  if (collections.folders().length === 0) {
+  // The folders this platform supplies, adopted whenever it offers any.
+  //
+  // On iOS that is the operating system's single document directory, and there
+  // is no picker that could choose another. On macOS they are this app's folders
+  // in iCloud Drive — the container the phone writes into, and the folder of the
+  // same name a person keeps at the top of iCloud Drive. None of them is a guess
+  // about where notes live, which is why having folders of your own does not
+  // suppress them: a Mac that shows every folder except the app's own iCloud
+  // folders is exactly the Mac that cannot see a note written on the phone.
+  //
+  // A folder already present is left alone, so somebody who added one by hand
+  // keeps their single copy of it, in the order they put it in.
+  {
     try {
-      const supplied = await invoke<WorkspaceCatalog | null>('default_workspace')
-      if (supplied !== null) {
-        collections.addFolder(supplied)
-        activeCollectionId = supplied.handle
-        saveActiveCollection(window.localStorage, activeCollectionId)
-        await watchFolder(supplied.handle)
+      const supplied = await invoke<readonly WorkspaceCatalog[]>('default_workspaces')
+      for (const catalog of supplied) {
+        if (collections.folder(catalog.handle) !== undefined) continue
+        collections.addFolder(catalog)
+        await watchFolder(catalog.handle)
+        // Only a sole collection decides where launch lands. Otherwise the
+        // person's own restored view is left exactly as they left it.
+        if (collections.folders().length === 1) {
+          activeCollectionId = catalog.handle
+          saveActiveCollection(window.localStorage, activeCollectionId)
+        }
       }
     } catch {
       // An unreachable default is the same as not having one: the shell stays
@@ -976,7 +1005,21 @@ async function startNative(
       if (collections.folder(event.payload) === undefined) return
       const refreshed = await catalogPort.listFolder(event.payload)
       const refresh = collections.refreshFolder(refreshed)
-      if (!refresh.membershipChanged) return
+      if (!refresh.membershipChanged) {
+        // The same notes with different bytes: one was edited rather than
+        // added or removed. Membership is what decides whether the *workspace*
+        // changed, and it did not — but every row carries a preview, a
+        // modified time and its place in a list sorted by that time, and all
+        // three are now wrong. Returning here is why an edited note looked
+        // frozen in every folder until something else forced a repaint.
+        //
+        // Only the repaint belongs here. There is no folder to persist, no
+        // note that went missing, and the open note must not be reopened —
+        // this fires on our own saves too, and reopening on each one would
+        // fight the editor for the document being typed into.
+        reconcileWorkspace()
+        return
+      }
       persistFolders()
 
       const activeWasRemoved = activeHandle !== undefined

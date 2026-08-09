@@ -64,6 +64,7 @@ import type {
 import { looksLikeMermaid, looksLikeSvg, withFenceMetaKey } from '../../domain/index.js'
 import { AssetImageNodeView } from './asset-image-node-view.js'
 import { codeBlockMetaSchema } from './code-fence-meta.js'
+import { pastedTaskListSchema } from './task-list-paste.js'
 import { DiagramNodeView, isZoomableLanguage } from './diagram-node-view.js'
 import type { DiagramViewRegistry } from './diagram-node-view.js'
 import {
@@ -572,6 +573,9 @@ export class MilkdownEditor {
       // Carries the fence info tail (D7): must come after the commonmark
       // preset so the extended code_block schema replaces the stock one.
       .use(codeBlockMetaSchema)
+      // Reads a pasted `<input type="checkbox">` as task state: must come after
+      // the gfm preset so the extended list_item schema replaces the stock one.
+      .use(pastedTaskListSchema)
       .use(codeBlockView)
       .use(mathView)
       .use(inlineMathView)

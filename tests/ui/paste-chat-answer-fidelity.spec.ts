@@ -29,7 +29,12 @@ import {
  * the paste pipeline shows up here as a diff instead of as a surprise in
  * someone's document. Where the answer is a loss it is pinned as a loss.
  *
- * Nothing here argues for changing the routing rule. Two of these losses are
+ * One row has since moved. Task-list state was pinned here as lost — the schema
+ * had no rule for `<input type="checkbox">`, so the ticks were discarded — and
+ * is now lossless; `tests/ui/paste-task-list.spec.ts` owns that behaviour in
+ * full. The math and Mermaid rows are still losses and still pinned as losses.
+ *
+ * Nothing here argues for changing the routing rule. Those remaining losses are
  * the price of a rule that also rescues `BROWSER_CHAT_SELECTION_COPY`, whose
  * `text/plain` is stripped prose with no Markdown in it at all.
  */
@@ -100,11 +105,17 @@ const sourceOnly = (payload: ClipboardPayload): ClipboardPayload => ({
   html: '',
 })
 
-test('the HTML path keeps marks, links, nesting, the table and each fence language', async ({
+test('the HTML path keeps marks, links, nesting, the table, each fence language and task state', async ({
   page,
 }, testInfo) => {
   const html = await pasteAndSerialize(page, BROWSER_CHAT_RICH_ANSWER_COPY, RICH_MARKER)
+  const markdown = await pasteAndSerialize(
+    page,
+    sourceOnly(BROWSER_CHAT_RICH_ANSWER_COPY),
+    RICH_MARKER,
+  )
   await testInfo.attach('html-path.md', { body: html, contentType: 'text/markdown' })
+  await testInfo.attach('markdown-path.md', { body: markdown, contentType: 'text/markdown' })
 
   // Marks and links survive the round trip intact.
   expect(html).toContain('**Python**')
@@ -133,9 +144,19 @@ test('the HTML path keeps marks, links, nesting, the table and each fence langua
   expect(html).toContain('```ts')
   expect(html).toContain('def welford(samples):')
   expect(html).toContain('xs.reduce((a, b) => a + b, 0)')
+
+  // Task lists. This row used to read "state lost": `<input type="checkbox">`
+  // had no schema rule, so the items arrived as ordinary bullets with the ticks
+  // discarded, and the assertion here was `not.toMatch(/\[[ x]\]/)`. It is now
+  // lossless — `task-list-paste.ts` adds the missing `parseDOM` rule — so both
+  // paths agree, and this is the pin that keeps them agreeing.
+  expect(html).toMatch(/^\* \[x] Handles streaming input$/m)
+  expect(html).toMatch(/^\* \[ ] Handles removing a sample$/m)
+  expect(markdown).toContain('[x] Handles streaming input')
+  expect(markdown).toContain('[ ] Handles removing a sample')
 })
 
-test('the HTML path loses the math and the task-list state the source would have kept', async ({
+test('the HTML path loses the math the source would have kept', async ({
   page,
 }, testInfo) => {
   const html = await pasteAndSerialize(page, BROWSER_CHAT_RICH_ANSWER_COPY, RICH_MARKER)
@@ -170,13 +191,6 @@ test('the HTML path loses the math and the task-list state the source would have
   expect(markdown).toContain('\\sigma = \\sqrt{\\frac{1}{N}')
   expect(markdown).not.toContain('```svg')
   expect(markdown).not.toContain('O(nlogn)')
-
-  // Task lists. `<input type="checkbox">` has no schema rule either, so the
-  // items arrive as ordinary bullets and the checked/unchecked state is gone.
-  expect(html).toContain('Handles streaming input')
-  expect(html).not.toMatch(/\[[ x]\]/)
-  expect(markdown).toContain('[x] Handles streaming input')
-  expect(markdown).toContain('[ ] Handles removing a sample')
 })
 
 test('a rendered diagram lands as its picture, and the Mermaid source is gone', async ({

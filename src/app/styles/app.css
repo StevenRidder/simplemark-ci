@@ -1426,6 +1426,13 @@ section.editor::-webkit-scrollbar {
   display: none;
 }
 
+/* Present in the markup at every width, shown only when this menu is being a
+   sheet (the phone rule below turns it on). A dropdown anchored to the title
+   it belongs to needs neither a name nor a Done. */
+.notes-menu-sheet-head {
+  display: none;
+}
+
 .notes-menu-count {
   padding: 5px 9px;
   color: var(--ink-3);
@@ -1973,6 +1980,117 @@ section.editor::-webkit-scrollbar {
     padding-bottom: 8px;
     margin-bottom: 6px;
     border-bottom: 1px solid var(--line);
+  }
+
+  /*
+   * Row actions, revealed by a swipe.
+   *
+   * Close and Pin wait for `:hover` everywhere else, which a phone never
+   * supplies. Here they sit off the right edge at full row height and slide in
+   * behind the row, which slides left to make the room — the shape every list
+   * on this platform uses, so no instruction is needed.
+   *
+   * Close is the destructive-looking one and carries the warning colour, but
+   * it only closes: the file stays on disk, which is why it is not labelled
+   * Delete. iOS has no Trash for an app's own documents, so an actual delete
+   * belongs in Files, not behind a swipe that could be mistaken for one.
+   */
+  /*
+   * Why a note used to need two taps to open.
+   *
+   * `.note-item:hover` revealed Close and Pin — `pointer-events: none` to
+   * `auto`, invisible to interactive — and also swapped the row's background
+   * and hid its separator. WebKit treats a tap that brings new interactive
+   * content out under the finger as a hover-in and withholds the click, so you
+   * could see what appeared before committing to it; the second tap was the
+   * one that opened the note. On a pointer that is a considerate rule. On a
+   * touch screen, where there is no hover to arrive or leave, it is a tax on
+   * every single open.
+   *
+   * So on a phone nothing is hover-gated: the actions are always present and
+   * merely parked off the right edge (below), and the row paints no hover
+   * state at all. One tap, one note.
+   */
+  .note-item {
+    overflow: hidden;
+  }
+
+  .note-item:hover {
+    background: transparent;
+  }
+
+  .note-item:hover::after {
+    opacity: 1;
+  }
+
+  .note-select {
+    transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .note-item.swiped .note-select {
+    transform: translateX(-136px);
+  }
+
+  /*
+   * Both actions are anchored to the same right edge and pushed out by their
+   * own width, so `translateX(100%)` puts each of them fully outside the row.
+   * Anchoring the second one at `right: 68px` instead would leave it parked at
+   * `right: 0` — still on screen, which is what it did on the first build.
+   * Their resting places differ only once the row is open.
+   */
+  .note-close,
+  .note-pin {
+    top: 0;
+    right: 0;
+    height: 100%;
+    width: 68px;
+    border-radius: 0;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(100%);
+    transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .note-close {
+    background: #b4392c;
+    color: #fff;
+  }
+
+  .note-pin {
+    background: color-mix(in srgb, var(--ink-3) 26%, transparent);
+    color: var(--ink);
+  }
+
+  .note-item.swiped .note-close {
+    transform: translateX(0);
+  }
+
+  .note-item.swiped .note-pin {
+    transform: translateX(-68px);
+  }
+
+  /* Only a sheet needs a header; the dropdown this becomes at every other
+     width is dismissed by clicking away from it, which is obvious. */
+  .notes-menu.has-library > .notes-menu-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 8px 8px;
+  }
+
+  .notes-menu-sheet-head strong {
+    font-size: 17px;
+    letter-spacing: -0.015em;
+  }
+
+  .notes-menu-done {
+    min-height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--accent);
+    font: 500 15px var(--sans);
   }
 
   /* Sized for the column, which is 190px wide and never touched by a thumb. */
@@ -4366,5 +4484,46 @@ section.editor::-webkit-scrollbar {
 @media (hover: hover) {
   .figure-viewer-hint {
     display: none;
+  }
+}
+
+/*
+ * The viewer's chrome, given its own room on a phone.
+ *
+ * Zoom, Copy source, Print and Done are all pinned to the same top row. That
+ * row is about 470px of controls, which fits a desktop overlay and does not
+ * fit a 402pt screen — so on a phone they overlapped each other, and all of
+ * them sat on top of the drawing they exist to help you read. The point of
+ * opening a figure full screen is to see it.
+ *
+ * So the top row keeps only the two controls a reader reaches for constantly
+ * — zoom, and the way out — and the two document actions move to the bottom,
+ * where Photos and Preview both put them. The scroll area is then inset by
+ * both bars, which is what actually keeps the drawing clear rather than
+ * merely less covered: a figure that fits the screen now centres in the space
+ * between them instead of underneath them.
+ */
+@media (max-width: 620px) {
+  .figure-viewer-zoom {
+    top: calc(10px + env(safe-area-inset-top));
+    left: 10px;
+  }
+
+  .figure-viewer-close {
+    top: calc(10px + env(safe-area-inset-top));
+    right: 10px;
+  }
+
+  .figure-viewer-toolbar {
+    top: auto;
+    right: 0;
+    bottom: calc(44px + env(safe-area-inset-bottom));
+    left: 0;
+    justify-content: center;
+  }
+
+  .figure-viewer-scroll {
+    padding-top: calc(56px + env(safe-area-inset-top));
+    padding-bottom: calc(90px + env(safe-area-inset-bottom));
   }
 }

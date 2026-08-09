@@ -2171,7 +2171,32 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     exportNotes.title = 'Export — available when a real folder catalog is connected'
     const showAll = menuRow('Recent Notes')
     const showPinned = menuRow('Pinned only')
+
+    /*
+     * A way out that can be seen.
+     *
+     * As a dropdown this needed none: it is small, it is obviously attached to
+     * the title, and clicking anywhere else dismisses it. As a sheet on a
+     * phone it covers most of the screen, and "tap the sliver of list behind
+     * it" is not an instruction anybody is given. Escape is a hardware
+     * keyboard. So the sheet gets a header naming what it is and a Done that
+     * closes it — the same pair Notes and iA Writer put on theirs.
+     *
+     * Built once and left in place; the CSS shows it only when this menu is
+     * actually being a sheet, so the desktop dropdown is untouched.
+     */
+    const sheetHead = document.createElement('div')
+    sheetHead.className = 'notes-menu-sheet-head'
+    const sheetTitle = document.createElement('strong')
+    sheetTitle.textContent = 'Library'
+    const sheetDone = document.createElement('button')
+    sheetDone.type = 'button'
+    sheetDone.className = 'notes-menu-done'
+    sheetDone.textContent = 'Done'
+    sheetHead.append(sheetTitle, sheetDone)
+
     notesMenu.append(
+      sheetHead,
       countRow,
       menuSection('Sort'),
       sortModified,
@@ -2537,10 +2562,86 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       notesMenu.hidden = true
       notesTitle.setAttribute('aria-expanded', 'false')
     }
+    sheetDone.addEventListener('click', () => {
+      closeNotesMenu()
+      notesTitle.focus()
+    })
+
+    /*
+     * Swipe a row to reach Close and Pin.
+     *
+     * Both controls are `opacity: 0` until `.note-item:hover`, which on a
+     * desktop is exactly right and on a phone means they cannot be reached at
+     * all — there is no hover to wait for. (This webview does not even report
+     * `(hover: none)`, so a tap can leave a stuck hover state, which is worse
+     * than either outcome.) Swiping left is where every list on this platform
+     * keeps its row actions, so that is where these go.
+     *
+     * A gesture that is more vertical than horizontal is the list scrolling
+     * and is handed straight back; only a decisive horizontal drag counts.
+     */
+    const SWIPE_TRIGGER = 34
+    let swipeFrom: { row: HTMLElement; x: number; y: number } | null = null
+
+    const closeSwipes = (except?: HTMLElement): void => {
+      for (const row of noteItems.querySelectorAll<HTMLElement>('.note-item.swiped')) {
+        if (row !== except) row.classList.remove('swiped')
+      }
+    }
+
+    noteItems.addEventListener('pointerdown', (event) => {
+      if (!isPhone() || !(event.target instanceof Element)) return
+      if (event.target.closest('.note-close, .note-pin') !== null) return
+      const row = event.target.closest<HTMLElement>('.note-item')
+      if (row === null) return
+      swipeFrom = { row, x: event.clientX, y: event.clientY }
+    })
+
+    noteItems.addEventListener('pointermove', (event) => {
+      if (swipeFrom === null) return
+      const dx = event.clientX - swipeFrom.x
+      const dy = event.clientY - swipeFrom.y
+      // The list scrolls vertically; a gesture that is mostly vertical is its
+      // and must not be stolen part-way through.
+      if (Math.abs(dy) > Math.abs(dx)) {
+        swipeFrom = null
+        return
+      }
+      if (Math.abs(dx) < SWIPE_TRIGGER) return
+      const { row } = swipeFrom
+      swipeFrom = null
+      closeSwipes(row)
+      row.classList.toggle('swiped', dx < 0)
+    })
+
+    const endSwipe = (): void => {
+      swipeFrom = null
+    }
+    noteItems.addEventListener('pointerup', endSwipe)
+    noteItems.addEventListener('pointercancel', endSwipe)
+
+    // While a row is open, tapping it puts it back rather than opening the
+    // note — the platform convention, and the only way to dismiss without
+    // committing to one of the actions. Capture phase, because the row's own
+    // select button would otherwise have already fired.
+    noteItems.addEventListener(
+      'click',
+      (event) => {
+        if (!(event.target instanceof Element)) return
+        const row = event.target.closest<HTMLElement>('.note-item.swiped')
+        if (row === null || event.target.closest('.note-close, .note-pin') !== null) return
+        event.preventDefault()
+        event.stopPropagation()
+        row.classList.remove('swiped')
+      },
+      true,
+    )
     notesTitle.addEventListener('click', () => {
       const open = notesMenu.hidden
       if (open && isPhone()) {
-        notesMenu.insertBefore(libraryRows, notesMenu.firstChild)
+        // After the header, not before it: the sheet has to say what it is and
+        // offer the way out above the list it is offering.
+        notesMenu.insertBefore(libraryRows, sheetHead.nextSibling)
         notesMenu.classList.add('has-library')
       } else if (!open) {
         restoreLibraryColumn()

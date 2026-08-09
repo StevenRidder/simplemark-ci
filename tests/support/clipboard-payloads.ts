@@ -244,10 +244,11 @@ export const TERMINAL_DIFF: ClipboardPayload = {
  * The same diff with colour on: `git -c color.ui=always diff`, verbatim,
  * escape bytes included.
  *
- * It carries both signatures — real SGR sequences *and* `diff --git` — which is
- * why the sniffer chain gives ANSI the higher priority. Recorded rather than
- * typed out because the escapes are exactly the part nobody writes correctly by
- * hand.
+ * Colour does not merely decorate the diff, it hides it: git puts the SGR escape
+ * before the line content, so `diff --git` and `@@` no longer start their lines
+ * and `looksLikeDiff` declines the payload outright. Recorded rather than typed
+ * out for exactly that reason: where the escapes land is the part nobody writes
+ * correctly by hand, and it is the whole difference here.
  */
 export const TERMINAL_ANSI_DIFF: ClipboardPayload = {
   text: "\u001b[1mdiff --git a/route.js b/route.js\u001b[m\n\u001b[1mindex 96358cb..fe2c829 100644\u001b[m\n\u001b[1m--- a/route.js\u001b[m\n\u001b[1m+++ b/route.js\u001b[m\n\u001b[36m@@ -1,3 +1,5 @@\u001b[m\n export function route(html) {\u001b[m\n   return carriesStructure(html) ? \"html\" : \"markdown\"\u001b[m\n }\u001b[m\n\u001b[32m+\u001b[m\n\u001b[32m+\u001b[m\u001b[32mexport const PATHS = [\"html\", \"markdown\", \"tsv\"]\u001b[m\n",

@@ -104,8 +104,12 @@ const SNIFFERS: readonly Sniffer[] = [
     claim: (text: string) => (looksLikeMermaid(text) ? { language: 'mermaid', source: text.trim() } : null),
   },
   // The paste-exhaust tier: the output formats of AI and terminal work.
-  // ANSI outranks diff because coloured git output carries both signatures,
-  // and the escape codes are the more specific claim.
+  // ANSI sits above diff, but the two never actually contend. Git writes the SGR
+  // escape *before* the line content, so a coloured `diff --git` or `@@` line
+  // begins `\x1b[`, and both of `looksLikeDiff`'s signatures are `^`-anchored:
+  // coloured output is ANSI and not diff, plain output is diff and not ANSI.
+  // The order between these two is therefore arbitrary — reordering them would
+  // change nothing. `paste-source-routing.test.ts` pins the disjointness.
   {
     id: 'ansi',
     priority: 19,

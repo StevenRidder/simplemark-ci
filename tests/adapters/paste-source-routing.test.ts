@@ -258,20 +258,16 @@ describe('the paste-exhaust tier', () => {
   })
 
   /**
-   * ...but not for the reason the sniffer chain gives.
-   *
-   * `paste-sniffers.ts` explains ANSI's higher priority with "coloured git
-   * output carries both signatures". A real `git -c color.ui=always diff` does
-   * not: git emits the SGR escape *before* the line content, so the line begins
+   * ...and not because ANSI outranks diff. A real `git -c color.ui=always diff`
+   * emits the SGR escape *before* the line content, so the lines begin
    * `\x1b[1mdiff --git` and `\x1b[36m@@ …`, and both diff signatures are
    * anchored with `^`. `looksLikeDiff` therefore declines outright and the
    * priority contest never happens.
    *
-   * The routing is right either way, and this is a comment being wrong rather
-   * than code being wrong — so nothing in `src/` is changed for it. It is
-   * asserted here because it is the kind of belief that gets relied on later:
-   * anyone reordering these sniffers should know this payload does not test the
-   * order.
+   * Asserted because it is the kind of belief that gets relied on later — it
+   * was in fact written into `paste-sniffers.ts` as the stated reason for the
+   * ordering. Anyone reordering those sniffers should know this payload does
+   * not test the order.
    */
   it('does not match the diff signature at all, because the escape precedes the anchor', () => {
     expect(looksLikeAnsi(TERMINAL_ANSI_DIFF.text)).toBe(true)

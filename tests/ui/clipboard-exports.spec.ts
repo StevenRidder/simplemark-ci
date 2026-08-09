@@ -51,12 +51,28 @@ const clipboardText = (page: import('@playwright/test').Page): Promise<string> =
  * Shell clipboard commands intentionally start an asynchronous platform write.
  * Assert the bytes only after that write has settled; reading immediately can
  * observe the previous system clipboard contents on a loaded CI runner.
+ *
+ * "Previous contents" is not always this spec's own last write. The system
+ * clipboard is one OS-level resource shared by every concurrently running
+ * Playwright worker on a shard runner (verify.yml sets PLAYWRIGHT_WORKERS=2),
+ * so a sibling spec file's own clipboard write can land mid-poll. This is
+ * confirmed, not hypothetical: a CI failure here once observed the exact
+ * Vega-Lite chart JSON that charts.spec.ts's `paste()` helper writes as its
+ * own test setup — evidence the two files' writes raced on one shared
+ * clipboard. `BrowserClipboardPort.write` (src/adapters/clipboard/browser-
+ * clipboard-port.ts) already awaits the browser's native write promise before
+ * this app reports success, so there is no stronger completion signal than
+ * the clipboard bytes themselves to poll on. The fix is headroom, not a
+ * better signal: give the poll enough attempts to land on a clean sample
+ * between sibling writes instead of racing a default ~5s budget.
  */
+const CLIPBOARD_SETTLE_TIMEOUT_MS = 15_000
+
 async function expectClipboard(
   page: import('@playwright/test').Page,
   expected: string,
 ): Promise<void> {
-  await expect.poll(async () => clipboardText(page)).toBe(expected)
+  await expect.poll(async () => clipboardText(page), { timeout: CLIPBOARD_SETTLE_TIMEOUT_MS }).toBe(expected)
 }
 
 /**
@@ -97,7 +113,8 @@ test('Copy Table as Markdown keeps the portable pipe table', async ({ page }) =>
   await openNote(page)
   await caretInThenRun(page, `${EDITOR} table td`, 'copyTableAsMarkdown')
 
-  await expect.poll(async () => clipboardText(page)).toContain('| Region')
+  // Same cross-worker clipboard race expectClipboard's doc comment explains.
+  await expect.poll(async () => clipboardText(page), { timeout: CLIPBOARD_SETTLE_TIMEOUT_MS }).toContain('| Region')
   const md = await clipboardText(page)
   expect(md).toContain('| Region')
   expect(md).toContain('| West')
@@ -114,7 +131,10 @@ test('Copy as Plain Text strips Markdown punctuation but keeps the words', async
   await openNote(page)
   await caretInThenRun(page, `${EDITOR} p`, 'copyAsPlainText')
 
-  await expect.poll(async () => clipboardText(page)).toContain('Prose with bold and a link')
+  // Same cross-worker clipboard race expectClipboard's doc comment explains.
+  await expect
+    .poll(async () => clipboardText(page), { timeout: CLIPBOARD_SETTLE_TIMEOUT_MS })
+    .toContain('Prose with bold and a link')
   const text = await clipboardText(page)
   expect(text).toContain('Prose with bold and a link')
   expect(text).not.toContain('**')
@@ -125,7 +145,8 @@ test('Copy as Markdown keeps the source form', async ({ page }) => {
   await openNote(page)
   await caretInThenRun(page, `${EDITOR} p`, 'copyAsMarkdown')
 
-  await expect.poll(async () => clipboardText(page)).toContain('**bold**')
+  // Same cross-worker clipboard race expectClipboard's doc comment explains.
+  await expect.poll(async () => clipboardText(page), { timeout: CLIPBOARD_SETTLE_TIMEOUT_MS }).toContain('**bold**')
   const md = await clipboardText(page)
   expect(md).toContain('**bold**')
   expect(md).toContain('[link](https://example.com)')

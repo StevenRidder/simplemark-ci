@@ -21,6 +21,7 @@ import { highlightRemark, highlightSchema } from '../../src/adapters/editor/high
 import { inlineMathSchema } from '../../src/adapters/editor/inline-math.js'
 import { largeTableRemark, largeTableSchema } from '../../src/adapters/editor/large-table.js'
 import { mathBlockSchema, mathRemark } from '../../src/adapters/editor/math-block.js'
+import { underlineRemark, underlineSchema } from '../../src/adapters/editor/underline-mark.js'
 import { wikiLinkSchema, wikiRemark } from '../../src/adapters/editor/wiki-link.js'
 
 export type ApplyResult =
@@ -156,6 +157,8 @@ async function createHeadlessMilkdown(): Promise<HeadlessMilkdown> {
     headlessParagraphSchema,
     highlightRemark,
     highlightSchema,
+    underlineRemark,
+    underlineSchema,
     gfmParserPlugins,
     mathRemark,
     inlineMathSchema,
@@ -196,6 +199,67 @@ function decodeSteps(schema: Schema, stepsJson: readonly unknown[]): Step[] | nu
   } catch {
     return null
   }
+}
+
+interface DecodedStep {
+  readonly step: Step
+  readonly inverted: Step
+}
+
+function decodeSequentialSteps(
+  schema: Schema,
+  base: ProseNode,
+  stepsJson: readonly unknown[],
+): { readonly steps: readonly DecodedStep[]; readonly doc: ProseNode } | null {
+  let doc = base
+  const steps: DecodedStep[] = []
+
+  try {
+    for (const stepJson of stepsJson) {
+      const step = Step.fromJSON(schema, stepJson)
+      const result = step.apply(doc)
+      if (result.failed !== null || result.doc === null) return null
+      steps.push({ step, inverted: step.invert(doc) })
+      doc = result.doc
+    }
+  } catch {
+    return null
+  }
+
+  return { steps, doc }
+}
+
+interface ChangedRange {
+  readonly from: number
+  readonly to: number
+}
+
+function replacementRangesInBase(steps: readonly DecodedStep[]): readonly ChangedRange[] {
+  const ranges: ChangedRange[] = []
+  for (let index = 0; index < steps.length; index += 1) {
+    const toBase = new Mapping()
+    for (let prior = index - 1; prior >= 0; prior -= 1) {
+      toBase.appendMap(steps[prior]!.inverted.getMap())
+    }
+    steps[index]!.step.getMap().forEach((oldStart, oldEnd) => {
+      if (oldStart === oldEnd) return
+      const mappedStart = toBase.map(oldStart, 1)
+      const mappedEnd = toBase.map(oldEnd, -1)
+      ranges.push({ from: Math.min(mappedStart, mappedEnd), to: Math.max(mappedStart, mappedEnd) })
+    })
+  }
+  return ranges
+}
+
+function hasOverlappingReplacement(
+  local: readonly DecodedStep[],
+  committed: readonly DecodedStep[],
+): boolean {
+  const localRanges = replacementRangesInBase(local)
+  const committedRanges = replacementRangesInBase(committed)
+  return localRanges.some((left) => committedRanges.some(
+    (right) => left.from < right.to && right.from < left.to,
+  ))
 }
 
 function applySteps(doc: ProseNode, steps: readonly Step[]): ProseNode | null {
@@ -288,25 +352,34 @@ export async function createAuthorityHarness(): Promise<AuthorityHarness> {
     rebase: (base, local, committed) => {
       if (!hasValidContent(base)) return { ok: false, kind: 'invalid_schema' }
 
-      const localSteps = decodeSteps(milkdown.schema, local)
-      const committedSteps = decodeSteps(milkdown.schema, committed)
-      if (localSteps === null || committedSteps === null) return { ok: false, kind: 'invalid_step' }
-
-      const committedDoc = applySteps(base, committedSteps)
-      if (committedDoc === null) return { ok: false, kind: 'invalid_step' }
-      if (!hasValidContent(committedDoc)) return { ok: false, kind: 'invalid_schema' }
+      const localBatch = decodeSequentialSteps(milkdown.schema, base, local)
+      const committedBatch = decodeSequentialSteps(milkdown.schema, base, committed)
+      if (localBatch === null || committedBatch === null) return { ok: false, kind: 'invalid_step' }
+      if (!hasValidContent(committedBatch.doc)) return { ok: false, kind: 'invalid_schema' }
+      if (hasOverlappingReplacement(localBatch.steps, committedBatch.steps)) {
+        return { ok: false, kind: 'rebase_failed' }
+      }
 
       const mapping = new Mapping()
-      for (const step of committedSteps) mapping.appendMap(step.getMap())
+      for (let index = localBatch.steps.length - 1; index >= 0; index -= 1) {
+        mapping.appendMap(localBatch.steps[index]!.inverted.getMap())
+      }
+      for (const { step } of committedBatch.steps) mapping.appendMap(step.getMap())
+
+      const transform = new Transform(committedBatch.doc)
       const mappedSteps: Step[] = []
-      for (const step of localSteps) {
-        const mapped = step.map(mapping)
+      let mapFrom = localBatch.steps.length
+      for (const { step } of localBatch.steps) {
+        const mapped = step.map(mapping.slice(mapFrom))
+        mapFrom -= 1
         if (mapped === null) return { ok: false, kind: 'rebase_failed' }
+        const result = transform.maybeStep(mapped)
+        if (result.failed !== null) return { ok: false, kind: 'rebase_failed' }
+        mapping.appendMap(mapped.getMap(), mapFrom)
         mappedSteps.push(mapped)
       }
 
-      const rebasedDoc = applySteps(committedDoc, mappedSteps)
-      if (rebasedDoc === null) return { ok: false, kind: 'rebase_failed' }
+      const rebasedDoc = transform.doc
       if (!hasValidContent(rebasedDoc)) return { ok: false, kind: 'invalid_schema' }
       return { ok: true, doc: rebasedDoc, stepsJson: mappedSteps.map((step) => step.toJSON()) }
     },

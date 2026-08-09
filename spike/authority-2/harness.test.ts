@@ -45,6 +45,16 @@ function stepsJson(transform: Transform): readonly unknown[] {
   return transform.steps.map((step) => step.toJSON())
 }
 
+function insertText(doc: ProseNode, position: number, text: string): {
+  readonly doc: ProseNode
+  readonly stepJson: unknown
+} {
+  const transform = new Transform(doc).insert(position, doc.type.schema.text(text))
+  const step = transform.steps[0]
+  if (step === undefined) throw new Error('Expected insertion to create a step')
+  return { doc: transform.doc, stepJson: step.toJSON() }
+}
+
 function textRange(doc: ProseNode, target: string): TextRange {
   let found: TextRange | undefined
   doc.descendants((node, pos) => {
@@ -209,6 +219,23 @@ describe('authority harness', () => {
     }
   })
 
+  test('uses the production underline schema extension', async () => {
+    const harness = await createAuthorityHarness()
+    try {
+      const doc = harness.parse('Keep <u>underlined text</u> portable.')
+      let hasUnderline = false
+      doc.descendants((node) => {
+        if (node.marks.some((mark) => mark.type.name === 'underline')) hasUnderline = true
+        return true
+      })
+
+      expect(hasUnderline).toBe(true)
+      expect(harness.serialize(doc)).toContain('<u>underlined text</u>')
+    } finally {
+      await harness.destroy()
+    }
+  })
+
   test('returns invalid_step rather than throwing for malformed step JSON', async () => {
     const harness = await createAuthorityHarness()
     try {
@@ -255,6 +282,114 @@ describe('authority harness', () => {
       if (!result.ok) throw new Error(`Expected rebase to succeed, got ${result.kind}`)
       expect(harness.serialize(result.doc)).toContain('FIRST paragraph')
       expect(harness.serialize(result.doc)).toContain('SECOND paragraph')
+    } finally {
+      await harness.destroy()
+    }
+  })
+
+  test('maps each step in a sequential local batch through earlier local steps', async () => {
+    const harness = await createAuthorityHarness()
+    try {
+      const base = harness.parse('abcd')
+      const firstLocal = insertText(base, 2, 'X')
+      const secondLocal = insertText(firstLocal.doc, 4, 'Y')
+      const committed = insertText(base, 4, 'Z')
+
+      const result = harness.rebase(
+        base,
+        [firstLocal.stepJson, secondLocal.stepJson],
+        [committed.stepJson],
+      )
+
+      expect(result).toMatchObject({ ok: true })
+      if (!result.ok) throw new Error(`Expected rebase to succeed, got ${result.kind}`)
+      expect(result.doc.textContent).toBe('aXbYcZd')
+      expect(result.stepsJson).toHaveLength(2)
+    } finally {
+      await harness.destroy()
+    }
+  })
+
+  test('orders same-position inserts by committed arrival before the rebased local batch', async () => {
+    const harness = await createAuthorityHarness()
+    try {
+      const base = harness.parse('abcd')
+      const local = insertText(base, 3, 'L')
+      const committed = insertText(base, 3, 'C')
+
+      const result = harness.rebase(base, [local.stepJson], [committed.stepJson])
+
+      expect(result).toMatchObject({ ok: true })
+      if (!result.ok) throw new Error(`Expected rebase to succeed, got ${result.kind}`)
+      expect(result.doc.textContent).toBe('abCLcd')
+    } finally {
+      await harness.destroy()
+    }
+  })
+
+  test('rebases a text edit created inside a preceding local structural step', async () => {
+    const harness = await createAuthorityHarness()
+    try {
+      const base = harness.parse('structure target\n\nlater paragraph')
+      const first = paragraphAt(base, 0)
+      const blockquote = base.type.schema.nodes['blockquote']
+      if (blockquote === undefined) throw new Error('Expected CommonMark blockquote node')
+      const structural = new Transform(base).replaceWith(
+        first.pos,
+        first.pos + first.node.nodeSize,
+        blockquote.createChecked(null, first.node),
+      )
+      const text = replaceText(structural.doc, 'target', 'TARGET')
+      const committed = replaceText(base, 'later', 'LATER')
+
+      const result = harness.rebase(
+        base,
+        [...stepsJson(structural), ...text],
+        committed,
+      )
+
+      expect(result).toMatchObject({ ok: true })
+      if (!result.ok) throw new Error(`Expected rebase to succeed, got ${result.kind}`)
+      expect(harness.serialize(result.doc)).toContain('> structure TARGET')
+      expect(result.doc.textContent).toContain('LATER paragraph')
+    } finally {
+      await harness.destroy()
+    }
+  })
+
+  test('refuses an overlapping replacement whose original intent was deleted', async () => {
+    const harness = await createAuthorityHarness()
+    try {
+      const base = harness.parse('replace this target')
+      const local = replaceText(base, 'this target', 'LOCAL')
+      const committed = replaceText(base, 'replace this', 'COMMITTED')
+
+      expect(harness.rebase(base, local, committed)).toEqual({ ok: false, kind: 'rebase_failed' })
+    } finally {
+      await harness.destroy()
+    }
+  })
+
+  test('does not expose an accepted prefix when a later local step cannot rebase', async () => {
+    const harness = await createAuthorityHarness()
+    try {
+      const base = harness.parse('remove target\n\nkeep paragraph')
+      const firstLocal = insertText(base, textRange(base, 'keep').to, ' SAFE')
+      const secondLocal = replaceText(firstLocal.doc, 'target', 'TARGET')
+      const removed = paragraphAt(base, 0)
+      const committed = stepsJson(
+        new Transform(base).delete(removed.pos, removed.pos + removed.node.nodeSize),
+      )
+
+      const result = harness.rebase(
+        base,
+        [firstLocal.stepJson, ...secondLocal],
+        committed,
+      )
+
+      expect(result).toEqual({ ok: false, kind: 'rebase_failed' })
+      expect('doc' in result).toBe(false)
+      expect('stepsJson' in result).toBe(false)
     } finally {
       await harness.destroy()
     }

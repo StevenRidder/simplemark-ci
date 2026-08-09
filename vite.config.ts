@@ -18,6 +18,7 @@ export default defineConfig({
         // port wiring differs (ADR-0001 §Web and native shells).
         tauri: resolve(__dirname, 'tauri.html'),
         fidelity: resolve(__dirname, 'spike/fidelity/index.html'),
+        authority: resolve(__dirname, 'spike/authority-2/index.html'),
       },
     },
   },

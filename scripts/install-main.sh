@@ -79,6 +79,52 @@ refuse_if_running() {
   fi
 }
 
+# The chosen app icon lives in NSUserDefaults (app.simplemark.desktop, key
+# app.simplemark.selected-app-icon — see src-tauri/src/app_icons.rs), not in
+# the bundle, so it survives this replace. But a freshly built bundle itself
+# carries no custom-icon attribute, and SimpleMark only re-applies the stored
+# choice at its own next launch (`app_icons::restore`). Left alone, that means
+# the icon visibly reverts to the original the moment this script replaces
+# the bundle, and only heals once you next open the app. This writes it back
+# immediately, via the identical NSWorkspace mechanism SimpleMark itself
+# uses, so the installed bundle never shows the wrong icon even for a moment.
+#
+# Never fatal: a failure here just means the existing self-heal-on-launch
+# behavior applies, same as before this function existed.
+restore_app_icon() {
+  local icon
+  icon="$(defaults read app.simplemark.desktop app.simplemark.selected-app-icon 2>/dev/null || true)"
+  case "$icon" in
+    live-layers | movable-blocks | blue-trio | electric-blocks | midnight | blue-page) ;;
+    *) return 0 ;;
+  esac
+
+  local png="$BUILD_DIR/src-tauri/icons/alternates/png/$icon.png"
+  if [ ! -f "$png" ]; then
+    note "no bundled artwork for saved icon '$icon' — it will self-heal on next launch"
+    return 0
+  fi
+
+  local ok
+  ok="$(osascript <<EOF
+use framework "AppKit"
+use scripting additions
+set ws to current application's NSWorkspace's sharedWorkspace()
+set img to current application's NSImage's alloc()'s initWithContentsOfFile:"$png"
+if img is missing value then
+  return "false"
+end if
+return (ws's setIcon:img forFile:"$TARGET" options:0) as text
+EOF
+  )" || ok="false"
+
+  if [ "$ok" = "true" ]; then
+    note "restored the '$icon' app icon onto the fresh bundle"
+  else
+    note "could not restore the '$icon' app icon onto the fresh bundle — it will self-heal on next launch"
+  fi
+}
+
 require_tools
 ensure_cargo
 refuse_if_running
@@ -119,4 +165,5 @@ mv "$STAGED" "$TARGET" || die "could not move the staged bundle into place"
 
 note "installed $TARGET"
 note "commit $SHA"
+restore_app_icon
 note "verify in the app: About SimpleMark shows commit ${SHA:0:7}"

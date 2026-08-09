@@ -308,6 +308,8 @@ export interface WindowChrome {
   previewDensity(): PreviewDensity
   /** Replaces one row's subtitle in place, without reordering the list. */
   applyNoteSummary(handle: string, summary: string): void
+  /** Adds an extracted preview without reordering the visible list. */
+  applyNotePreview(handle: string, preview: string): void
   setNotesSort(sort: NotesSort): void
   notesSort(): NotesSort
   toggleNewestOnTop(): void
@@ -2957,6 +2959,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
      */
     applyNoteSummary(handle: string, summary: string): void {
       applySummaryToRow(handle, summary)
+    },
+    applyNotePreview(handle: string, preview: string): void {
+      applySummaryToRow(handle, preview)
     },
     setNotesSort(sort) {
       notesSort = sort

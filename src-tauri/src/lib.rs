@@ -257,6 +257,18 @@ pub struct WorkspaceCatalogEntry {
     preview: Option<String>,
 }
 
+/// A preview delivered after the catalog metadata has already reached the UI.
+///
+/// A cloud-backed file can block while macOS materializes its bytes, so this
+/// travels over an event rather than delaying the folder's initial response.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspacePreview {
+    handle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preview: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct WorkspaceCatalog {
     handle: String,
@@ -795,7 +807,7 @@ fn catalog_entry(path: &Path) -> Result<WorkspaceCatalogEntry, String> {
             .unwrap_or_else(|| path.display().to_string()),
         modified_ms: millis(metadata.modified()),
         created_ms: millis(metadata.created()),
-        preview: preview_of(path),
+        preview: None,
     })
 }
 
@@ -882,6 +894,25 @@ fn list_workspace(handle: String) -> Result<WorkspaceCatalog, String> {
 #[tauri::command]
 fn list_workspace_folder(handle: String) -> Result<WorkspaceCatalog, String> {
     workspace_catalog_for_directory(Path::new(&handle))
+}
+
+/// Starts bounded preview reads only after the UI has listed each note.
+///
+/// The worker may wait for a cloud provider to materialize a placeholder, but
+/// it never occupies AppKit's event loop. A missing or unreadable file emits
+/// no preview, matching the catalog's existing filename-only row behavior.
+#[tauri::command]
+fn request_workspace_previews(app: AppHandle, handles: Vec<String>) {
+    for handle in handles {
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let preview = preview_of(Path::new(&handle));
+            let _ = app.emit(
+                "workspace-note-preview",
+                WorkspacePreview { handle, preview },
+            );
+        });
+    }
 }
 
 #[tauri::command]
@@ -1829,6 +1860,7 @@ pub fn run() {
             inspect_workspace_note,
             list_workspace,
             list_workspace_folder,
+            request_workspace_previews,
             create_note,
             save_new_note,
             rename_note,
@@ -1888,7 +1920,7 @@ mod tests {
 
     /// The D7 contract in the one place this crate can break it.
     #[test]
-    fn catalog_entries_carry_a_preview() {
+    fn catalog_entries_do_not_read_preview_bytes() {
         let directory = tempfile::tempdir().unwrap();
         fs::write(
             directory.path().join("note.md"),
@@ -1899,8 +1931,8 @@ mod tests {
         let catalog = workspace_catalog_for_directory(directory.path()).unwrap();
 
         assert_eq!(
-            catalog.notes[0].preview.as_deref(),
-            Some("The agent rewrites this file while you read it.")
+            catalog.notes[0].preview,
+            None,
         );
     }
 
@@ -1916,19 +1948,17 @@ mod tests {
         assert_eq!(catalog.notes[0].preview, None);
     }
 
-    /// Opening a folder must not read whole notes. A large file still yields
-    /// its preview from the first 8 KiB.
+    /// Preview extraction stays bounded even though it happens after the
+    /// metadata-only folder catalog has already rendered.
     #[test]
-    fn reads_only_a_bounded_prefix_of_each_note() {
+    fn preview_worker_reads_only_a_bounded_prefix_of_each_note() {
         let directory = tempfile::tempdir().unwrap();
         let mut huge = String::from("# Huge\n\nThe opening sentence is right here.\n");
         huge.push_str(&"filler filler filler\n".repeat(250_000));
         fs::write(directory.path().join("huge.md"), huge.as_bytes()).unwrap();
 
-        let catalog = workspace_catalog_for_directory(directory.path()).unwrap();
-
         assert_eq!(
-            catalog.notes[0].preview.as_deref(),
+            preview_of(&directory.path().join("huge.md")).as_deref(),
             Some("The opening sentence is right here.")
         );
     }

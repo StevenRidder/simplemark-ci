@@ -49,6 +49,7 @@ import { sampleWorkspaceOptions } from './sample-workspace.js'
 import { WorkspacePins } from './workspace-pins.js'
 import { NoteWalk } from './note-walk.js'
 import { applySummariesToCatalog } from './note-summary-overlay.js'
+import { applyPreviewsToCatalog } from './note-preview-overlay.js'
 import { APP_ICON_CHOICES, normaliseAppIconId } from './app-icons.js'
 import {
   TauriNoteSummaryPort,
@@ -198,6 +199,11 @@ interface NativeController {
   openPath(path: string): Promise<void>
 }
 
+interface WorkspacePreview {
+  readonly handle: string
+  readonly preview?: string
+}
+
 /** Owns the one active document while every open route shares one transition. */
 async function startNative(
   root: HTMLElement,
@@ -254,10 +260,20 @@ async function startNative(
    * render start from it instead.
    */
   const arrivedSummaries = new Map<string, string>()
+  const arrivedPreviews = new Map<string, string>()
 
-  /** The catalog as the note list should show it: summary where we have one. */
+  /** The catalog as the note list should show it: AI summaries beat previews. */
   const withSummaries = (catalog: WorkspaceCatalog): WorkspaceCatalog =>
-    applySummariesToCatalog(catalog, arrivedSummaries)
+    applySummariesToCatalog(
+      applyPreviewsToCatalog(catalog, arrivedPreviews),
+      arrivedSummaries,
+    )
+
+  await listen<WorkspacePreview>('workspace-note-preview', ({ payload }) => {
+    if (payload.preview === undefined) return
+    arrivedPreviews.set(payload.handle, payload.preview)
+    if (!arrivedSummaries.has(payload.handle)) current?.applyNotePreview(payload.handle, payload.preview)
+  })
 
   // Arrives on a background thread over a second after it was asked for, so
   // the row is patched in place rather than repainting and re-running the sort.

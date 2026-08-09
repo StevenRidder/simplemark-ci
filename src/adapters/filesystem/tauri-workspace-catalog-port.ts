@@ -22,23 +22,26 @@ export class TauriWorkspaceCatalogPort implements WorkspaceCatalogPort {
   constructor(private readonly invoke: TauriInvoke) {}
 
   async inspect(documentHandle: string): Promise<WorkspaceCatalog> {
-    return this.invoke<NativeWorkspaceCatalog>('inspect_workspace_note', {
+    return this.requestPreviews(await this.invoke<NativeWorkspaceCatalog>('inspect_workspace_note', {
       handle: documentHandle,
-    })
+    }))
   }
 
   async chooseFolder(): Promise<WorkspaceCatalog | null> {
-    return this.invoke<NativeWorkspaceCatalog | null>('open_workspace_folder')
+    const catalog = await this.invoke<NativeWorkspaceCatalog | null>('open_workspace_folder')
+    return catalog === null ? null : this.requestPreviews(catalog)
   }
 
   async listAround(documentHandle: string): Promise<WorkspaceCatalog> {
-    return this.invoke<NativeWorkspaceCatalog>('list_workspace', { handle: documentHandle })
+    return this.requestPreviews(await this.invoke<NativeWorkspaceCatalog>('list_workspace', {
+      handle: documentHandle,
+    }))
   }
 
   async listFolder(workspaceHandle: string): Promise<WorkspaceCatalog> {
-    return this.invoke<NativeWorkspaceCatalog>('list_workspace_folder', {
+    return this.requestPreviews(await this.invoke<NativeWorkspaceCatalog>('list_workspace_folder', {
       handle: workspaceHandle,
-    })
+    }))
   }
 
   async create(workspaceHandle: string): Promise<OpenedDocument> {
@@ -48,6 +51,12 @@ export class TauriWorkspaceCatalogPort implements WorkspaceCatalogPort {
       name: note.name,
       bytes: decodeBase64(note.bytes),
     }
+  }
+
+  private requestPreviews(catalog: WorkspaceCatalog): WorkspaceCatalog {
+    const handles = catalog.notes.map((note) => note.handle)
+    if (handles.length > 0) void this.invoke('request_workspace_previews', { handles })
+    return catalog
   }
 }
 

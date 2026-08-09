@@ -111,6 +111,8 @@ export interface AppComposition {
   runNativeContextCommand(command: DocumentCommandId): void
   /** Replaces one note row's subtitle in place, without reordering the list. */
   applyNoteSummary(handle: string, summary: string): void
+  /** Adds an extracted note preview without reordering the visible list. */
+  applyNotePreview(handle: string, preview: string): void
   /** Whether the optional styles bar is showing, for the View menu checkmark. */
   stylesBarVisible(): boolean
   /**
@@ -1015,6 +1017,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       printFigure: () => editor?.diagram.printFigure() ?? false,
     },
     applyNoteSummary: (handle, summary) => chrome.applyNoteSummary(handle, summary),
+    applyNotePreview: (handle, preview) => chrome.applyNotePreview(handle, preview),
     runNativeContextCommand: (command) => {
       void copySelection(command, nativeContextSelection)
     },

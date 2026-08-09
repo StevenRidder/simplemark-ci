@@ -4,7 +4,7 @@ import { TauriWorkspaceCatalogPort } from '../../src/adapters/filesystem/tauri-w
 import type { TauriInvoke } from '../../src/adapters/filesystem/tauri-file-port.js'
 
 describe('TauriWorkspaceCatalogPort', () => {
-  it('inspects only the explicitly opened note for Recent Notes', async () => {
+  it('inspects one Recent Note before requesting its preview', async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = []
     const invoke: TauriInvoke = async <T>(command: string, args?: Record<string, unknown>) => {
       calls.push({ command, ...(args === undefined ? {} : { args }) })
@@ -20,10 +20,11 @@ describe('TauriWorkspaceCatalogPort', () => {
     expect(catalog.notes.map((note) => note.handle)).toEqual(['/Downloads/opened.md'])
     expect(calls).toEqual([
       { command: 'inspect_workspace_note', args: { handle: '/Downloads/opened.md' } },
+      { command: 'request_workspace_previews', args: { handles: ['/Downloads/opened.md'] } },
     ])
   })
 
-  it('lists the real sibling catalog without inventing UI state', async () => {
+  it('lists sibling metadata before requesting their previews', async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = []
     const invoke: TauriInvoke = async <T>(command: string, args?: Record<string, unknown>) => {
       calls.push({ command, ...(args === undefined ? {} : { args }) })
@@ -40,7 +41,10 @@ describe('TauriWorkspaceCatalogPort', () => {
     const catalog = await new TauriWorkspaceCatalogPort(invoke).listAround('/notes/a.md')
 
     expect(catalog.notes.map((note) => note.handle)).toEqual(['/notes/a.md', '/notes/b.markdown'])
-    expect(calls).toEqual([{ command: 'list_workspace', args: { handle: '/notes/a.md' } }])
+    expect(calls).toEqual([
+      { command: 'list_workspace', args: { handle: '/notes/a.md' } },
+      { command: 'request_workspace_previews', args: { handles: ['/notes/a.md', '/notes/b.markdown'] } },
+    ])
   })
 
   it('refreshes an already adopted folder by its own handle', async () => {
@@ -55,7 +59,7 @@ describe('TauriWorkspaceCatalogPort', () => {
     expect(calls).toEqual([{ command: 'list_workspace_folder', args: { handle: '/notes' } }])
   })
 
-  it('adopts every Markdown note only after an explicit folder choice', async () => {
+  it('adopts a chosen folder before requesting its note previews', async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = []
     const invoke: TauriInvoke = async <T>(command: string, args?: Record<string, unknown>) => {
       calls.push({ command, ...(args === undefined ? {} : { args }) })
@@ -72,7 +76,10 @@ describe('TauriWorkspaceCatalogPort', () => {
     const catalog = await new TauriWorkspaceCatalogPort(invoke).chooseFolder()
 
     expect(catalog?.notes).toHaveLength(2)
-    expect(calls).toEqual([{ command: 'open_workspace_folder' }])
+    expect(calls).toEqual([
+      { command: 'open_workspace_folder' },
+      { command: 'request_workspace_previews', args: { handles: ['/notes/a.md', '/notes/b.md'] } },
+    ])
   })
 
   it('treats cancelling the folder picker as an ordinary outcome', async () => {

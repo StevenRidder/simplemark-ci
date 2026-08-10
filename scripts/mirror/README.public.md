@@ -57,6 +57,14 @@ Two rich samples now ship with the app: [Welcome to SimpleMark](docs/showcase/we
 
 What is deliberately not the headline: hosted accounts, agent orchestration, and multi-person collaboration. Those remain evidence-gated follow-on work. SimpleMark must be worth installing when it is just you, your local `.md` files, and the things that write them.
 
+## Download (pre-alpha, macOS)
+
+**[Star SimpleMark on GitHub](https://github.com/StevenRidder/simplemark)** to follow the notarized macOS DMG — that build is the public install path and will land on [Releases](https://github.com/StevenRidder/simplemark/releases/latest).
+
+Pre-alpha: expect sharp edges. Always rendered. Always your file. No account.
+
+When the DMG is published, use **Download for macOS** on the latest Release. Until then, starring is the useful follow.
+
 ## Run it
 
     npm install

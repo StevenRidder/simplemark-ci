@@ -1,22 +1,25 @@
 import { buildSourceMap, emitDocument } from '../domain/index.js'
 
 import { dirtyBlocks } from './dirty-blocks.js'
-import type { BlockBoundaryPort, FilePort } from './ports.js'
+import type {
+  BlockBoundaryPort,
+  FilePort,
+  StepApplicationResult,
+  StepBatch,
+  StepDocumentPort,
+} from './ports.js'
 
 /**
  * The coordination authority for one open document (ADR-0002).
  *
  * Every change — from the editor today, from the MCP adapter later — reaches the
- * document through `apply`. Nothing else may mutate it, which is what makes
- * `expectedRevision` meaningful: it is the check that will later refuse an
- * agent's late write instead of letting it silently overwrite a human edit.
+ * document through this authority. Structural changes carry a base version and
+ * are rebased over later accepted step batches. Whole-document changes remain a
+ * compatibility path and form an explicit barrier that stale steps cannot cross.
  *
- * This is the EDITOR-1 subset. Transactions carry whole-document Markdown rather
- * than structural steps, and there is no source baseline or dirty-block
- * serialization yet — those are FIDELITY-1's, and coarse whole-document
- * serialization is explicitly *not* a D7 fidelity claim. Run generations and
- * scoped agent transactions arrive with the live-agent deliverable. The shape of
- * the API is what matters now: one authority, one revision counter, one save.
+ * Run generations and scoped agent transactions arrive with the live-agent
+ * deliverable. This layer sequences opaque step JSON but never interprets it;
+ * the editor adapter owns schema-aware application and rebasing.
  *
  * Pure: imports `domain` and its own ports only. No DOM, no ProseMirror, no
  * filesystem — the boundary check enforces it.
@@ -48,13 +51,60 @@ export type ApplyResult =
       readonly actual: number
     }
 
+export interface StepTransaction {
+  readonly actorId: string
+  /** Human-readable label, surfaced in activity. */
+  readonly name: string
+  /** Last authority revision observed by the submitter. A rebase input, not a guard. */
+  readonly baseVersion: number
+  readonly steps: StepBatch
+}
+
+export type StepTransactionError =
+  | 'capability_denied'
+  | 'invalid_version'
+  | 'invalid_step'
+  | 'invalid_schema'
+  | 'rebase_failed'
+
+export type StepTransactionApplyResult =
+  | {
+      readonly ok: true
+      readonly revision: number
+      readonly rebased: boolean
+      /** The accepted batch, mapped onto the current document when rebased. */
+      readonly steps: StepBatch
+    }
+  | { readonly ok: false; readonly reason: StepTransactionError }
+
 export type SaveResult =
   | { readonly ok: true; readonly revision: number }
   | { readonly ok: false; readonly reason: string }
 
+function cloneStepBatch(batch: StepBatch): StepBatch {
+  return structuredClone(batch)
+}
+
+type AcceptedChange =
+  | {
+      readonly kind: 'steps'
+      readonly actorId: string
+      readonly name: string
+      readonly steps: StepBatch
+    }
+  | {
+      readonly kind: 'barrier'
+      readonly actorId: string
+      readonly name: string
+    }
+
 export class DocumentSession {
   #revision = 0
   #dirty = false
+  /** Document text at version zero and after every accepted change. */
+  readonly #documents: string[]
+  /** Change at index n advances the document from version n to n + 1. */
+  readonly #changes: AcceptedChange[] = []
   /**
    * The document's bytes as last read from or written to disk.
    *
@@ -71,11 +121,17 @@ export class DocumentSession {
     readonly name: string,
     private markdown: string,
     private readonly boundaries?: BlockBoundaryPort,
+    private readonly steps?: StepDocumentPort,
   ) {
     this.#baseline = markdown
+    this.#documents = [markdown]
   }
 
-  static async open(port: FilePort, boundaries?: BlockBoundaryPort): Promise<DocumentSession> {
+  static async open(
+    port: FilePort,
+    boundaries?: BlockBoundaryPort,
+    steps?: StepDocumentPort,
+  ): Promise<DocumentSession> {
     const opened = await port.open()
     return new DocumentSession(
       port,
@@ -83,6 +139,7 @@ export class DocumentSession {
       opened.name,
       new TextDecoder().decode(opened.bytes),
       boundaries,
+      steps,
     )
   }
 
@@ -108,7 +165,66 @@ export class DocumentSession {
     this.markdown = transaction.markdown
     this.#revision += 1
     this.#dirty = true
+    this.#documents.push(this.markdown)
+    this.#changes.push({
+      kind: 'barrier',
+      actorId: transaction.actorId,
+      name: transaction.name,
+    })
     return { ok: true, revision: this.#revision }
+  }
+
+  /**
+   * Accept an ordered structural batch, rebasing it when the submitter is stale.
+   *
+   * Rejections are atomic: the current document, revision, dirty state, and log
+   * change only after the editor-owned port has returned one valid result.
+   */
+  applySteps(transaction: StepTransaction): StepTransactionApplyResult {
+    if (this.steps === undefined) return { ok: false, reason: 'capability_denied' }
+    if (
+      !Number.isInteger(transaction.baseVersion)
+      || transaction.baseVersion < 0
+      || transaction.baseVersion > this.#revision
+    ) {
+      return { ok: false, reason: 'invalid_version' }
+    }
+
+    const rebased = transaction.baseVersion !== this.#revision
+    let result: StepApplicationResult
+    if (rebased) {
+      const changes = this.#changes.slice(transaction.baseVersion)
+      const baseMarkdown = this.#documents[transaction.baseVersion]
+      if (baseMarkdown === undefined) return { ok: false, reason: 'invalid_version' }
+      const committedBatches: StepBatch[] = []
+      for (const change of changes) {
+        if (change.kind === 'barrier') return { ok: false, reason: 'rebase_failed' }
+        committedBatches.push(change.steps)
+      }
+      result = this.steps.rebaseSteps(baseMarkdown, transaction.steps, committedBatches)
+    } else {
+      result = this.steps.applySteps(this.markdown, transaction.steps)
+    }
+
+    if (!result.ok) return { ok: false, reason: result.kind }
+
+    this.markdown = result.markdown
+    this.#revision += 1
+    this.#dirty = true
+    const acceptedSteps = cloneStepBatch(result.steps)
+    this.#documents.push(this.markdown)
+    this.#changes.push({
+      kind: 'steps',
+      actorId: transaction.actorId,
+      name: transaction.name,
+      steps: acceptedSteps,
+    })
+    return {
+      ok: true,
+      revision: this.#revision,
+      rebased,
+      steps: cloneStepBatch(acceptedSteps),
+    }
   }
 
   async save(force = false): Promise<SaveResult> {

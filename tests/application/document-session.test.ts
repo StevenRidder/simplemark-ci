@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'vitest'
 
 import { DocumentSession } from '../../src/application/index.js'
-import type { FilePort, OpenedDocument } from '../../src/application/index.js'
+import type {
+  FilePort,
+  OpenedDocument,
+  StepApplicationResult,
+  StepBatch,
+  StepDocumentPort,
+} from '../../src/application/index.js'
 
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
@@ -21,6 +27,47 @@ function stubPort(initial: string, options: { failSave?: string } = {}) {
     },
   }
   return { port, saved }
+}
+
+interface TestStep {
+  readonly append?: string
+  readonly error?: 'invalid_step' | 'invalid_schema' | 'rebase_failed'
+}
+
+function stepPort() {
+  const rebases: {
+    readonly baseMarkdown: string
+    readonly localSteps: StepBatch
+    readonly committedBatches: readonly StepBatch[]
+  }[] = []
+
+  const apply = (markdown: string, steps: StepBatch): StepApplicationResult => {
+    let next = markdown
+    for (const step of steps as readonly TestStep[]) {
+      if (step.error !== undefined) return { ok: false, kind: step.error }
+      if (typeof step.append !== 'string') return { ok: false, kind: 'invalid_step' }
+      next += step.append
+    }
+    return { ok: true, markdown: next, steps }
+  }
+
+  const port: StepDocumentPort = {
+    applySteps: apply,
+    rebaseSteps(baseMarkdown, localSteps, committedBatches) {
+      rebases.push({ baseMarkdown, localSteps, committedBatches })
+      let current = baseMarkdown
+      for (const batch of committedBatches) {
+        const committed = apply(current, batch)
+        if (!committed.ok) return committed
+        current = committed.markdown
+      }
+      return apply(current, localSteps)
+    },
+    invertSteps: () => null,
+    markdownToSteps: () => ({ ok: false, kind: 'invalid_step' }),
+  }
+
+  return { port, rebases }
 }
 
 describe('DocumentSession', () => {
@@ -69,9 +116,152 @@ describe('DocumentSession', () => {
     })
   })
 
-  // The expectedRevision check is the whole point of routing edits through the
-  // session: it is what will later let an agent's late write be refused rather
-  // than silently overwriting a human edit.
+  test('commits a fresh structural batch without rebasing', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+
+    const result = session.applySteps({
+      actorId: 'agent',
+      name: 'Append A',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      revision: 1,
+      rebased: false,
+      steps: [{ append: 'A' }],
+    })
+    expect(session.snapshot()).toEqual({ revision: 1, markdown: 'baseA', dirty: true })
+    expect(steps.rebases).toEqual([])
+  })
+
+  test('rebases a stale structural batch over every accepted batch since its base version', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+
+    session.applySteps({
+      actorId: 'human',
+      name: 'Append A',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+    session.applySteps({
+      actorId: 'human',
+      name: 'Append B',
+      baseVersion: 1,
+      steps: [{ append: 'B' }],
+    })
+
+    const stale = session.applySteps({
+      actorId: 'agent',
+      name: 'Append C',
+      baseVersion: 0,
+      steps: [{ append: 'C' }],
+    })
+
+    expect(stale).toEqual({
+      ok: true,
+      revision: 3,
+      rebased: true,
+      steps: [{ append: 'C' }],
+    })
+    expect(session.snapshot()).toEqual({ revision: 3, markdown: 'baseABC', dirty: true })
+    expect(steps.rebases).toEqual([{
+      baseMarkdown: 'base',
+      localSteps: [{ append: 'C' }],
+      committedBatches: [[{ append: 'A' }], [{ append: 'B' }]],
+    }])
+  })
+
+  test('reports a failed rebase without changing the accepted document or revision', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+    session.applySteps({
+      actorId: 'human',
+      name: 'Append A',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+    const before = session.snapshot()
+
+    const refused = session.applySteps({
+      actorId: 'agent',
+      name: 'Destroyed target',
+      baseVersion: 0,
+      steps: [{ error: 'rebase_failed' }],
+    })
+
+    expect(refused).toEqual({ ok: false, reason: 'rebase_failed' })
+    expect(session.snapshot()).toEqual(before)
+  })
+
+  test('propagates schema rejection without changing the accepted document or revision', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+
+    expect(session.applySteps({
+      actorId: 'agent',
+      name: 'Invalid structure',
+      baseVersion: 0,
+      steps: [{ error: 'invalid_schema' }],
+    })).toEqual({ ok: false, reason: 'invalid_schema' })
+    expect(session.snapshot()).toEqual({ revision: 0, markdown: 'base', dirty: false })
+  })
+
+  test('records legacy whole-document apply as a barrier no stale batch rebases across', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+    session.apply({
+      actorId: 'external',
+      name: 'External file import',
+      expectedRevision: 0,
+      markdown: 'replaced',
+    })
+
+    const refused = session.applySteps({
+      actorId: 'agent',
+      name: 'Late structural change',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+
+    expect(refused).toEqual({ ok: false, reason: 'rebase_failed' })
+    expect(session.snapshot()).toEqual({ revision: 1, markdown: 'replaced', dirty: true })
+    expect(steps.rebases).toEqual([])
+  })
+
+  test('rejects an invalid base version and an unavailable structural capability atomically', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+
+    expect(session.applySteps({
+      actorId: 'agent',
+      name: 'Future change',
+      baseVersion: 1,
+      steps: [{ append: 'A' }],
+    })).toEqual({ ok: false, reason: 'invalid_version' })
+    expect(session.snapshot()).toEqual({ revision: 0, markdown: 'base', dirty: false })
+
+    const unconfigured = await DocumentSession.open(files)
+    expect(unconfigured.applySteps({
+      actorId: 'agent',
+      name: 'Unsupported change',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })).toEqual({ ok: false, reason: 'capability_denied' })
+    expect(unconfigured.snapshot()).toEqual({ revision: 0, markdown: 'base', dirty: false })
+  })
+
+  // Whole-document compatibility changes still use compare-and-swap because
+  // they are barriers, not structural batches that can be rebased safely.
   test('a transaction built against a stale revision is refused and changes nothing', async () => {
     const { port } = stubPort('# Title\n')
     const session = await DocumentSession.open(port)

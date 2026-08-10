@@ -10,7 +10,7 @@ set -euo pipefail
 # Three distinct repos, three distinct jobs:
 #   6th-Element-Labs/simplemark     private canonical — the only source of truth
 #   StevenRidder/simplemark-ci      public CI sandbox — temporary, full tree, do not repurpose
-#   StevenRidder/simplemark-public  this mirror — clean, curated, no agent plumbing
+#   StevenRidder/simplemark         public product mirror — clean, curated, no agent plumbing
 #
 # This script is private-side tooling and never ships in the export.
 
@@ -35,7 +35,8 @@ HIDDEN_PATH_RE='^(website/|AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattri
 # Text that must never appear in the mirror, even inside a file that ships.
 # Scoped to the agent/board scaffolding and CI mechanics — not to every mention
 # of Switchboard, which is a sibling product the docs legitimately cite.
-HIDDEN_TEXT_RE='AGENTS\.md|CLAUDE\.md|superpowers|ci-sandbox|simplemark-ci|taikun-plan|plan\.taikunai|PM_MCP_TOKEN|SWITCHBOARD_TOKEN|MIRROR_DRY_RUN|6th-Element-Labs/simplemark|StevenRidder/simplemark([^[:alnum:]-]|$)|docs/decisions/|(PRODUCT|POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX|DESIGN|COLLABORATION|MCP-SERVER|TECH-SPEC|APPLE-NATIVE-AI|APPLE-NATIVE-CAPABILITIES|NATIVE-WORKSPACE|READER-CANVAS-ZOOM-SCOPE|SIDEBAR-PARITY-TEST-PLAN|SKETCH-TO-DIAGRAM|UPDATE-NOTIFICATION|WELLVIEW-PASTE|THIRD-PARTY-ICONS|LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT|BEAR-EDIT-MENU-INVENTORY|BEAR-INSPIRED-EDITING|MERGE-QUEUE|RELEASE-CONTRACT|RELEASE-TRUST|simplemark-1\.0-launch-plan)\.md|ADR-000[124567]'
+# StevenRidder/simplemark is the public product repo and is allowed.
+HIDDEN_TEXT_RE='AGENTS\.md|CLAUDE\.md|superpowers|ci-sandbox|simplemark-ci|taikun-plan|plan\.taikunai|PM_MCP_TOKEN|SWITCHBOARD_TOKEN|MIRROR_DRY_RUN|6th-Element-Labs/simplemark|docs/decisions/|(PRODUCT|POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX|DESIGN|COLLABORATION|MCP-SERVER|TECH-SPEC|APPLE-NATIVE-AI|APPLE-NATIVE-CAPABILITIES|NATIVE-WORKSPACE|READER-CANVAS-ZOOM-SCOPE|SIDEBAR-PARITY-TEST-PLAN|SKETCH-TO-DIAGRAM|UPDATE-NOTIFICATION|WELLVIEW-PASTE|THIRD-PARTY-ICONS|LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT|BEAR-EDIT-MENU-INVENTORY|BEAR-INSPIRED-EDITING|MERGE-QUEUE|RELEASE-CONTRACT|RELEASE-TRUST|simplemark-1\.0-launch-plan)\.md|ADR-000[124567]'
 
 # Documents that do not ship. References to them are de-linked rather than
 # deleted, so the surrounding sentence survives and the mirror has no dead links.

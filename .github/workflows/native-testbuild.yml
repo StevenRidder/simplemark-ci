@@ -235,3 +235,87 @@ jobs:
           path: .artifacts/native-build-${{ matrix.leg }}.log
           if-no-files-found: warn
           retention-days: 7
+
+  # iOS does not belong in the matrix above. That matrix exists to produce
+  # installers a tester can run, and iOS has none to give: the App Store is the
+  # only delivery path, signing needs a provisioning profile no CI runner should
+  # hold, and a simulator build proves nothing about a device.
+  #
+  # What it does need is the check the four legs above give the desktop for
+  # free — does the Rust actually compile for this platform. Twice in one
+  # afternoon it did not, both times because a crate that has no iOS backend was
+  # added for the desktop and nothing objected until a build was run by hand:
+  # `notify` gates every backend behind a desktop `target_os`, `trash` has no
+  # iOS platform module, and a single-instance lock is meaningless where the
+  # system already guarantees one process. Each was found by a person, hours
+  # later. `cargo check` finds all three in minutes.
+  ios-check:
+    name: ios-arm64 (check)
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Add the iOS Rust target
+        run: rustup target add aarch64-apple-ios
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ios-check-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ios-check-cargo-
+
+      - name: Install the workspace dependencies
+        run: npm ci
+
+      # `tauri-build` resolves the configured frontend output during `build.rs`,
+      # so the bundle has to exist before the crate can be checked at all. This
+      # is the same `vite build` the desktop legs get from `tauri build`.
+      - name: Build the frontend
+        run: npm run build
+
+      # Deliberately `check`, not `build`: linking a static library for a device
+      # adds minutes and proves nothing extra here. Every failure this job is
+      # meant to catch — a crate with no iOS backend, an unguarded desktop-only
+      # call, a `cfg` that lets one through — is a type or resolution error, and
+      # surfaces at check time.
+      #
+      # And deliberately `--lib`, not `--all-targets`. The test targets pull in
+      # `muda`, which is a dev-dependency precisely because it is the desktop
+      # menubar's own accelerator parser — it has no iOS platform module and
+      # fails to resolve `platform_impl` for this target. Checking it here would
+      # make this job permanently red for a reason that has nothing to do with
+      # the app iOS ships. The library is what goes on the phone; the library is
+      # what is checked.
+      - name: Check that the Rust compiles for iOS
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios --lib \
+            2>&1 | tee .artifacts/native-build-ios-check.log
+
+      # Named to the same convention as the four desktop legs, because §10
+      # allows `always()` on a diagnostic build log and on nothing else — this
+      # is that log for the leg that has no installer to upload beside it.
+      - name: Upload the build log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: simplemark-build-log-ios-check-${{ github.sha }}
+          path: .artifacts/native-build-ios-check.log
+          if-no-files-found: warn
+          retention-days: 7

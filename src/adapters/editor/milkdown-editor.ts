@@ -676,6 +676,7 @@ export class MilkdownEditor {
   runCommand(command: EditorCommandName): void {
     this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
+      syncTextSelectionFromDOM(view)
       view.focus()
     })
 
@@ -2044,6 +2045,41 @@ export class MilkdownEditor {
     this.#activeTable = undefined
     this.#activeTableCell = undefined
     await this.editor.destroy()
+  }
+}
+
+/**
+ * Pulls a live browser text selection into ProseMirror before focus restores
+ * ProseMirror's last known caret.
+ *
+ * A click moves the DOM selection synchronously, while ProseMirror observes
+ * the resulting `selectionchange` later. A toolbar or native-menu command can
+ * arrive in that gap under load. Focusing first would overwrite the new DOM
+ * caret with stale editor state and apply the command to the previous block.
+ */
+function syncTextSelectionFromDOM(view: EditorView): void {
+  const selection = view.dom.ownerDocument.getSelection()
+  if (selection === null || selection.rangeCount === 0) return
+
+  const { anchorNode, focusNode } = selection
+  if (
+    anchorNode === null
+    || focusNode === null
+    || anchorNode.nodeType !== 3
+    || focusNode.nodeType !== 3
+    || !view.dom.contains(anchorNode)
+    || !view.dom.contains(focusNode)
+  ) return
+
+  try {
+    const anchor = view.posAtDOM(anchorNode, selection.anchorOffset)
+    const head = view.posAtDOM(focusNode, selection.focusOffset)
+    const next = TextSelection.create(view.state.doc, anchor, head)
+    if (!next.eq(view.state.selection)) view.dispatch(view.state.tr.setSelection(next))
+  } catch (error: unknown) {
+    // A NodeView can replace its DOM between selection capture and mapping.
+    // Keep the authoritative ProseMirror selection when that happens.
+    console.warn('Could not synchronize the live editor selection; keeping the ProseMirror selection.', error)
   }
 }
 

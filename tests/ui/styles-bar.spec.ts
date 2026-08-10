@@ -214,21 +214,24 @@ test('Paragraph lifts a list item out of every enclosing list, no matter how dee
   await page.keyboard.type('gamma')
   await expect.poll(() => markdown(page)).toMatch(/[*-] alpha\n[*-] beta\n[*-] gamma/)
 
-  // Click directly on "beta" rather than navigating there with Home+ArrowUp:
-  // a relative keyboard move depends on ProseMirror's layout being fully
-  // settled, which is not guaranteed under load, where a stale position can
-  // leave the cursor on "gamma" instead. A click targets real coordinates
-  // and Playwright auto-waits for the element to be actionable first.
-  await page.locator(editor).getByText('beta', { exact: true }).click()
-  // The click resolves once the browser has dispatched it, not once
-  // ProseMirror has finished folding the resulting selection change into its
-  // own state — under load that fold can lag. Poll the real DOM selection
-  // (not an app-internal API) until it has actually settled on "beta" before
-  // running a command that reads the current selection.
-  await expect.poll(() =>
-    page.evaluate(() => window.getSelection()?.anchorNode?.textContent ?? null),
-  ).toContain('beta')
-  await page.evaluate(() => window.simplemark!.run('paragraph' as never))
+  // Reproduce the full-suite race deterministically: the browser has moved
+  // its live caret to "beta", but ProseMirror has not received the queued
+  // selectionchange yet and still points at "gamma". A formatting command
+  // must honor the live in-editor selection even in that narrow window.
+  await page.evaluate(() => {
+    const target = [...document.querySelectorAll<HTMLElement>('.milkdown .ProseMirror p')]
+      .find((paragraph) => paragraph.textContent === 'beta')
+    const text = target?.firstChild
+    const selection = window.getSelection()
+    if (!(text instanceof Text) || selection === null) throw new Error('beta text selection is unavailable')
+
+    const range = document.createRange()
+    range.setStart(text, 0)
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    window.simplemark!.run('paragraph' as never)
+  })
   await expect.poll(() => markdown(page)).toMatch(/[*-] alpha\n+beta\n+[*-] gamma/)
 
   // A nested item, two levels deep: fully exits every enclosing list, not

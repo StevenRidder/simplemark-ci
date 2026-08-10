@@ -41,7 +41,7 @@ tauri-plugin-single-instance = "2"
 # needs the same objc2 bridge macOS already uses — a much smaller slice of it.
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6.4"
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSFileManager", "NSString", "NSURL"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSFileManager", "NSString", "NSURL", "NSUserDefaults"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
@@ -57,3 +57,11 @@ tempfile = "3"
 # transcription of it. Already in the tree via tauri — this only makes it
 # nameable from a test.
 muda = "0.19"
+
+# tao owns the iOS scene delegate used by Tauri. Version 0.35.3 drops a
+# document URL carried in the first scene's connection options, so a Files
+# "Open With" cold launch starts the app but never delivers the document.
+# Keep the minimal, tested upstream-compatible correction local until it is
+# available in a released tao version compatible with this Tauri runtime.
+[patch.crates-io]
+tao = { path = "vendor/tao" }

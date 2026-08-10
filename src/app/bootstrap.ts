@@ -164,6 +164,8 @@ export interface ComposeOptions {
   readonly stylesBarDefault?: boolean
   /** Platform hook for opening a real file; absent when the platform cannot. */
   readonly onOpenFile?: () => void
+  /** Platform hook for opening the active Markdown folder; absent when the platform cannot. */
+  readonly onOpenFolder?: () => void
   /**
    * Copies a large virtualised table through the host clipboard. The native
    * shell supplies NSPasteboard rather than making WKWebView marshal a large
@@ -338,6 +340,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         options.onOpenFile?.()
         return
       case 'openFolder':
+        options.onOpenFolder?.()
         return
       case 'newNote':
         options.workspace?.onCreateNote?.()
@@ -513,7 +516,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         checked: options.workspace !== undefined && chrome.workspaceMode() === requestedMode,
       }
     }
-    if (id === 'openFolder') return { enabled: false, checked: false }
+    if (id === 'openFolder') return { enabled: options.onOpenFolder !== undefined, checked: false }
     if (id === 'openFile') return { enabled: options.onOpenFile !== undefined, checked: false }
     if (id === 'print') return { enabled: options.onPrint !== undefined, checked: false }
     if (id === 'insertAsset') return { enabled: ports.assets !== undefined, checked: false }

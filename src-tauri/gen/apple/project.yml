@@ -55,6 +55,15 @@ targets:
         CFBundleVersion: "0.1.0"
     entitlements:
       path: simplemark_iOS/simplemark_iOS.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.app.simplemark.ios
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.app.simplemark.ios
+        com.apple.developer.ubiquity-container-identifiers:
+          - iCloud.app.simplemark.ios
+        com.apple.developer.icloud-services:
+          - CloudDocuments
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full
@@ -70,6 +79,10 @@ targets:
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
       groups: [app]
     dependencies:
+      - target: SimpleMarkShare
+        embed: true
+      - target: SimpleMarkQuickLook
+        embed: true
       - framework: libapp.a
         embed: false
       - sdk: CoreGraphics.framework
@@ -86,3 +99,62 @@ targets:
         outputFiles:
           - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
           - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
+  SimpleMarkShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ../../apple-extensions/Share
+    info:
+      path: ../../apple-extensions/Share/Info.plist
+      properties:
+        CFBundleDisplayName: SimpleMark
+        CFBundleShortVersionString: 0.1.0
+        CFBundleVersion: "0.1.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: 1
+    entitlements:
+      path: ../../apple-extensions/Share/Share.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.app.simplemark.ios
+    settings:
+      base:
+        PRODUCT_NAME: SimpleMarkShare
+        PRODUCT_BUNDLE_IDENTIFIER: app.simplemark.ios.share
+        DEVELOPMENT_TEAM: 63PAAX9QF2
+        SWIFT_VERSION: 5.0
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+      groups: [app]
+  SimpleMarkQuickLook:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ../../apple-extensions/QuickLook
+    info:
+      path: ../../apple-extensions/QuickLook/Info.plist
+      properties:
+        CFBundleDisplayName: SimpleMark Preview
+        CFBundleShortVersionString: 0.1.0
+        CFBundleVersion: "0.1.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.preview
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
+          NSExtensionAttributes:
+            QLSupportedContentTypes:
+              - net.daringfireball.markdown
+    settings:
+      base:
+        PRODUCT_NAME: SimpleMarkQuickLook
+        PRODUCT_BUNDLE_IDENTIFIER: app.simplemark.ios.quicklook
+        DEVELOPMENT_TEAM: 63PAAX9QF2
+        SWIFT_VERSION: 5.0
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+      groups: [app]
+    dependencies:
+      - sdk: QuickLook.framework

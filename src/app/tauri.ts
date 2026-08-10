@@ -142,6 +142,7 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   await installNativeContextMenuBridge(controller)
   await installNativeNoteNavigationBridge(controller)
   await installOpenRequestBridge(controller)
+  await installSharedTextDraftBridge(controller)
   await installMarkdownDropBridge(controller)
   return controller.current()
 }
@@ -197,6 +198,12 @@ async function installNativeNoteNavigationBridge(controller: NativeController): 
 interface NativeController {
   current(): AppComposition
   openPath(path: string): Promise<void>
+  openSharedTextDraft(draft: SharedTextDraft): void
+}
+
+interface SharedTextDraft {
+  readonly id: string
+  readonly text: string
 }
 
 interface WorkspacePreview {
@@ -217,6 +224,7 @@ async function startNative(
   let workspaceHandle: string | undefined
   let activeCollectionId = loadActiveCollection(window.localStorage)
   let requestedSelection: { readonly path: string; readonly collectionId: string } | undefined
+  let pendingSharedDraftId: string | undefined
   /**
    * Whether the open document is a new note with no file behind it yet.
    *
@@ -448,6 +456,7 @@ async function startNative(
       settingsPanel,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
+      onOpenFolder: addFolder,
       onRenameDocument: renameActiveDocument,
       workspace: catalogWorkspace(
         withSummaries(catalog),
@@ -563,14 +572,20 @@ async function startNative(
     void enqueue(async () => {
       const catalog = await catalogPort.chooseFolder()
       if (catalog === null) return
-      if (catalog.notes.length === 0) {
-        current.setStatus('error', `${catalog.name} contains no Markdown notes`)
-        return
-      }
       collections.addFolder(catalog)
       persistFolders()
       await watchFolder(catalog.handle)
       if (!(await flush())) return
+      if (catalog.notes.length === 0) {
+        activeCollectionId = catalog.handle
+        saveActiveCollection(window.localStorage, catalog.handle)
+        workspaceHandle = catalog.handle
+        // An empty folder is still a real destination. On a phone this moves
+        // to its note list; on a wider window the current document stays
+        // visible while the selected, empty folder is shown beside it.
+        reconcileWorkspace('', catalog.handle)
+        return
+      }
       const next = catalog.notes.find((note) => note.handle === activeHandle) ?? catalog.notes[0]!
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(next.handle)
@@ -603,6 +618,16 @@ async function startNative(
     )
     if (opened === null) return false
     await install(port, opened, await collectionForSavedNote(opened.handle))
+    if (pendingSharedDraftId !== undefined) {
+      const id = pendingSharedDraftId
+      pendingSharedDraftId = undefined
+      void invoke('acknowledge_shared_text_draft', { id }).catch(() => {
+        // The saved Markdown file is authoritative. Retaining a stale handoff
+        // record is preferable to claiming it was consumed when iOS rejected
+        // the App Group operation.
+        pendingSharedDraftId = id
+      })
+    }
     current.setStatus('saved', `Saved ${opened.name.replace(/\.(md|markdown)$/iu, '')}`)
     return true
   }
@@ -633,7 +658,7 @@ async function startNative(
    * compose the welcome screen's one-row workspace, so the middle pane emptied
    * itself until the note was saved.
    */
-  const createNote = (): void => {
+  const createNote = (source = '# \n', status = 'Not saved'): void => {
     void enqueue(async () => {
       if (!(await flush())) return
       stopWatching?.()
@@ -642,16 +667,17 @@ async function startNative(
       activeHandle = undefined
       draft = true
       await current.destroy()
-      current = await mount(root, new FixtureFilePort('Untitled.md', '# \n'), {
+      current = await mount(root, new FixtureFilePort('Untitled.md', source), {
         filePath: 'Not saved',
         pageZoom,
         settingsPanel,
         menuTarget: () => current,
         onOpenFile: openFromPicker,
+        onOpenFolder: addFolder,
         onSaveDraft: saveDraft,
         workspace: workspaceView(DRAFT_NOTE_ID),
       })
-      current.setStatus('dirty', 'Not saved')
+      current.setStatus('dirty', status)
       // A new note exists so you can start typing. Landing with focus still on
       // whatever you clicked to get here — the New Note button, a menu item —
       // means the first keystroke (or paste) goes nowhere until you click into
@@ -808,6 +834,7 @@ async function startNative(
       settingsPanel,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
+      onOpenFolder: addFolder,
       workspace: catalogWorkspace(withSummaries(after), '', pins, workspaceActions(activeCollectionId)),
     })
     current.setStatus('saved', message)
@@ -888,6 +915,7 @@ async function startNative(
       settingsPanel,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
+      onOpenFolder: addFolder,
       workspace: sampleWorkspaceOptions(sample.id, {
         onSelectNote: selectSample,
         onCreateNote: createNote,
@@ -1081,6 +1109,10 @@ async function startNative(
       const opened = await port.openAt(path)
       await install(port, opened, 'recent')
     }),
+    openSharedTextDraft: (draft) => {
+      pendingSharedDraftId = draft.id
+      createNote(draft.text, 'Shared text — choose Save to place it')
+    },
   }
 }
 
@@ -1090,6 +1122,7 @@ async function mount(
   options: {
     filePath: string
     onOpenFile: () => void
+    onOpenFolder: () => void
     onSaveDraft?: (markdown: string) => Promise<boolean>
     onRenameDocument?: (name: string) => Promise<boolean>
     workspace: WorkspaceOptions
@@ -1182,6 +1215,7 @@ async function mount(
     // interactive wireframe; it is not a second menu row.
     stylesBarDefault: true,
     onOpenFile: options.onOpenFile,
+    onOpenFolder: options.onOpenFolder,
     ...(options.onSaveDraft === undefined ? {} : { onSaveDraft: options.onSaveDraft }),
     ...(options.onRenameDocument === undefined ? {} : { onRenameDocument: options.onRenameDocument }),
     // A huge virtual table goes through Tauri's native pasteboard bridge.
@@ -1479,7 +1513,7 @@ function installWindowDragging(element: HTMLElement): void {
 }
 
 /**
- * Bridges macOS delivery without a launch race.
+ * Bridges native document delivery without a launch race.
  *
  * Rust retains paths until this function takes them. The event only schedules
  * another drain, so a file delivered before the webview listener exists is
@@ -1499,12 +1533,27 @@ async function installOpenRequestBridge(controller: NativeController): Promise<v
   const schedule = (): void => {
     drains = drains.then(drain).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error)
-      controller.current().setStatus('error', `Could not receive file from macOS — ${message}`)
+      controller.current().setStatus('error', `Could not receive the requested Markdown file — ${message}`)
     })
   }
 
   await listen<void>('open-note-requested', schedule)
   schedule()
+}
+
+/**
+ * A Share extension has text rather than a Markdown file URL. It therefore
+ * enters as the same unsaved draft a person creates in the app, and is removed
+ * from the App Group only after the regular Save flow succeeds.
+ */
+async function installSharedTextDraftBridge(controller: NativeController): Promise<void> {
+  try {
+    const draft = await invoke<SharedTextDraft | null>('peek_shared_text_draft')
+    if (draft !== null) controller.openSharedTextDraft(draft)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    controller.current().setStatus('error', `Could not receive shared text — ${message}`)
+  }
 }
 
 /** Dropped Markdown files behave like Finder opens: adopt, never copy. */

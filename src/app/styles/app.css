@@ -3619,7 +3619,14 @@ section.editor::-webkit-scrollbar {
     padding-bottom: 180px;
   }
   .milkdown .ProseMirror {
+    /* The desktop block-drag gutter is an asymmetric 26px inset. It has no
+       useful hover affordance on touch screens and makes the whole note read
+       as shifted right, so a phone keeps the page margins genuinely even. */
+    padding-left: 0;
     font-size: 17px;
+  }
+  .milkdown .ProseMirror > *::after {
+    display: none;
   }
   .diagram {
     padding-left: 14px;

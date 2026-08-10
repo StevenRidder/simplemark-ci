@@ -38,7 +38,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 #[cfg(desktop)]
 use notify::{Event, EventKind, RecursiveMode, Watcher};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State, Url};
 use tauri_plugin_dialog::DialogExt;
 
@@ -73,7 +73,7 @@ use objc2_foundation::{
     NSURLUbiquitousItemDownloadingStatusKey, NSURLUbiquitousItemDownloadingStatusNotDownloaded,
     NSURL,
 };
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use tauri::RunEvent;
 
 /// Which commit produced this bundle, captured at compile time by `build.rs`.
@@ -491,6 +491,24 @@ fn icloud_documents() -> Option<PathBuf> {
     None
 }
 
+/// Turns the directory the mobile shell owns into the one visible collection.
+///
+/// The iCloud API correctly returns the container's `Documents` subdirectory,
+/// but that is implementation detail, not the name a person should see in
+/// SimpleMark. Both launch and Open Folder use this one function so they can
+/// never disagree about either directory or label.
+#[cfg(mobile)]
+fn mobile_workspace_catalog(app: &AppHandle) -> Result<WorkspaceCatalog, String> {
+    let directory = match icloud_documents() {
+        Some(icloud) => icloud,
+        None => app
+            .path()
+            .document_dir()
+            .map_err(|error| format!("This device exposed no documents directory: {error}"))?,
+    };
+    workspace_catalog_named(&directory, "SimpleMark")
+}
+
 /// Mobile supplies exactly one folder, so the list it returns holds one entry.
 /// The shell adopts every folder a platform names and does not care how many
 /// that is.
@@ -501,14 +519,7 @@ async fn default_workspaces(app: AppHandle) -> Result<Vec<WorkspaceCatalog>, Str
     // point of the folder; on-device second, because a person without iCloud
     // still has notes. Whichever answers, the shell receives one ordinary
     // folder of Markdown and cannot tell the difference.
-    let directory = match icloud_documents() {
-        Some(icloud) => icloud,
-        None => app
-            .path()
-            .document_dir()
-            .map_err(|error| format!("This device exposed no documents directory: {error}"))?,
-    };
-    workspace_catalog_for_directory(&directory).map(|catalog| vec![catalog])
+    mobile_workspace_catalog(&app).map(|catalog| vec![catalog])
 }
 
 /// Prompts for a folder whose direct Markdown children become one collection.
@@ -543,11 +554,10 @@ async fn open_workspace_folder(app: AppHandle) -> Result<Option<WorkspaceCatalog
 #[cfg(mobile)]
 #[tauri::command]
 async fn open_workspace_folder(app: AppHandle) -> Result<Option<WorkspaceCatalog>, String> {
-    let directory = app
-        .path()
-        .document_dir()
-        .map_err(|error| format!("This device exposed no documents directory: {error}"))?;
-    workspace_catalog_for_directory(&directory).map(Some)
+    // This action must resolve the same published workspace as startup. Using
+    // Tauri's private documents directory here made the Folder action open an
+    // unrelated empty collection immediately after the app listed iCloud.
+    mobile_workspace_catalog(&app).map(Some)
 }
 
 /// Runs a blocking filesystem read somewhere other than the thread that draws.
@@ -1093,6 +1103,16 @@ fn workspace_catalog_for_directory(directory: &Path) -> Result<WorkspaceCatalog,
     })
 }
 
+/// A platform-owned workspace may need a person-facing label that is different
+/// from its implementation directory name. iCloud's public directory is named
+/// `Documents`; the product folder it represents is SimpleMark.
+#[cfg_attr(not(mobile), allow(dead_code))]
+fn workspace_catalog_named(directory: &Path, name: &str) -> Result<WorkspaceCatalog, String> {
+    let mut catalog = workspace_catalog_for_directory(directory)?;
+    catalog.name = name.to_owned();
+    Ok(catalog)
+}
+
 /// Listing walks a directory and stats every entry, which a cloud provider may
 /// also make slow — and this runs on every relist, not only at launch. Off the
 /// UI thread for the same reason reads are (see `off_the_ui_thread`).
@@ -1455,7 +1475,7 @@ fn move_note_to_trash(path: PathBuf) -> Result<(), trash::Error> {
     trash::delete(path)
 }
 
-/// Returns the next file macOS asked SimpleMark to open.
+/// Returns the next Markdown file iOS or macOS asked SimpleMark to open.
 #[tauri::command]
 fn take_open_note_request(queue: State<'_, OpenRequestQueue>) -> Result<Option<String>, String> {
     let path = queue
@@ -1466,10 +1486,97 @@ fn take_open_note_request(queue: State<'_, OpenRequestQueue>) -> Result<Option<S
     Ok(path.map(|path| path.display().to_string()))
 }
 
-/// Only a desktop shell is handed files by the operating system this way:
-/// `RunEvent::Opened` on macOS and a command line elsewhere. iOS delivers
-/// documents through the Files app instead, which is Phase 1 work.
-#[cfg_attr(mobile, allow(dead_code))]
+/// One plain-text share awaiting the person's normal Save destination.
+///
+/// This is deliberately not an `OpenedNote`: Grammarly and similar share
+/// sheets have text, not a provider-owned Markdown URL. The app shows it as a
+/// draft and leaves it unsaved until the person chooses a location.
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+struct SharedTextDraft {
+    id: String,
+    text: String,
+}
+
+#[cfg(target_os = "ios")]
+const SHARED_DRAFT_GROUP: &str = "group.app.simplemark.ios";
+#[cfg(target_os = "ios")]
+const SHARED_DRAFT_KEY: &str = "app.simplemark.pending-plain-text-draft";
+#[cfg(any(target_os = "ios", test))]
+const MAX_SHARED_DRAFT_BYTES: usize = 1_048_576;
+
+#[cfg(any(target_os = "ios", test))]
+fn parse_shared_text_draft(value: &str) -> Result<SharedTextDraft, String> {
+    let draft: SharedTextDraft = serde_json::from_str(value)
+        .map_err(|error| format!("The shared text draft was invalid: {error}"))?;
+    if draft.id.is_empty() || draft.text.is_empty() {
+        return Err("The shared text draft was empty".to_string());
+    }
+    if draft.text.len() > MAX_SHARED_DRAFT_BYTES {
+        return Err("The shared text draft was too large".to_string());
+    }
+    Ok(draft)
+}
+
+#[cfg(target_os = "ios")]
+fn shared_draft_defaults() -> Result<objc2::rc::Retained<objc2_foundation::NSUserDefaults>, String> {
+    use objc2::AllocAnyThread;
+    use objc2_foundation::{NSString, NSUserDefaults};
+
+    let group = NSString::from_str(SHARED_DRAFT_GROUP);
+    NSUserDefaults::initWithSuiteName(NSUserDefaults::alloc(), Some(&group))
+        .ok_or_else(|| "SimpleMark could not access its shared Share-sheet container".to_string())
+}
+
+/// Reads, but does not consume, the Share extension's pending text.
+///
+/// Keeping it until `acknowledge_shared_text_draft` means cancelling Save or
+/// quitting the app cannot silently lose a share.
+#[tauri::command]
+fn peek_shared_text_draft() -> Result<Option<SharedTextDraft>, String> {
+    #[cfg(target_os = "ios")]
+    {
+        use objc2_foundation::NSString;
+
+        let defaults = shared_draft_defaults()?;
+        let key = NSString::from_str(SHARED_DRAFT_KEY);
+        return defaults
+            .stringForKey(&key)
+            .map(|value| parse_shared_text_draft(&value.to_string()))
+            .transpose();
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    Ok(None)
+}
+
+/// Deletes precisely the share that has become a durable Markdown document.
+#[tauri::command]
+fn acknowledge_shared_text_draft(id: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        use objc2_foundation::NSString;
+
+        let defaults = shared_draft_defaults()?;
+        let key = NSString::from_str(SHARED_DRAFT_KEY);
+        let Some(value) = defaults.stringForKey(&key) else {
+            return Ok(());
+        };
+        let pending = parse_shared_text_draft(&value.to_string())?;
+        if pending.id == id {
+            defaults.removeObjectForKey(&key);
+        }
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = id;
+        Ok(())
+    }
+}
+
+/// Tauri delivers Files/Open In URLs through `RunEvent::Opened` on iOS and
+/// macOS. The queue keeps a launch-time delivery until TypeScript has mounted.
 fn opened_markdown_paths(urls: &[Url]) -> Vec<PathBuf> {
     urls.iter()
         .filter_map(|url| url.to_file_path().ok())
@@ -1527,7 +1634,6 @@ fn queue_opened_paths(app: &AppHandle, paths: Vec<PathBuf>) {
     }
 }
 
-#[cfg_attr(mobile, allow(dead_code))]
 fn queue_opened_notes(app: &AppHandle, urls: &[Url]) {
     queue_opened_paths(app, opened_markdown_paths(urls));
 }
@@ -2081,6 +2187,8 @@ pub fn run() {
             trash_note,
             reveal_in_finder,
             take_open_note_request,
+            peek_shared_text_draft,
+            acknowledge_shared_text_draft,
             save_note,
             print_note,
             perform_macos_text_service,
@@ -2117,7 +2225,7 @@ pub fn run() {
     }
 
     app.run(|_app, _event| {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         if let RunEvent::Opened { urls } = _event {
             queue_opened_notes(_app, &urls);
         }
@@ -2640,6 +2748,20 @@ mod tests {
     }
 
     #[test]
+    fn shared_text_draft_keeps_unicode_and_rejects_empty_or_large_input() {
+        let accepted = parse_shared_text_draft(r#"{"id":"draft-1","text":"Résumé — ✅"}"#)
+            .expect("a nonempty Unicode share is a valid draft");
+        assert_eq!(accepted.text, "Résumé — ✅");
+        assert!(parse_shared_text_draft(r#"{"id":"","text":"text"}"#).is_err());
+        assert!(parse_shared_text_draft(r#"{"id":"draft-2","text":""}"#).is_err());
+        let oversized = format!(
+            r#"{{"id":"draft-3","text":"{}"}}"#,
+            "x".repeat(MAX_SHARED_DRAFT_BYTES + 1)
+        );
+        assert!(parse_shared_text_draft(&oversized).is_err());
+    }
+
+    #[test]
     fn second_instance_arguments_keep_only_markdown_and_resolve_relative_paths() {
         let args = vec![
             "/Applications/SimpleMark.app/Contents/MacOS/simplemark".to_string(),
@@ -2798,6 +2920,17 @@ mod tests {
         let catalog = workspace_catalog_for_directory(directory.path()).unwrap();
         assert_eq!(catalog.handle, directory.path().display().to_string());
         assert_eq!(catalog.notes.len(), 1);
+        assert_eq!(catalog.notes[0].name, "first.md");
+    }
+
+    #[test]
+    fn named_workspace_catalog_keeps_the_person_facing_folder_name() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("first.md"), b"# First\n").unwrap();
+
+        let catalog = workspace_catalog_named(directory.path(), "SimpleMark").unwrap();
+
+        assert_eq!(catalog.name, "SimpleMark");
         assert_eq!(catalog.notes[0].name, "first.md");
     }
 

@@ -138,6 +138,20 @@ pub struct NoteSummary {
     pub summary: String,
 }
 
+/// Work claimed from the shared queue. Model inference happens only after the
+/// mutex is released: Foundation Models may wait seconds, while the webview's
+/// next viewport request must remain immediate.
+struct PendingSummary {
+    handle: String,
+    content_hash: String,
+    distilled: String,
+}
+
+enum SummaryJob {
+    Emit(NoteSummary),
+    Generate(PendingSummary),
+}
+
 pub struct SummaryQueue {
     cache: SummaryCache,
     /// Handles the viewport currently wants, active note first.
@@ -199,6 +213,24 @@ impl SummaryQueue {
         now_ms: u64,
         mut read: impl FnMut(&Path) -> Option<Vec<u8>>,
     ) -> Option<NoteSummary> {
+        let job = self.claim_next_with_reader(now_ms, &mut read)?;
+        match job {
+            SummaryJob::Emit(summary) => Some(summary),
+            SummaryJob::Generate(pending) => {
+                let raw = summarizer.summarize(&pending.distilled);
+                self.finish(pending, raw, now_ms)
+            }
+        }
+    }
+
+    /// Claims at most one cached result or model request. This mutates only
+    /// queue state and reads local bytes; it never calls a potentially slow
+    /// summarizer while the state mutex is held.
+    fn claim_next_with_reader(
+        &mut self,
+        now_ms: u64,
+        read: &mut impl FnMut(&Path) -> Option<Vec<u8>>,
+    ) -> Option<SummaryJob> {
         while !self.wanted.is_empty() {
             let handle = self.wanted.remove(0);
             let Some(bytes) = read(Path::new(&handle)) else {
@@ -213,7 +245,7 @@ impl SummaryQueue {
                     continue;
                 }
                 self.emitted.insert(handle.clone(), digest.clone());
-                return Some(NoteSummary { handle, content_hash: digest, summary });
+                return Some(SummaryJob::Emit(NoteSummary { handle, content_hash: digest, summary }));
             }
             if self.attempted.contains(&digest) {
                 continue;
@@ -229,20 +261,25 @@ impl SummaryQueue {
 
             let distilled = crate::note_preview::distil_for_model(&text, DISTIL_LIMIT);
             self.attempted.insert(digest.clone());
-
-            match summarizer.summarize(&distilled).as_deref().and_then(tidy_summary) {
-                Some(summary) => {
-                    self.cache.insert(&digest, &summary, now_ms);
-                    self.emitted.insert(handle.clone(), digest.clone());
-                    return Some(NoteSummary { handle, content_hash: digest, summary });
-                }
-                // Declined, or output that did not survive hygiene: the row
-                // keeps its extractor preview and nothing is written. A later
-                // session retries; this one does not.
-                None => continue,
-            }
+            return Some(SummaryJob::Generate(PendingSummary {
+                handle,
+                content_hash: digest,
+                distilled,
+            }));
         }
         None
+    }
+
+    /// Records the result after model work completed outside the mutex.
+    fn finish(&mut self, pending: PendingSummary, raw: Option<String>, now_ms: u64) -> Option<NoteSummary> {
+        let summary = raw.as_deref().and_then(tidy_summary)?;
+        self.cache.insert(&pending.content_hash, &summary, now_ms);
+        self.emitted.insert(pending.handle.clone(), pending.content_hash.clone());
+        Some(NoteSummary {
+            handle: pending.handle,
+            content_hash: pending.content_hash,
+            summary,
+        })
     }
 
     /// Records that a note changed on disk. Called for every watcher event;
@@ -273,6 +310,27 @@ impl SummaryQueue {
     #[cfg(test)]
     fn cache_len(&self) -> usize {
         self.cache.len()
+    }
+}
+
+/// Drains one job without holding the shared queue mutex across model work.
+fn drain_queue_once(
+    queue: &std::sync::Mutex<SummaryQueue>,
+    summarizer: &dyn Summarizer,
+    now_ms: u64,
+) -> Option<NoteSummary> {
+    let job = {
+        let mut queue = queue.lock().ok()?;
+        queue.claim_next_with_reader(now_ms, &mut |path| crate::locally_available_note_bytes(path))
+    }?;
+
+    match job {
+        SummaryJob::Emit(summary) => Some(summary),
+        SummaryJob::Generate(pending) => {
+            let raw = summarizer.summarize(&pending.distilled);
+            let mut queue = queue.lock().ok()?;
+            queue.finish(pending, raw, now_ms)
+        }
     }
 }
 
@@ -410,8 +468,7 @@ pub fn request_note_summaries(
         loop {
             let produced = {
                 let state = tauri::Manager::state::<SummaryState>(&app);
-                let Ok(mut queue) = state.queue.lock() else { break };
-                queue.drain_next(summarizer.as_ref(), now_ms())
+                drain_queue_once(&state.queue, summarizer.as_ref(), now_ms())
             };
             match produced {
                 Some(summary) => {
@@ -548,6 +605,44 @@ mod tests {
 
         assert!(queue.drain_next(&summarizer, 2_000).is_none());
         assert_eq!(queue.cache_len(), 1);
+    }
+
+    struct BlockingSummarizer {
+        entered: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+
+    impl Summarizer for BlockingSummarizer {
+        fn availability(&self) -> bool {
+            true
+        }
+
+        fn summarize(&self, _distilled: &str) -> Option<String> {
+            self.entered.send(()).unwrap();
+            self.release.recv().unwrap();
+            Some("Summary after release".into())
+        }
+    }
+
+    #[test]
+    fn model_work_never_holds_the_queue_lock() {
+        let directory = tempfile::tempdir().unwrap();
+        let handle = note_at(directory.path(), "a.md", "# A\n\nThe first real sentence of this note is here.\n");
+        let queue = std::sync::Arc::new(std::sync::Mutex::new(SummaryQueue::new(SummaryCache::default())));
+        queue.lock().unwrap().request(&[handle]);
+
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let worker_queue = std::sync::Arc::clone(&queue);
+        let worker = std::thread::spawn(move || {
+            drain_queue_once(&worker_queue, &BlockingSummarizer { entered: entered_tx, release: release_rx }, 1_000)
+        });
+
+        entered_rx.recv_timeout(std::time::Duration::from_secs(1)).expect("model work began");
+        assert!(queue.try_lock().is_ok(), "the UI must be able to replace its wanted set while a model runs");
+
+        release_tx.send(()).unwrap();
+        assert!(worker.join().unwrap().is_some());
     }
 
     /// A cloud placeholder has a catalog row but no local bytes. It must keep

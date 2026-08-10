@@ -169,6 +169,44 @@ test.describe('reader layout preferences (D6)', () => {
     await expect(page.locator(editor)).toBeVisible()
   })
 
+  test('a decisive left swipe returns from a phone note to its folders', async ({ page }) => {
+    await page.setViewportSize({ width: 500, height: 760 })
+    await page.evaluate(() => window.simplemark!.run('showEditorOnly'))
+
+    await page.locator('.document-surface').evaluate((surface) => {
+      surface.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        pointerId: 7,
+        pointerType: 'touch',
+        isPrimary: true,
+        clientX: 390,
+        clientY: 360,
+      }))
+      surface.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true,
+        pointerId: 7,
+        pointerType: 'touch',
+        isPrimary: true,
+        clientX: 230,
+        clientY: 370,
+      }))
+    })
+
+    await expect(page.locator('.workspace-body')).toHaveAttribute('data-layout', 'all')
+  })
+
+  test('phone notes keep their page margin and text inset symmetric', async ({ page }) => {
+    await page.setViewportSize({ width: 500, height: 760 })
+    await page.evaluate(() => window.simplemark!.run('showEditorOnly'))
+
+    await expect(page.locator(editor)).toHaveCSS('padding-left', '0px')
+    const margins = await page.locator('.page').evaluate((pageElement) => {
+      const box = pageElement.getBoundingClientRect()
+      return { left: box.left, right: window.innerWidth - box.right }
+    })
+    expect(Math.abs(margins.left - margins.right)).toBeLessThan(1)
+  })
+
   test('reading width steps the column, document-level', async ({ page }) => {
     const width = async () =>
       page.locator('.page').evaluate((el) => parseFloat(getComputedStyle(el).width))

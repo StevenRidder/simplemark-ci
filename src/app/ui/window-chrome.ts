@@ -2820,6 +2820,53 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       documentListButton.classList.toggle('active', mode !== 'all')
       options.onWorkspaceModeChange(mode)
     }
+
+    /*
+     * A note and its folders are separate screens on a phone. The title-bar
+     * button remains the visible, accessible way back; this is its natural
+     * touch counterpart. Wait until the gesture ends before deciding so a
+     * normal vertical scroll keeps its browser-native behaviour.
+     *
+     * Text selection, charts and horizontally scrollable tables retain their
+     * own gestures. In particular, never turn a selection drag into navigation.
+     */
+    const DOCUMENT_SWIPE_TRIGGER = 64
+    let documentSwipeFrom: { pointerId: number; x: number; y: number } | null = null
+    const clearDocumentSwipe = (): void => {
+      documentSwipeFrom = null
+    }
+    const hasDocumentSelection = (): boolean => {
+      const selection = document.getSelection()
+      return selection !== null && !selection.isCollapsed
+    }
+    const startsDocumentInteraction = (target: EventTarget | null): boolean =>
+      target instanceof Element &&
+      target.closest('button, input, textarea, select, a, .diagram, .tableWrapper') !== null
+
+    documentSurface.addEventListener('pointerdown', (event) => {
+      if (
+        event.pointerType !== 'touch' ||
+        !event.isPrimary ||
+        !isSinglePane() ||
+        getWorkspaceMode() !== 'editor' ||
+        startsDocumentInteraction(event.target)
+      ) return
+      documentSwipeFrom = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+    })
+    documentSurface.addEventListener('pointerup', (event) => {
+      const start = documentSwipeFrom
+      clearDocumentSwipe()
+      if (start === null || event.pointerId !== start.pointerId || hasDocumentSelection()) return
+      const horizontalTravel = event.clientX - start.x
+      const verticalTravel = event.clientY - start.y
+      if (
+        horizontalTravel > -DOCUMENT_SWIPE_TRIGGER ||
+        Math.abs(horizontalTravel) <= Math.abs(verticalTravel) * 1.5
+      ) return
+      applyWorkspaceMode('all')
+    })
+    documentSurface.addEventListener('pointercancel', clearDocumentSwipe)
+
     /**
      * Below the breakpoint where the list and the document cannot share a row,
      * which pane is showing is navigation rather than a remembered preference:

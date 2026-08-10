@@ -8,43 +8,107 @@
 
 /* Begin PBXBuildFile section */
 		137352DB19899C55E49046B7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ABC8529367BE69DFA31BF25B /* Assets.xcassets */; };
+		2032E996FED2815876B43B05 /* SimpleMarkQuickLook.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9E3E4EA9621CAE864D9E7666 /* SimpleMarkQuickLook.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		263B41EC6E2A6BC3084F318B /* PreviewProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47C85FB1806FBE19E37C3A2 /* PreviewProvider.swift */; };
 		286C290AD26EDE747F7F5E58 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1870C57C2EC6AE920A74E84B /* libapp.a */; };
 		2DF52EF6F5A55422C887AC24 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F4631C112BA8A182A3A7F47 /* MetalKit.framework */; };
 		315BBC5F28E15368D242ED6E /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9DA8DFC1A40C9296EE46A08 /* QuartzCore.framework */; };
+		3A5268196FAB8F0CF2F3B0EA /* SimpleMarkShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 98B43FBAB538B15CC46709EF /* SimpleMarkShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3CE6AD0624833D8A13D6BF01 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF7D0AD65CE4236DF3A9B582 /* CoreGraphics.framework */; };
+		4CC3EE9FD2269D0C3931E7FC /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE02C908B0E3C5AF805E37B9 /* QuickLook.framework */; };
 		4F71392AA164644D335947B8 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4157893128244C08B2ABADE /* main.mm */; };
+		55E1C783C466B74FDF957199 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = 4BFF9AC254899284B61E7C38 /* libapp.a */; };
 		56064967A76134C92EB5FA73 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 42EE9D78A027ECEBD9227E96 /* UIKit.framework */; };
 		5BC0B4A038E9C0570540A111 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = E5C46D7993AF317A835C4244 /* assets */; };
+		773501C3653EA076FFC8607E /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01520257E79C22C4534FC8D8 /* ShareViewController.swift */; };
 		7BE4FEE6B72CBE04624A39BC /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 36D493DC867B7D927C2AEABF /* Security.framework */; };
 		A3EC5DE90E62AD271A7359DF /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3BBCC0FC4F226FD54077414C /* WebKit.framework */; };
 		A434A262EC842E5A2E237253 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 53C60D332D2B76108441413A /* LaunchScreen.storyboard */; };
 		ADD59EB6ABF2049B65F20D4D /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A90A889493EC36D077118EF /* Metal.framework */; };
+		CBD36CF41C6BC5AE5B6A7FF5 /* MarkdownPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BF5B11759F6CDC311EE8DF9 /* MarkdownPreview.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		14827D3C37F58A17D85B4EAD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 14B7E1D4A5EDB304F76E9A8B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 44F469564F92C329FA1D5104;
+			remoteInfo = SimpleMarkQuickLook;
+		};
+		87680B98EC3BE086A2025BA7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 14B7E1D4A5EDB304F76E9A8B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2F7D821A530B983E45AEC823;
+			remoteInfo = SimpleMarkShare;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F0109C31E2893B2EA993AEB2 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3A5268196FAB8F0CF2F3B0EA /* SimpleMarkShare.appex in Embed Foundation Extensions */,
+				2032E996FED2815876B43B05 /* SimpleMarkQuickLook.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		01520257E79C22C4534FC8D8 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		0D47F3FD587227025497F13B /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
 		1870C57C2EC6AE920A74E84B /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		19E865A2F629BEF897F7CA6D /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		1BF5B11759F6CDC311EE8DF9 /* MarkdownPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPreview.swift; sourceTree = "<group>"; };
+		1F7774C1EE126AD8B53FE062 /* app_icons.rs */ = {isa = PBXFileReference; path = app_icons.rs; sourceTree = "<group>"; };
+		36B24FB4326AA88D9FD10B01 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		36D493DC867B7D927C2AEABF /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		3841D68041ABE5947949AB5A /* macos_context_menu.rs */ = {isa = PBXFileReference; path = macos_context_menu.rs; sourceTree = "<group>"; };
 		3BBCC0FC4F226FD54077414C /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		42EE9D78A027ECEBD9227E96 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		4421546C5ED0F33273FA5431 /* macos_traffic_lights.rs */ = {isa = PBXFileReference; path = macos_traffic_lights.rs; sourceTree = "<group>"; };
 		4867DF35FE91E65A95DA9FC4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		4A90A889493EC36D077118EF /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		4BFF9AC254899284B61E7C38 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		4E7D2A0DF1EDD104D25A023E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		4F4631C112BA8A182A3A7F47 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		53C60D332D2B76108441413A /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		57240CD409C5FAF338A064FE /* macos_zoom.rs */ = {isa = PBXFileReference; path = macos_zoom.rs; sourceTree = "<group>"; };
+		736572D81477529E7E2670F8 /* foundation_models.rs */ = {isa = PBXFileReference; path = foundation_models.rs; sourceTree = "<group>"; };
 		89FCFC552128213430B1966F /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
 		8DD0E89CDA059F61DED243ED /* simplemark_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = simplemark_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		98B43FBAB538B15CC46709EF /* SimpleMarkShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SimpleMarkShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		9E3E4EA9621CAE864D9E7666 /* SimpleMarkQuickLook.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SimpleMarkQuickLook.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		9E4BB277C9EAA24B747B1EDF /* note_images.rs */ = {isa = PBXFileReference; path = note_images.rs; sourceTree = "<group>"; };
 		ABC8529367BE69DFA31BF25B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AF7D0AD65CE4236DF3A9B582 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		B4157893128244C08B2ABADE /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		B44DF08E5607C4E74AC43122 /* note_summaries.rs */ = {isa = PBXFileReference; path = note_summaries.rs; sourceTree = "<group>"; };
+		C47C85FB1806FBE19E37C3A2 /* PreviewProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewProvider.swift; sourceTree = "<group>"; };
 		C9DA8DFC1A40C9296EE46A08 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		CE02C908B0E3C5AF805E37B9 /* QuickLook.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLook.framework; path = System/Library/Frameworks/QuickLook.framework; sourceTree = SDKROOT; };
+		D3B5E910FFC28D5D5A9CA67F /* Share.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Share.entitlements; sourceTree = "<group>"; };
 		D82E5DB711DC8B76C2E2D8FB /* simplemark_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = simplemark_iOS.entitlements; sourceTree = "<group>"; };
+		DBDE913F239B27C7C7A54069 /* macos_note_navigation.rs */ = {isa = PBXFileReference; path = macos_note_navigation.rs; sourceTree = "<group>"; };
+		E1894C1219FD16AC79B1DFAA /* note_preview.rs */ = {isa = PBXFileReference; path = note_preview.rs; sourceTree = "<group>"; };
 		E5C46D7993AF317A835C4244 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		0CA08DE1CA777FB0F146FA69 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4CC3EE9FD2269D0C3931E7FC /* QuickLook.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		2C387AF21F1ADCB14079A7AA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -79,6 +143,8 @@
 				ABC8529367BE69DFA31BF25B /* Assets.xcassets */,
 				53C60D332D2B76108441413A /* LaunchScreen.storyboard */,
 				2BAD8C2C9AB4C1E019E2CEA0 /* Externals */,
+				C235D446721572A5C77FE97B /* QuickLook */,
+				95BDF6B0C2D4BB95A1AC50DA /* Share */,
 				90C6AB53683AEA206B51984A /* simplemark_iOS */,
 				F7703A8238F5C2048E559A0A /* Sources */,
 				885537C10EEA2A918F62687E /* src */,
@@ -90,6 +156,7 @@
 		2BAD8C2C9AB4C1E019E2CEA0 /* Externals */ = {
 			isa = PBXGroup;
 			children = (
+				850429789303C598841AFD6E /* arm64 */,
 			);
 			path = Externals;
 			sourceTree = "<group>";
@@ -106,20 +173,45 @@
 			isa = PBXGroup;
 			children = (
 				8DD0E89CDA059F61DED243ED /* simplemark_iOS.app */,
+				9E3E4EA9621CAE864D9E7666 /* SimpleMarkQuickLook.appex */,
+				98B43FBAB538B15CC46709EF /* SimpleMarkShare.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		850429789303C598841AFD6E /* arm64 */ = {
+			isa = PBXGroup;
+			children = (
+				8ABB2CCEDD83712731F784B3 /* debug */,
+			);
+			path = arm64;
 			sourceTree = "<group>";
 		};
 		885537C10EEA2A918F62687E /* src */ = {
 			isa = PBXGroup;
 			children = (
+				1F7774C1EE126AD8B53FE062 /* app_icons.rs */,
+				736572D81477529E7E2670F8 /* foundation_models.rs */,
 				0D47F3FD587227025497F13B /* lib.rs */,
 				3841D68041ABE5947949AB5A /* macos_context_menu.rs */,
+				DBDE913F239B27C7C7A54069 /* macos_note_navigation.rs */,
+				4421546C5ED0F33273FA5431 /* macos_traffic_lights.rs */,
 				57240CD409C5FAF338A064FE /* macos_zoom.rs */,
 				89FCFC552128213430B1966F /* main.rs */,
+				9E4BB277C9EAA24B747B1EDF /* note_images.rs */,
+				E1894C1219FD16AC79B1DFAA /* note_preview.rs */,
+				B44DF08E5607C4E74AC43122 /* note_summaries.rs */,
 			);
 			name = src;
 			path = ../../src;
+			sourceTree = "<group>";
+		};
+		8ABB2CCEDD83712731F784B3 /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				4BFF9AC254899284B61E7C38 /* libapp.a */,
+			);
+			path = debug;
 			sourceTree = "<group>";
 		};
 		90C6AB53683AEA206B51984A /* simplemark_iOS */ = {
@@ -131,6 +223,28 @@
 			path = simplemark_iOS;
 			sourceTree = "<group>";
 		};
+		95BDF6B0C2D4BB95A1AC50DA /* Share */ = {
+			isa = PBXGroup;
+			children = (
+				4E7D2A0DF1EDD104D25A023E /* Info.plist */,
+				D3B5E910FFC28D5D5A9CA67F /* Share.entitlements */,
+				01520257E79C22C4534FC8D8 /* ShareViewController.swift */,
+			);
+			name = Share;
+			path = "../../apple-extensions/Share";
+			sourceTree = "<group>";
+		};
+		C235D446721572A5C77FE97B /* QuickLook */ = {
+			isa = PBXGroup;
+			children = (
+				36B24FB4326AA88D9FD10B01 /* Info.plist */,
+				1BF5B11759F6CDC311EE8DF9 /* MarkdownPreview.swift */,
+				C47C85FB1806FBE19E37C3A2 /* PreviewProvider.swift */,
+			);
+			name = QuickLook;
+			path = "../../apple-extensions/QuickLook";
+			sourceTree = "<group>";
+		};
 		CDEEB1883315384B2ABBB000 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -139,6 +253,7 @@
 				4A90A889493EC36D077118EF /* Metal.framework */,
 				4F4631C112BA8A182A3A7F47 /* MetalKit.framework */,
 				C9DA8DFC1A40C9296EE46A08 /* QuartzCore.framework */,
+				CE02C908B0E3C5AF805E37B9 /* QuickLook.framework */,
 				36D493DC867B7D927C2AEABF /* Security.framework */,
 				42EE9D78A027ECEBD9227E96 /* UIKit.framework */,
 				3BBCC0FC4F226FD54077414C /* WebKit.framework */,
@@ -154,9 +269,51 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
+		"TEMP_88A54031-A83E-4394-B9A8-CFAF6FB2D358" /* x86_64 */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = x86_64;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		2F7D821A530B983E45AEC823 /* SimpleMarkShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A79953933284AFAABAF87641 /* Build configuration list for PBXNativeTarget "SimpleMarkShare" */;
+			buildPhases = (
+				8ADA6367B89573D1D0CFF2D2 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SimpleMarkShare;
+			packageProductDependencies = (
+			);
+			productName = SimpleMarkShare;
+			productReference = 98B43FBAB538B15CC46709EF /* SimpleMarkShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		44F469564F92C329FA1D5104 /* SimpleMarkQuickLook */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1B6BEB15BE95A3A7928DFDFD /* Build configuration list for PBXNativeTarget "SimpleMarkQuickLook" */;
+			buildPhases = (
+				0213F351F1651629212014EB /* Sources */,
+				0CA08DE1CA777FB0F146FA69 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SimpleMarkQuickLook;
+			packageProductDependencies = (
+			);
+			productName = SimpleMarkQuickLook;
+			productReference = 9E3E4EA9621CAE864D9E7666 /* SimpleMarkQuickLook.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		AEDEC6AEEC7E108169342AA3 /* simplemark_iOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D5E444449839DBC8450AF037 /* Build configuration list for PBXNativeTarget "simplemark_iOS" */;
@@ -165,10 +322,13 @@
 				D09852BCE8BB14A77EAC7C53 /* Sources */,
 				9D3CBB8BFA4EFDCCD1CA2B58 /* Resources */,
 				2C387AF21F1ADCB14079A7AA /* Frameworks */,
+				F0109C31E2893B2EA993AEB2 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D22E39F3D25FFF14E8214D54 /* PBXTargetDependency */,
+				4B0E0D041EE336546A63205E /* PBXTargetDependency */,
 			);
 			name = simplemark_iOS;
 			packageProductDependencies = (
@@ -186,6 +346,12 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					2F7D821A530B983E45AEC823 = {
+						DevelopmentTeam = 63PAAX9QF2;
+					};
+					44F469564F92C329FA1D5104 = {
+						DevelopmentTeam = 63PAAX9QF2;
+					};
 				};
 			};
 			buildConfigurationList = DBC94F5207E193737A44D5EB /* Build configuration list for PBXProject "simplemark" */;
@@ -203,6 +369,8 @@
 			projectRoot = "";
 			targets = (
 				AEDEC6AEEC7E108169342AA3 /* simplemark_iOS */,
+				2F7D821A530B983E45AEC823 /* SimpleMarkShare */,
+				44F469564F92C329FA1D5104 /* SimpleMarkQuickLook */,
 			);
 		};
 /* End PBXProject section */
@@ -215,6 +383,7 @@
 				137352DB19899C55E49046B7 /* Assets.xcassets in Resources */,
 				A434A262EC842E5A2E237253 /* LaunchScreen.storyboard in Resources */,
 				5BC0B4A038E9C0570540A111 /* assets in Resources */,
+				55E1C783C466B74FDF957199 /* libapp.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -245,6 +414,23 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0213F351F1651629212014EB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CBD36CF41C6BC5AE5B6A7FF5 /* MarkdownPreview.swift in Sources */,
+				263B41EC6E2A6BC3084F318B /* PreviewProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8ADA6367B89573D1D0CFF2D2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				773501C3653EA076FFC8607E /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D09852BCE8BB14A77EAC7C53 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -254,6 +440,19 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4B0E0D041EE336546A63205E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 44F469564F92C329FA1D5104 /* SimpleMarkQuickLook */;
+			targetProxy = 14827D3C37F58A17D85B4EAD /* PBXContainerItemProxy */;
+		};
+		D22E39F3D25FFF14E8214D54 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2F7D821A530B983E45AEC823 /* SimpleMarkShare */;
+			targetProxy = 87680B98EC3BE086A2025BA7 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0AA8E343B7DE3667638A2D71 /* release */ = {
@@ -375,6 +574,45 @@
 			};
 			name = debug;
 		};
+		9C32813B8648D2BEB8EF12DA /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "../../apple-extensions/Share/Share.entitlements";
+				DEVELOPMENT_TEAM = 63PAAX9QF2;
+				INFOPLIST_FILE = "../../apple-extensions/Share/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.simplemark.ios.share;
+				PRODUCT_NAME = SimpleMarkShare;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = debug;
+		};
+		A5F784A0B1246477058AFFD4 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEVELOPMENT_TEAM = 63PAAX9QF2;
+				INFOPLIST_FILE = "../../apple-extensions/QuickLook/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.simplemark.ios.quicklook;
+				PRODUCT_NAME = SimpleMarkQuickLook;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = debug;
+		};
 		BC7D6B49CBE316013C973507 /* debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -439,9 +677,66 @@
 			};
 			name = release;
 		};
+		EB596BE48F86AA6E6DBA5A54 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEVELOPMENT_TEAM = 63PAAX9QF2;
+				INFOPLIST_FILE = "../../apple-extensions/QuickLook/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.simplemark.ios.quicklook;
+				PRODUCT_NAME = SimpleMarkQuickLook;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = release;
+		};
+		FE1964FC6C22001068B0E5D5 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "../../apple-extensions/Share/Share.entitlements";
+				DEVELOPMENT_TEAM = 63PAAX9QF2;
+				INFOPLIST_FILE = "../../apple-extensions/Share/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.simplemark.ios.share;
+				PRODUCT_NAME = SimpleMarkShare;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		1B6BEB15BE95A3A7928DFDFD /* Build configuration list for PBXNativeTarget "SimpleMarkQuickLook" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A5F784A0B1246477058AFFD4 /* debug */,
+				EB596BE48F86AA6E6DBA5A54 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		A79953933284AFAABAF87641 /* Build configuration list for PBXNativeTarget "SimpleMarkShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9C32813B8648D2BEB8EF12DA /* debug */,
+				FE1964FC6C22001068B0E5D5 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
 		D5E444449839DBC8450AF037 /* Build configuration list for PBXNativeTarget "simplemark_iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

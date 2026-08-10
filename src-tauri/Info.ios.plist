@@ -20,6 +20,36 @@
 	<true/>
 
 	<!--
+	  The document association above says SimpleMark edits Markdown. Exporting
+	  the UTI says which app publishes that file type to Launch Services. Both
+	  declarations are needed for Files and extension matching to see the same
+	  Markdown type, including when an app shares just a data representation.
+	-->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Markdown Document</string>
+			<key>UTTypeIdentifier</key>
+			<string>net.daringfireball.markdown</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>md</string>
+					<string>markdown</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>text/markdown</string>
+			</dict>
+		</dict>
+	</array>
+
+	<!--
 	  Publishing the container's `Documents` to iCloud Drive under a name a
 	  person recognises. Without `IsDocumentScopePublic` the folder syncs but
 	  stays invisible, which would be the worst of both: a promise kept where

@@ -20,6 +20,7 @@ import { retainedFolderHandles } from '../../src/app/workspace-collections.js'
  */
 
 const TAURI = readFileSync('src/app/tauri.ts', 'utf8')
+const BOOTSTRAP = readFileSync('src/app/bootstrap.ts', 'utf8')
 
 describe('folders that could not be listed this launch', () => {
   it('stay in the store rather than being erased', () => {
@@ -86,6 +87,39 @@ describe('the shell restoring folders at launch', () => {
     const call = "invoke<readonly WorkspaceCatalog[]>('default_workspaces')"
     const adoption = TAURI.slice(TAURI.indexOf(call), TAURI.indexOf(call) + 700)
     expect(adoption).toContain('for (const catalog of supplied)')
+  })
+})
+
+describe('an empty folder selected from the add-folder action', () => {
+  /**
+   * An empty iCloud folder is still the actual folder the person chose. It
+   * must become the selected collection, showing its empty note list, rather
+   * than being rejected as though it were an invalid import.
+   */
+  it('adopts and selects the folder instead of rejecting it for having no notes', () => {
+    const start = TAURI.indexOf('const addFolder = (): void => {')
+    const addFolder = TAURI.slice(start, TAURI.indexOf('\n  /**\n   * Where a just-saved new note belongs.', start))
+    expect(start, 'the native shell should expose the add-folder action').toBeGreaterThan(-1)
+    expect(addFolder).not.toContain('contains no Markdown notes')
+    expect(addFolder).toContain('collections.addFolder(catalog)')
+    expect(addFolder).toContain('activeCollectionId = catalog.handle')
+    expect(addFolder).toContain("reconcileWorkspace('', catalog.handle)")
+  })
+
+  it('routes the shared Open Folder command to the native folder action', () => {
+    const openFolder = BOOTSTRAP.slice(
+      BOOTSTRAP.indexOf("case 'openFolder':"),
+      BOOTSTRAP.indexOf("case 'newNote':"),
+    )
+    expect(openFolder).toContain('options.onOpenFolder?.()')
+    expect(BOOTSTRAP).toContain(
+      "if (id === 'openFolder') return { enabled: options.onOpenFolder !== undefined, checked: false }",
+    )
+  })
+
+  it('gives every native mount the same folder action as the plus-folder button', () => {
+    const mounts = TAURI.match(/onOpenFolder: addFolder/g) ?? []
+    expect(mounts).toHaveLength(4)
   })
 })
 

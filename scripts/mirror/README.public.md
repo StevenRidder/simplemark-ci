@@ -59,7 +59,7 @@ What is deliberately not the headline: hosted accounts, agent orchestration, and
 
 ## Download (pre-alpha, macOS)
 
-**[Star SimpleMark on GitHub](https://github.com/StevenRidder/simplemark)** to follow the notarized macOS DMG — that build is the public install path and will land on [Releases](https://github.com/StevenRidder/simplemark/releases/latest).
+**[Star SimpleMark on GitHub](https://github.com/StevenRidder/simplemark-public)** to follow the notarized macOS DMG — that build is the public install path and will land on [Releases](https://github.com/StevenRidder/simplemark-public/releases/latest).
 
 Pre-alpha: expect sharp edges. Always rendered. Always your file. No account.
 

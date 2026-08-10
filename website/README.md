@@ -4,8 +4,8 @@ The product and download site for SimpleMark. It follows the current product aut
 [`../docs/PRODUCT.md`](../docs/PRODUCT.md): the rendered document is the product, editing is
 contextual, and agent or collaboration machinery does not lead the public story.
 
-The download section intentionally remains in a visible pre-alpha state until signed native builds
-exist. Do not replace it with a working-download claim without release evidence.
+Until a notarized DMG is on GitHub Releases, the site must not claim a working macOS download.
+Star / Releases CTAs are fine; enabling “Download for macOS” requires RELEASE-TRUST evidence.
 
 Run locally with `npm run dev`; validate with `npm run build` and
 `node --test tests/rendered-html.test.mjs`.

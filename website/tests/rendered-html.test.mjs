@@ -22,7 +22,7 @@ test("server-renders the SimpleMark product site", async () => {
   assert.match(html, /<title>SimpleMark — The beautiful living document for AI work<\/title>/i);
   assert.match(html, /Your agent writes the Markdown/);
   assert.match(html, /A document, not another workspace/);
-  assert.match(html, /macOS build — coming soon/);
+  assert.match(html, /Star on GitHub/);
   assert.match(html, /What is not ready/);
   assert.match(html, /simplemark-demo\.gif/);
   assert.match(html, /simplemark-logo\.svg/);
@@ -35,9 +35,10 @@ test("keeps the pre-alpha download state honest", async () => {
   const html = await response.text();
 
   assert.match(html, /Pre-alpha for macOS/);
-  assert.match(html, /disabled=""/);
-  assert.match(html, /signed native download/);
-  assert.match(html, /production file watching/);
-  assert.match(html, /github\.com\/StevenRidder\/simplemark-public/);
-  assert.doesNotMatch(html, /github\.com\/(?:StevenRidder|6th-Element-Labs)\/simplemark(?:[\"/])/);
+  assert.match(html, /notarized macOS DMG/);
+  assert.match(html, /DMG not public until notarized/);
+  assert.match(html, /github\.com\/StevenRidder\/simplemark/);
+  assert.match(html, /github\.com\/StevenRidder\/simplemark\/releases\/latest/);
+  assert.doesNotMatch(html, /github\.com\/StevenRidder\/simplemark-public/);
+  assert.doesNotMatch(html, /github\.com\/6th-Element-Labs\/simplemark/);
 });

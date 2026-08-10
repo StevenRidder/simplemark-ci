@@ -14,7 +14,7 @@ set -euo pipefail
 #
 # This script is private-side tooling and never ships in the export.
 
-PUBLIC_REPO="${PUBLIC_REPO:-StevenRidder/simplemark-public}"
+PUBLIC_REPO="${PUBLIC_REPO:-StevenRidder/simplemark}"
 PUBLIC_REMOTE_URL="${PUBLIC_REMOTE_URL:-https://github.com/${PUBLIC_REPO}.git}"
 SOURCE_REF="${1:-HEAD}"
 COMMIT_MESSAGE="${PUBLIC_COMMIT_MESSAGE:-Publish public snapshot}"
@@ -30,7 +30,7 @@ PUBLIC_CLONE="${WORK_ROOT}/public"
 # internal release operations, and unpublished collaboration/agent strategy.
 # tests/ui/fidelity.spec.ts drives spike/fidelity's harness and types against the
 # window global it installs. The spike does not ship, so the spec goes with it.
-HIDDEN_PATH_RE='^(website/|AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattributes$|scripts/(publish-public-mirror|ci-sandbox|simplemark_ci)\.sh|scripts/mirror/|spike/|tests/app/(ci-sandbox-open-pr|native-testbuild-workflow|release-workflow|emergency-release-workflow|simplemark-launch-showcase)\.test\.ts|tests/ui/(fidelity|simplemark-launch-showcase)\.spec\.ts|tests/fixtures/01-switchboard-borrowing-map\.md|src/adapters/mcp/README\.md|src/domain/(fences|transactions)/README\.md|docs/wireframe[^/]*\.html|docs/decisions/|docs/(PRODUCT|POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX|DESIGN|COLLABORATION|MCP-SERVER|TECH-SPEC|APPLE-NATIVE-AI|APPLE-NATIVE-CAPABILITIES|NATIVE-WORKSPACE|READER-CANVAS-ZOOM-SCOPE|SIDEBAR-PARITY-TEST-PLAN|SKETCH-TO-DIAGRAM|UPDATE-NOTIFICATION|WELLVIEW-PASTE|THIRD-PARTY-ICONS|LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT|BEAR-EDIT-MENU-INVENTORY|BEAR-INSPIRED-EDITING|MERGE-QUEUE|RELEASE-CONTRACT|RELEASE-TRUST)\.md|docs/showcase/simplemark-1\.0-launch-plan\.md|docs/superpowers/)'
+HIDDEN_PATH_RE='^(website/|AGENTS\.md|\.mcp\.json|\.claude/|\.github/|\.gitattributes$|scripts/(publish-public-mirror|ci-sandbox|simplemark_ci)\.sh|scripts/mirror/|spike/|tests/app/(ci-sandbox-open-pr|native-testbuild-workflow|release-workflow|emergency-release-workflow|simplemark-launch-showcase)\.test\.ts|tests/ui/(fidelity|simplemark-launch-showcase)\.spec\.ts|tests/fixtures/01-switchboard-borrowing-map\.md|src/adapters/mcp/README\.md|src/domain/(fences|transactions)/README\.md|docs/wireframe[^/]*\.html|docs/decisions/|docs/launch/|docs/(PRODUCT|POC|SWITCHBOARD-KERNEL|AGENT-WORKSPACE|CI-SANDBOX|DESIGN|COLLABORATION|MCP-SERVER|TECH-SPEC|APPLE-NATIVE-AI|APPLE-NATIVE-CAPABILITIES|NATIVE-WORKSPACE|READER-CANVAS-ZOOM-SCOPE|SIDEBAR-PARITY-TEST-PLAN|SKETCH-TO-DIAGRAM|UPDATE-NOTIFICATION|WELLVIEW-PASTE|THIRD-PARTY-ICONS|LESSONS-LEARNED-MARKDOWN-EDITOR-AUDIT|BEAR-EDIT-MENU-INVENTORY|BEAR-INSPIRED-EDITING|MERGE-QUEUE|RELEASE-CONTRACT|RELEASE-TRUST)\.md|docs/showcase/simplemark-1\.0-launch-plan\.md|docs/superpowers/)'
 
 # Text that must never appear in the mirror, even inside a file that ships.
 # Scoped to the agent/board scaffolding and CI mechanics — not to every mention

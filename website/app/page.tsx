@@ -1,6 +1,7 @@
 import Image from "next/image";
 
-const githubUrl = "https://github.com/StevenRidder/simplemark-public";
+const githubUrl = "https://github.com/StevenRidder/simplemark";
+const releasesUrl = `${githubUrl}/releases/latest`;
 
 function Brand({ footer = false }: { footer?: boolean }) {
   return (
@@ -76,8 +77,10 @@ export default function Home() {
             always your file.
           </p>
           <div className="hero__actions">
-            <a className="button button--primary" href="#demo">See it in action <span aria-hidden="true">↓</span></a>
-            <a className="button button--quiet" href={githubUrl} target="_blank" rel="noreferrer">View on GitHub <Arrow /></a>
+            <a className="button button--primary" href={githubUrl} target="_blank" rel="noreferrer">
+              Star on GitHub <Arrow />
+            </a>
+            <a className="button button--quiet" href="#demo">See it in action <span aria-hidden="true">↓</span></a>
           </div>
           <p className="hero__note">No vault. No account. No coding environment required to read.</p>
         </div>
@@ -190,7 +193,7 @@ flowchart LR
             <li>Reader typography and quiet formatting controls</li>
             <li>Byte-fidelity tests for untouched source</li>
           </ul>
-          <p className="honesty-note"><b>What is not ready:</b> a signed native download, production file watching, and the finished renderer-first product proof.</p>
+          <p className="honesty-note"><b>What is not ready:</b> a notarized public DMG on Releases (next), and calling this 1.0. The rendered document, technical blocks, and local file watch are already in the macOS app we dogfood.</p>
         </div>
       </section>
 
@@ -198,12 +201,19 @@ flowchart LR
         <Image className="download__mark" src="/brand/simplemark-logo.svg" alt="" width={108} height={108} />
         <p className="kicker">Pre-alpha</p>
         <h2>Download SimpleMark.</h2>
-        <p>The first signed macOS build is being prepared. Follow the repository now, and this page will become the simple download home when it is ready.</p>
+        <p>
+          The notarized macOS DMG is the public install path and is next on the launch checklist.
+          Star the repo now so you catch the Release the hour it lands — then this button becomes the download.
+        </p>
         <div className="download__actions">
-          <button className="button button--disabled" type="button" disabled>macOS build — coming soon</button>
-          <a className="button button--quiet button--on-dark" href={githubUrl} target="_blank" rel="noreferrer">Follow the build <Arrow /></a>
+          <a className="button button--primary button--on-dark" href={githubUrl} target="_blank" rel="noreferrer">
+            Star on GitHub <Arrow />
+          </a>
+          <a className="button button--quiet button--on-dark" href={releasesUrl} target="_blank" rel="noreferrer">
+            Releases <Arrow />
+          </a>
         </div>
-        <span className="download__meta">macOS first · Windows and Linux later · No account required</span>
+        <span className="download__meta">macOS first · Windows and Linux later · No account required · DMG not public until notarized</span>
       </section>
 
       <footer className="footer shell">

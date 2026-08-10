@@ -1920,6 +1920,102 @@ section.editor::-webkit-scrollbar {
 }
 
 @media (max-width: 620px) {
+  /* Phone navigation is two purpose-built screens, not the desktop titlebar
+     squeezed above a single remaining pane. The Notes header owns browsing;
+     the document header owns the one obvious way back. */
+  .titlebar:not(.single-pane-reading) {
+    display: none;
+  }
+
+  .titlebar.single-pane-reading {
+    height: 56px;
+    flex: 0 0 56px;
+    padding: 0 10px;
+  }
+
+  .titlebar.single-pane-reading .filename {
+    position: absolute;
+    right: 82px;
+    left: 82px;
+    display: block;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 16px;
+    text-align: center;
+  }
+
+  .titlebar.single-pane-reading .filename-title {
+    display: block;
+    max-width: none;
+    padding: 4px 2px;
+    text-overflow: ellipsis;
+  }
+
+  .titlebar.single-pane-reading .filename small {
+    display: none;
+  }
+
+  .titlebar.single-pane-reading .right {
+    z-index: 1;
+  }
+
+  .titlebar.single-pane-reading .status {
+    flex: 0 1 auto;
+    width: auto;
+    max-width: 72px;
+    font-size: 11px;
+  }
+
+  .notes-header {
+    min-height: 62px;
+    padding: 0 10px 0 16px;
+  }
+
+  .notes-title {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 6px 0 0;
+    font-size: 17px;
+  }
+
+  .notes-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .notes-action svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .note-items {
+    padding: 8px 10px;
+  }
+
+  .note-item,
+  .workspace-notes[data-preview='small'] .note-item {
+    min-height: 72px;
+  }
+
+  .note-select {
+    min-height: 72px;
+    padding: 12px 52px 11px 14px;
+  }
+
+  .note-select strong {
+    font-size: 16px;
+  }
+
+  .note-select span {
+    font-size: 14px;
+  }
+
+  .note-select time {
+    font-size: 13px;
+  }
+
   .workspace-body {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2028,7 +2124,7 @@ section.editor::-webkit-scrollbar {
   }
 
   .note-item.swiped .note-select {
-    transform: translateX(-136px);
+    transform: translateX(-152px);
   }
 
   /*
@@ -2043,7 +2139,7 @@ section.editor::-webkit-scrollbar {
     top: 0;
     right: 0;
     height: 100%;
-    width: 68px;
+    width: 76px;
     border-radius: 0;
     opacity: 1;
     pointer-events: auto;
@@ -2066,7 +2162,7 @@ section.editor::-webkit-scrollbar {
   }
 
   .note-item.swiped .note-pin {
-    transform: translateX(-68px);
+    transform: translateX(-76px);
   }
 
   /* Only a sheet needs a header; the dropdown this becomes at every other
@@ -2084,18 +2180,26 @@ section.editor::-webkit-scrollbar {
   }
 
   .notes-menu-done {
-    min-height: 36px;
+    min-height: 44px;
     padding: 0 10px;
     border: 0;
     border-radius: 8px;
     background: transparent;
     color: var(--accent);
-    font: 500 15px var(--sans);
+    font: 600 16px var(--sans);
   }
 
-  /* Sized for the column, which is 190px wide and never touched by a thumb. */
+  .notes-menu-row {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 15px;
+  }
+
+  /* The folder sheet is operated by a thumb, not a desktop pointer. */
   .notes-menu .folder-row {
-    min-height: 38px;
+    min-height: 52px;
+    padding: 10px 12px;
+    font-size: 16px;
   }
   /* Editor Only is the escape hatch at every effective viewport size. Browser
      magnification, a narrow window, or accessibility scaling must never make
@@ -4220,6 +4324,16 @@ section.editor::-webkit-scrollbar {
 @media (max-width: 620px) {
   .titlebar.single-pane-reading .single-pane-back {
     display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 10px 0 2px;
+    font-size: 17px;
+    z-index: 1;
+  }
+
+  .titlebar.single-pane-reading .single-pane-back svg {
+    width: 22px;
+    height: 22px;
   }
   /* Undo and Redo remain in the styles bar while editing; on a phone the space
      they take belongs to knowing where you are and how to get back. */

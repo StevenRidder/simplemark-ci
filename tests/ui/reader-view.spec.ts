@@ -169,7 +169,7 @@ test.describe('reader layout preferences (D6)', () => {
     await expect(page.locator(editor)).toBeVisible()
   })
 
-  test('a decisive left swipe returns from a phone note to its folders', async ({ page }) => {
+  test('a right swipe from the phone edge returns from a note to its folders', async ({ page }) => {
     await page.setViewportSize({ width: 500, height: 760 })
     await page.evaluate(() => window.simplemark!.run('showEditorOnly'))
 
@@ -179,7 +179,7 @@ test.describe('reader layout preferences (D6)', () => {
         pointerId: 7,
         pointerType: 'touch',
         isPrimary: true,
-        clientX: 390,
+        clientX: 18,
         clientY: 360,
       }))
       surface.dispatchEvent(new PointerEvent('pointerup', {
@@ -187,12 +187,38 @@ test.describe('reader layout preferences (D6)', () => {
         pointerId: 7,
         pointerType: 'touch',
         isPrimary: true,
-        clientX: 230,
+        clientX: 178,
         clientY: 370,
       }))
     })
 
     await expect(page.locator('.workspace-body')).toHaveAttribute('data-layout', 'all')
+  })
+
+  test('phone navigation and browsing controls have thumb-sized targets', async ({ page }) => {
+    await page.setViewportSize({ width: 500, height: 760 })
+    const measured = (selector: string) => page.locator(selector).evaluateAll((elements) =>
+      elements.filter((element) => (element as HTMLElement).offsetParent !== null).map((element) => {
+        const box = element.getBoundingClientRect()
+        return { width: box.width, height: box.height }
+      }),
+    )
+    const expectTargets = async (selector: string) => {
+      const targets = await measured(selector)
+      expect(targets.length).toBeGreaterThan(0)
+      expect(targets.every(({ width, height }) => width >= 44 && height >= 44), JSON.stringify(targets)).toBe(true)
+    }
+
+    await expectTargets('.notes-title')
+    await expectTargets('.notes-action')
+    await page.locator('.notes-title').click()
+    await expectTargets('.notes-menu-done')
+    await expectTargets('.notes-menu .folder-row')
+    await page.locator('.notes-menu-done').click()
+
+    await page.evaluate(() => window.simplemark!.run('showEditorOnly'))
+    await expectTargets('.single-pane-back')
+    await expect(page.locator('.single-pane-back-label')).not.toHaveText('')
   })
 
   test('phone notes keep their page margin and text inset symmetric', async ({ page }) => {

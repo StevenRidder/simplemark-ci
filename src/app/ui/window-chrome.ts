@@ -2823,14 +2823,14 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
     /*
      * A note and its folders are separate screens on a phone. The title-bar
-     * button remains the visible, accessible way back; this is its natural
-     * touch counterpart. Wait until the gesture ends before deciding so a
-     * normal vertical scroll keeps its browser-native behaviour.
-     *
-     * Text selection, charts and horizontally scrollable tables retain their
-     * own gestures. In particular, never turn a selection drag into navigation.
+     * button remains the visible, accessible way back; this is the familiar
+     * iOS edge-swipe counterpart. It deliberately begins at the leading edge:
+     * a rightward drag in ordinary document content belongs to selection,
+     * tables, diagrams, or the browser. Wait until the gesture ends before
+     * deciding so a normal vertical scroll keeps its browser-native behaviour.
      */
     const DOCUMENT_SWIPE_TRIGGER = 64
+    const DOCUMENT_SWIPE_EDGE = 28
     let documentSwipeFrom: { pointerId: number; x: number; y: number } | null = null
     const clearDocumentSwipe = (): void => {
       documentSwipeFrom = null
@@ -2849,6 +2849,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         !event.isPrimary ||
         !isSinglePane() ||
         getWorkspaceMode() !== 'editor' ||
+        event.clientX > DOCUMENT_SWIPE_EDGE ||
         startsDocumentInteraction(event.target)
       ) return
       documentSwipeFrom = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
@@ -2860,7 +2861,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       const horizontalTravel = event.clientX - start.x
       const verticalTravel = event.clientY - start.y
       if (
-        horizontalTravel > -DOCUMENT_SWIPE_TRIGGER ||
+        horizontalTravel < DOCUMENT_SWIPE_TRIGGER ||
         Math.abs(horizontalTravel) <= Math.abs(verticalTravel) * 1.5
       ) return
       applyWorkspaceMode('all')
@@ -2893,6 +2894,8 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
      * an open note means you are reading it, none means you are in the list.
      */
     applySinglePaneNavigation = (next: WorkspaceOptions): void => {
+      const label = backToList.querySelector('.single-pane-back-label')
+      if (label !== null) label.textContent = next.collectionLabel ?? 'Notes'
       const narrow = globalThis.matchMedia?.('(max-width: 620px)').matches === true
       if (!narrow) return
       const wanted: WorkspaceMode = next.activeNoteId === '' ? 'all' : 'editor'

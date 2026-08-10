@@ -1,0 +1,1068 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SimpleMark — iPhone touch-target wireframe</title>
+<style>
+  :root {
+    --app: #eeece7;
+    --window: #fbfaf7;
+    --paper: #fffefa;
+    --ink: #262521;
+    --soft-ink: #716e67;
+    --quiet: #a5a197;
+    --line: #e8e5de;
+    --toolbar: #f7f5f0;
+    --selection: #f1eee7;
+    --accent: #a66a2d;
+    --accent-soft: #f6e7d2;
+    --agent: #4a6fa5;
+    --agent-soft: #e4ecf6;
+    --agent-line: #b9cbe4;
+    --stop: #a2453a;
+    --stop-soft: #f6e3e0;
+    --good: #4d7a4f;
+    --good-soft: #e6efe4;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    --serif: "Iowan Old Style", "New York", Georgia, serif;
+    --mono: "SFMono-Regular", Consolas, monospace;
+    --shadow: 0 24px 76px rgba(45, 41, 33, .17), 0 2px 6px rgba(45, 41, 33, .08);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --app: #171614;
+      --window: #201f1c;
+      --paper: #24231f;
+      --ink: #e6e3dc;
+      --soft-ink: #a39f96;
+      --quiet: #74706a;
+      --line: #33312c;
+      --toolbar: #26251f;
+      --selection: #2b2a25;
+      --accent: #d19a5c;
+      --accent-soft: #3a2e1e;
+      --agent: #8fb0dc;
+      --agent-soft: #1f2a38;
+      --agent-line: #3b4d66;
+      --stop: #d98d82;
+      --stop-soft: #37211e;
+      --good: #8fbb8f;
+      --good-soft: #21301f;
+      --shadow: 0 24px 76px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .4);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--app);
+    color: var(--ink);
+    font: 15px/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 120px; }
+
+  .eyebrow {
+    font-size: 11px; letter-spacing: .13em; text-transform: uppercase;
+    color: var(--quiet); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font: 600 30px/1.25 var(--sans); margin: 0 0 10px; letter-spacing: -.015em; }
+  .standfirst { color: var(--soft-ink); max-width: 68ch; margin: 0 0 6px; }
+  .sources { color: var(--quiet); font-size: 13px; max-width: 88ch; }
+  .sources code { font-family: var(--mono); font-size: 12px; }
+
+  h2 {
+    font: 600 21px/1.3 var(--sans); margin: 64px 0 6px;
+    padding-top: 22px; border-top: 1px solid var(--line); letter-spacing: -.01em;
+  }
+  h2 .num { color: var(--quiet); font-weight: 500; margin-right: 10px; }
+  h3 { font: 600 15px/1.4 var(--sans); margin: 34px 0 10px; }
+  .lede { color: var(--soft-ink); max-width: 74ch; margin: 0 0 22px; }
+
+  .rule {
+    border-left: 3px solid var(--accent); background: var(--accent-soft);
+    padding: 12px 16px; margin: 22px 0; border-radius: 0 5px 5px 0;
+    font-size: 14px; max-width: 82ch;
+  }
+  .rule.warn { border-left-color: var(--stop); background: var(--stop-soft); }
+  .rule.ok { border-left-color: var(--good); background: var(--good-soft); }
+  .rule .cite { display: block; margin-top: 6px; color: var(--soft-ink); font-size: 12.5px; }
+  .rule code { font-family: var(--mono); font-size: 12.5px; }
+  .rule b { font-weight: 600; }
+
+  table.audit { border-collapse: collapse; width: 100%; max-width: 900px; font-size: 13.5px; margin: 20px 0 6px; }
+  table.audit th, table.audit td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.audit th { font-weight: 600; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--quiet); }
+  table.audit td.sel { font-family: var(--mono); font-size: 12px; color: var(--soft-ink); white-space: nowrap; }
+  table.audit td.was { font-variant-numeric: tabular-nums; color: var(--stop); font-weight: 600; white-space: nowrap; }
+  table.audit td.now { font-variant-numeric: tabular-nums; color: var(--good); font-weight: 600; white-space: nowrap; }
+  table.audit tr.head-row td { padding-top: 18px; font-weight: 600; color: var(--ink); }
+
+  /* ---------- side-by-side stage ---------- */
+  .compare { display: grid; grid-template-columns: repeat(2, minmax(0, 390px)) minmax(240px, 1fr); gap: 30px; align-items: start; margin: 26px 0 10px; }
+  @media (max-width: 1080px) { .compare { grid-template-columns: repeat(2, minmax(0, 1fr)); } .compare .notes { grid-column: 1 / -1; } }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+
+  .col-label { font: 600 11px var(--sans); letter-spacing: .11em; text-transform: uppercase; margin: 0 0 9px; display: flex; align-items: center; gap: 7px; }
+  .col-label .tag { border-radius: 4px; padding: 2px 6px; font-size: 10px; letter-spacing: .06em; }
+  .col-label.bad { color: var(--stop); }
+  .col-label.bad .tag { background: var(--stop-soft); }
+  .col-label.good { color: var(--good); }
+  .col-label.good .tag { background: var(--good-soft); }
+
+  .phone {
+    width: 100%; max-width: 390px; height: 720px; overflow: hidden; position: relative;
+    display: grid; grid-template-rows: 32px minmax(0, 1fr);
+    border: 1px solid var(--line); border-radius: 34px; background: var(--paper);
+    box-shadow: var(--shadow);
+  }
+  .statusbar {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    padding: 10px 22px 0; background: var(--toolbar); font-size: 11px; font-weight: 500; color: var(--ink);
+  }
+  .statusbar .island { width: 84px; height: 18px; border-radius: 999px; background: #111; }
+  .statusbar .right { justify-self: end; color: var(--soft-ink); font-size: 10.5px; }
+  .screen { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--paper); position: relative; }
+
+  /* ---------- chrome primitives: NOW (measured from app.css) ---------- */
+  /* The reading titlebar as it stands on main: 56 pt, 44 pt back, centred filename.
+     Already correct — it is the palette below it that is not. */
+  .nav-now {
+    position: relative; height: 56px; flex: 0 0 56px; display: flex; align-items: center; gap: 8px;
+    padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--toolbar);
+  }
+  .nav-now .grp { display: flex; align-items: center; gap: 6px; }
+  .nav-now .grp.trail { margin-left: auto; z-index: 1; }
+  .nav-now .fname { position: absolute; left: 82px; right: 82px; text-align: center; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tool-now { width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center; color: var(--soft-ink); background: transparent; }
+  .tool-now svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .back-now { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; gap: 1px; padding: 0 10px 0 2px; border-radius: 9px; color: var(--accent); font: 400 17px/1 var(--sans); }
+  .back-now svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+  .join-now { min-height: 30px; border-radius: 8px; padding: 0 11px; display: inline-flex; align-items: center; color: var(--soft-ink); font-size: 12px; opacity: .5; }
+  .status-now { font-size: 11px; max-width: 72px; color: var(--good); display: inline-flex; align-items: center; gap: 5px; }
+  .status-now::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--good); flex: none; }
+
+  /* ---------- chrome primitives: PROPOSED ---------- */
+  .nav-new {
+    position: relative; min-height: 56px; display: flex; align-items: center; gap: 4px;
+    padding: 4px 6px; border-bottom: 1px solid var(--line); background: var(--toolbar);
+  }
+  .nav-new .grp { display: flex; align-items: center; gap: 4px; }
+  .nav-new .grp.trail { margin-left: auto; z-index: 1; }
+  .nav-new .fname { position: absolute; left: 92px; right: 92px; text-align: center; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tool-new { min-width: 44px; height: 44px; border-radius: 11px; display: inline-grid; place-items: center; color: var(--accent); background: transparent; padding: 0 6px; font: 500 15px var(--sans); }
+  .tool-new svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .back-new { min-height: 44px; display: inline-flex; align-items: center; gap: 3px; padding: 0 10px 0 4px; border-radius: 11px; color: var(--accent); font: 400 17px/1 var(--sans); }
+  .back-new svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .nav-title-new { font: 600 17px var(--sans); text-align: center; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* generic doc body */
+  .doc { min-height: 0; overflow: hidden; padding: 14px 20px 0; }
+  .doc h4 { margin: 0 0 8px; font: 600 19px/1.3 var(--sans); }
+  .doc p { margin: 0 0 11px; font: 15px/1.5 var(--serif); color: var(--ink); }
+  .doc p.sm { font-size: 14px; }
+  .doc .chk { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 8px; font: 15px/1.4 var(--serif); }
+  .doc .box { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--quiet); flex: none; margin-top: 2px; }
+  .doc .box.on { background: var(--accent); border-color: var(--accent); }
+
+  /* keyboard */
+  .keyboard { background: var(--selection); border-top: 1px solid var(--line); padding: 7px 4px 10px; display: grid; gap: 6px; }
+  .keyboard .krow { display: flex; gap: 5px; justify-content: center; }
+  .keyboard .key { flex: 1; max-width: 34px; height: 38px; border-radius: 5px; background: var(--paper); box-shadow: 0 1px 0 rgba(0,0,0,.16); }
+  .keyboard .key.wide { max-width: none; flex: 3; }
+  .home-ind { height: 22px; display: grid; place-items: center; background: var(--selection); }
+  .home-ind::after { content: ''; width: 128px; height: 5px; border-radius: 3px; background: var(--ink); opacity: .28; }
+
+  /* ---------- palette: NOW ---------- */
+  .palette-now {
+    position: absolute; left: 8px; right: 8px; z-index: 5;
+    display: flex; align-items: center; justify-content: space-evenly; gap: 2px;
+    padding: 1px 5px; border: 1px solid var(--line); border-radius: 11px;
+    background: color-mix(in srgb, var(--paper) 68%, var(--quiet));
+    box-shadow: 0 10px 30px rgb(40 35 29 / 16%);
+  }
+  .sc-now { min-width: 31px; width: 31px; height: 29px; display: grid; place-items: center; border-radius: 6px; color: var(--soft-ink); font-size: 13px; }
+  .sc-now svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .sc-now .aa { font: 500 16px/1 var(--serif); }
+  .sc-now .wc { font-size: 11px; color: var(--quiet); }
+
+  /* ---------- palette: PROPOSED ---------- */
+  .palette-new {
+    position: absolute; left: 0; right: 0; z-index: 5;
+    border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--toolbar) 92%, transparent);
+    backdrop-filter: blur(18px);
+  }
+  .palette-new .scroller { display: flex; align-items: center; gap: 4px; padding: 4px 8px; overflow-x: auto; }
+  .palette-new .scroller::after { content: ''; flex: none; width: 2px; }
+  .sc-new {
+    flex: none; min-width: 44px; height: 44px; display: grid; place-items: center;
+    border-radius: 11px; color: var(--ink); font-size: 15px; background: transparent;
+  }
+  .sc-new.on { background: var(--accent-soft); color: var(--accent); }
+  .sc-new svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .sc-new .aa { font: 500 20px/1 var(--serif); }
+  .sc-new b { font: 700 18px/1 var(--sans); }
+  .sc-new i { font: italic 600 18px/1 var(--serif); }
+  .palette-new .sep { flex: none; width: 1px; height: 24px; background: var(--line); margin: 0 3px; }
+  .palette-new .edge { position: absolute; top: 0; bottom: 0; width: 26px; pointer-events: none; }
+  .palette-new .edge.r { right: 0; background: linear-gradient(to left, var(--toolbar), transparent); }
+
+  /* ---------- sheets ---------- */
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 20;
+    border-radius: 16px 16px 0 0; border-top: 1px solid var(--line);
+    background: var(--window); box-shadow: 0 -16px 46px rgb(34 29 22 / 26%);
+    padding: 8px 10px calc(10px + 18px);
+  }
+  .sheet .grabber { width: 38px; height: 5px; border-radius: 3px; background: var(--quiet); opacity: .5; margin: 2px auto 10px; }
+  .sheet .sheet-title { font: 600 17px var(--sans); padding: 0 8px 8px; display: flex; align-items: center; justify-content: space-between; }
+  .sheet .sheet-title button { min-height: 44px; padding: 0 10px; border: 0; background: transparent; color: var(--accent); font: 400 17px var(--sans); }
+  .sheet-row {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    min-height: 52px; padding: 0 12px; border-radius: 11px;
+    font: 17px/1.3 var(--sans); color: var(--ink); background: transparent; border: 0; text-align: left;
+  }
+  .sheet-row + .sheet-row { box-shadow: inset 0 1px 0 var(--line); }
+  .sheet-row .ico { width: 22px; height: 22px; flex: none; color: var(--soft-ink); }
+  .sheet-row .ico svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .sheet-row .count { margin-left: auto; color: var(--quiet); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .sheet-row.sel { background: var(--accent-soft); color: var(--accent); }
+
+  /* NOW: dropdown menu + popover, at real size */
+  .menu-now {
+    position: absolute; z-index: 20; min-width: 176px; padding: 6px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--window);
+    box-shadow: 0 14px 34px rgb(40 35 29 / 22%);
+  }
+  .menu-now .mrow { min-height: 27px; height: 27px; display: flex; align-items: center; padding: 0 8px; border-radius: 6px; font-size: 13px; color: var(--ink); }
+  .menu-now .mrow.sel { background: var(--accent); color: #fff; }
+  .menu-now .msep { height: 1px; background: var(--line); margin: 4px 6px; }
+
+  .pop-now {
+    position: absolute; z-index: 20; width: 232px; padding: 8px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--window);
+    box-shadow: 0 14px 34px rgb(40 35 29 / 22%);
+  }
+  .pop-now .prow { display: flex; gap: 3px; padding-top: 6px; }
+  .pop-now .prow:first-child { padding-top: 0; }
+  .pop-now .prow button { flex: 1; padding: 7px 8px; font: 500 11px var(--sans); border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); }
+  .pop-now .prow.family button { padding: 6px 2px; font-size: 12px; }
+  .pop-now .prow.size button { flex: none; padding: 3px 9px; line-height: 1; font-size: 12px; }
+  .pop-now .prow.size button.lg { font-size: 17px; }
+  .pop-now .swatch-now { width: 30px; height: 24px; border-radius: 5px; border: 1px solid var(--line); }
+  .pop-now .lbl { font: 500 10px var(--sans); color: var(--quiet); padding-left: 4px; letter-spacing: .04em; }
+  .pop-now .steps { display: flex; gap: 3px; flex: 1; }
+  .pop-now .steps button { flex: 1; padding: 5px 2px; font-size: 11px; }
+
+  /* PROPOSED: segmented + stepper */
+  .seg { display: flex; gap: 4px; padding: 4px; border-radius: 13px; background: var(--selection); }
+  .seg button { flex: 1; min-height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); font: 400 15px var(--sans); }
+  .seg button.on { background: var(--paper); box-shadow: 0 1px 3px rgb(40 35 29 / 14%); font-weight: 500; }
+  .stepper-new { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 13px; background: var(--selection); }
+  .stepper-new button { min-width: 56px; height: 44px; border: 0; border-radius: 10px; background: var(--paper); color: var(--ink); font: 400 15px var(--sans); }
+  .stepper-new .val { flex: 1; text-align: center; font: 500 17px var(--sans); font-variant-numeric: tabular-nums; }
+  .stepper-new button.aa-s { font-size: 15px; }
+  .stepper-new button.aa-l { font-size: 22px; }
+  .swatch-new { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line); }
+  .swatch-new.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .field-label { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--quiet); padding: 14px 4px 6px; }
+
+  /* toggle */
+  .switch { margin-left: auto; width: 51px; height: 31px; border-radius: 16px; background: var(--quiet); position: relative; flex: none; }
+  .switch.on { background: var(--good); }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  .switch.on::after { left: 22px; }
+
+  /* ---------- note rows ---------- */
+  .rows { padding: 0 12px; }
+  .row-now { position: relative; min-height: 70px; padding: 10px 40px 9px 12px; border-bottom: 1px solid var(--line); }
+  .row-now strong { display: block; font: 600 14px/1.25 var(--sans); }
+  .row-now span { display: block; margin-top: 3px; font: 13px/1.35 var(--sans); color: var(--soft-ink); }
+  .row-now .rowbtn { position: absolute; width: 28px; height: 28px; right: 7px; border-radius: 6px; display: grid; place-items: center; color: var(--quiet); }
+  .row-now .rowbtn.close { top: 7px; }
+  .row-now .rowbtn.pin { bottom: 7px; }
+  .row-now .rowbtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+  .row-new { position: relative; display: flex; min-height: 84px; overflow: hidden; border-radius: 12px; }
+  .row-new .body { flex: 1; min-width: 0; padding: 12px 12px 12px 14px; border-bottom: 1px solid var(--line); }
+  .row-new strong { display: block; font: 600 17px/1.3 var(--sans); }
+  .row-new span { display: block; margin-top: 3px; font: 15px/1.35 var(--sans); color: var(--soft-ink); }
+  .row-new .swipe { display: flex; flex: none; }
+  .row-new .swipe button { width: 74px; border: 0; display: grid; place-items: center; gap: 4px; color: #fff; font: 500 12px var(--sans); }
+  .row-new .swipe .pin { background: var(--accent); }
+  .row-new .swipe .close { background: var(--stop); }
+  .row-new .swipe svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+  .search-now { min-height: 34px; margin: 0; border-radius: 17px; border: 1px solid var(--accent); display: flex; align-items: center; padding: 0 12px; font-size: 13px; color: var(--quiet); flex: 1; }
+  .search-new { min-height: 44px; margin: 6px 14px 8px; border-radius: 12px; background: var(--selection); display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: 17px; color: var(--quiet); }
+  .search-new svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+  .large-title { padding: 8px 18px 2px; font: 500 30px/1.2 var(--sans); letter-spacing: -.035em; }
+
+  .fab {
+    position: absolute; right: 18px; bottom: 26px; z-index: 6;
+    min-width: 56px; height: 56px; border-radius: 28px; display: grid; place-items: center;
+    background: var(--accent); color: #fff; box-shadow: 0 8px 22px rgb(40 35 29 / 28%);
+  }
+  .fab svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.1; stroke-linecap: round; }
+
+  /* figure viewer */
+  .viewer { position: absolute; inset: 0; z-index: 30; background: #1c1b18; display: grid; }
+  .viewer .fig { align-self: center; justify-self: center; width: 78%; height: 200px; border-radius: 10px; background: linear-gradient(135deg, #d7cfc0, #b9c6cf); }
+  .vbtn-now { position: absolute; min-height: 36px; padding: 0 14px; border-radius: 9px; background: var(--paper); color: var(--ink); font: 500 14px var(--sans); display: inline-flex; align-items: center; gap: 6px; }
+  .vbar-new {
+    position: absolute; left: 0; right: 0; display: flex; align-items: center; justify-content: space-around;
+    padding: 6px 10px calc(6px + 18px); background: rgba(28,27,24,.86); backdrop-filter: blur(14px);
+  }
+  .vbar-new button { min-width: 60px; min-height: 44px; border: 0; border-radius: 11px; background: transparent; color: #f2efe8; font: 400 12px var(--sans); display: grid; place-items: center; gap: 3px; }
+  .vbar-new svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .vtop-new { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; justify-content: space-between; padding: calc(6px + 12px) 10px 6px; background: linear-gradient(rgba(28,27,24,.8), transparent); }
+  .vtop-new button { min-width: 44px; min-height: 44px; border: 0; border-radius: 11px; background: rgba(255,255,255,.14); color: #f2efe8; font: 400 15px var(--sans); display: grid; place-items: center; }
+  .vzoom-new { display: flex; align-items: center; gap: 2px; border-radius: 12px; background: rgba(255,255,255,.14); }
+  .vzoom-new button { background: transparent; }
+  .vzoom-new .lvl { min-width: 52px; text-align: center; color: #f2efe8; font: 500 14px var(--sans); font-variant-numeric: tabular-nums; }
+
+  /* annotation callouts */
+  .notes ul { margin: 0; padding-left: 0; list-style: none; }
+  .notes li { position: relative; padding: 0 0 0 26px; margin: 0 0 14px; font-size: 13.5px; line-height: 1.5; color: var(--soft-ink); }
+  .notes li::before {
+    content: attr(data-n); position: absolute; left: 0; top: 1px;
+    width: 18px; height: 18px; border-radius: 50%; background: var(--ink); color: var(--window);
+    font: 600 10.5px/18px var(--sans); text-align: center;
+  }
+  .notes li b { color: var(--ink); font-weight: 600; }
+  .notes li code { font-family: var(--mono); font-size: 12px; }
+  .notes h4 { margin: 0 0 12px; font: 600 11px var(--sans); letter-spacing: .11em; text-transform: uppercase; color: var(--quiet); }
+
+  .pin-n {
+    position: absolute; z-index: 40; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--ink); color: var(--window); font: 600 10.5px/18px var(--sans); text-align: center;
+    box-shadow: 0 0 0 2px var(--paper);
+  }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 18px 0 0; font-size: 12.5px; color: var(--soft-ink); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 26px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  footer { margin-top: 70px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--quiet); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">SimpleMark · iPhone · touch targets</p>
+  <h1>Making the phone build thumb-sized</h1>
+  <p class="standfirst">
+    The note list has had its phone pass and now clears 44&nbsp;pt. Everything a person touches while
+    <em>writing</em> has not: the formatting palette is 31&nbsp;×&nbsp;29, its menus are 27&nbsp;pt rows, and the
+    Aa popover bottoms out around 18&nbsp;pt with 11&nbsp;px labels. This wireframe measures what is actually
+    shipping today, sets the rules, and draws the remaining surfaces before and after.
+  </p>
+  <p class="sources">
+    Measured from <code>src/app/styles/app.css</code> and <code>src/app/ui/window-chrome.ts</code> at the
+    <code>max-width: 620px</code> and <code>720px</code> breakpoints — the two queries that define the phone layout.
+    Sizes below are the authored CSS values, not estimates. Reference: Apple <em>Human Interface Guidelines</em>,
+    Layout &amp; Accessibility (44&nbsp;pt minimum hit target); iOS system patterns for keyboard accessory bars and sheets.
+  </p>
+
+  <!-- ═══════════════════════════════════ 1 ═══════════════════════════════════ -->
+  <h2><span class="num">1</span>What is actually shipping</h2>
+  <p class="lede">
+    Nothing on the phone reaches 44&nbsp;pt. The formatting palette — the control a person touches most
+    while writing — is the smallest thing in the app.
+  </p>
+
+  <div class="rule ok">
+    <b>The note list and navigation already landed.</b> A phone pass on <code>main</code> took the Notes
+    header, the note rows, the swipe actions, the Library sheet and the back button to 44&nbsp;pt and above,
+    and gave the phone its own two-screen navigation instead of a squeezed desktop titlebar. Those rows are
+    marked <em>done</em> below, and §4 records what it did so the next pass does not undo it.
+    <span class="cite">app.css:1922–2210, inside the existing <code>max-width: 620px</code> query</span>
+  </div>
+
+  <table class="audit">
+    <thead>
+      <tr><th>Control</th><th>Selector</th><th>Today</th><th>Target</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr class="head-row"><td colspan="5">Formatting palette — untouched</td></tr>
+      <tr><td>Palette buttons</td><td class="sel">.styles-control</td><td class="was">31 × 29</td><td class="now">44 × 44</td><td>2&nbsp;pt gaps between neighbours</td></tr>
+      <tr><td>Palette bar height</td><td class="sel">.styles-bar</td><td class="was">33</td><td class="now">52</td><td>1&nbsp;pt vertical padding</td></tr>
+      <tr><td>Dropdown rows</td><td class="sel">.styles-menu .styles-control</td><td class="was">27 tall</td><td class="now">52</td><td>13&nbsp;px text</td></tr>
+      <tr class="head-row"><td colspan="5">Aa reader settings — untouched</td></tr>
+      <tr><td>Heading / inline buttons</td><td class="sel">.heading-row button</td><td class="was">≈25 tall</td><td class="now">44</td><td><b>11&nbsp;px</b> text</td></tr>
+      <tr><td>Font family buttons</td><td class="sel">.family-row button</td><td class="was">≈24 tall</td><td class="now">44</td><td>12&nbsp;px text</td></tr>
+      <tr><td>Theme swatches</td><td class="sel">.swatch</td><td class="was">30 × 24</td><td class="now">44 × 44</td><td>3 across</td></tr>
+      <tr><td>Size steppers</td><td class="sel">.size-row button</td><td class="was">≈18 tall</td><td class="now">44</td><td>smallest control in the app</td></tr>
+      <tr><td>Preference steps</td><td class="sel">.pref-row .steps button</td><td class="was">≈21 tall</td><td class="now">44</td><td>11&nbsp;px text</td></tr>
+      <tr class="head-row"><td colspan="5">Figure viewer — untouched</td></tr>
+      <tr><td>Done / Copy / Print</td><td class="sel">.figure-viewer-*-btn</td><td class="was">36 tall</td><td class="now">44</td><td>closest control to passing</td></tr>
+      <tr><td>Zoom −/+</td><td class="sel">.figure-viewer-zoom-btn</td><td class="was">36 × 36</td><td class="now">44 × 44</td><td>6&nbsp;pt gaps</td></tr>
+      <tr class="head-row"><td colspan="5">Navigation &amp; list — residuals</td></tr>
+      <tr><td>Search field</td><td class="sel">.workspace-search</td><td class="was">34 tall</td><td class="now">44</td><td>13&nbsp;px text; no phone override</td></tr>
+      <tr><td>Context-menu rows</td><td class="sel">.note-context-row</td><td class="was">27 tall</td><td class="now">52</td><td>13&nbsp;px; the one menu still a dropdown</td></tr>
+      <tr><td>Titlebar buttons</td><td class="sel">.tool</td><td class="was">30 × 30</td><td class="now">44 × 44</td><td>hidden while reading, live elsewhere</td></tr>
+      <tr class="head-row"><td colspan="5">Navigation &amp; list — already fixed on main</td></tr>
+      <tr><td>Back to list</td><td class="sel">.single-pane-back</td><td class="now">44 × 44</td><td class="now">44</td><td>done — 17&nbsp;px label, 22&nbsp;pt chevron</td></tr>
+      <tr><td>List header actions</td><td class="sel">.notes-action</td><td class="now">44 × 44</td><td class="now">44 × 44</td><td>done — 20&nbsp;pt icons</td></tr>
+      <tr><td>List title</td><td class="sel">.notes-title</td><td class="now">44 min</td><td class="now">44</td><td>done — 17&nbsp;px</td></tr>
+      <tr><td>Note rows</td><td class="sel">.note-item / .note-select</td><td class="now">72 tall</td><td class="now">44</td><td>done — 16&nbsp;px title, 14&nbsp;px preview</td></tr>
+      <tr><td>Row actions</td><td class="sel">.note-close / .note-pin</td><td class="now">76 × full</td><td class="now">44</td><td>done — and no longer hover-gated</td></tr>
+      <tr><td>Library / folder rows</td><td class="sel">.notes-menu .folder-row</td><td class="now">52 tall</td><td class="now">52</td><td>done — 16&nbsp;px</td></tr>
+      <tr><td>Sheet rows</td><td class="sel">.notes-menu-row</td><td class="now">44 tall</td><td class="now">44</td><td>done — 15&nbsp;px</td></tr>
+      <tr><td>Sheet Done</td><td class="sel">.notes-menu-done</td><td class="now">44 min</td><td class="now">44</td><td>done — 16&nbsp;px</td></tr>
+    </tbody>
+  </table>
+
+  <div class="rule warn">
+    <b>The palette is also missing its commands.</b> At <code>max-width: 720px</code> the rules
+    <code>.styles-bar-overflow</code> and <code>.styles-asset</code> are set to <code>display: none</code>,
+    which removes <b>Todo, Bold, Italic, Link, Tables and Image</b> from the phone row entirely. What is left is
+    Headers, Lists, Highlight, More, Aa and the word count. Bold and italic — the two most-used marks in any
+    editor — are two taps deep inside <em>More</em>.
+    <span class="cite">app.css:3609 · window-chrome.ts:851</span>
+  </div>
+
+  <div class="rule warn">
+    <b>Why the row cannot simply scroll today.</b> The palette's menus open <em>upward</em> out of the bar, so
+    <code>overflow-x</code> on the row would clip them — a box with one axis clipped clips the other. That
+    constraint is what forces the overflow rule above. Moving those menus to bottom sheets removes the
+    constraint, and then nothing has to be hidden.
+    <span class="cite">app.css:3677–3690 — the comment that documents the trap</span>
+  </div>
+
+  <!-- ═══════════════════════════════════ 2 ═══════════════════════════════════ -->
+  <h2><span class="num">2</span>The rules</h2>
+  <p class="lede">Seven rules. Everything drawn after this follows them, and each one is checkable in review.</p>
+
+  <div class="rule"><b>R1 — 44 × 44 floor.</b> Every control a finger can reach is at least 44&nbsp;pt in both axes.
+    No exceptions on the phone, including rows inside menus and sheets.</div>
+  <div class="rule"><b>R2 — hit area ≥ ink.</b> The <em>target</em> is 44&nbsp;pt; the <em>drawing</em> need not be.
+    A 22&nbsp;pt icon centred in a 44&nbsp;pt button keeps the app's quiet look while doubling what you can hit.
+    This is what stops the redesign from turning SimpleMark chunky.</div>
+  <div class="rule"><b>R3 — 8 pt between neighbours.</b> Adjacent targets need clearance or 44&nbsp;pt is a lie:
+    a fingertip covers roughly 10&nbsp;mm, and today's palette has 2&nbsp;pt gaps.</div>
+  <div class="rule"><b>R4 — 17 pt body, 15 pt secondary, nothing below 13.</b> Today's sheet rows are 12&nbsp;px and
+    the Aa popover is 11&nbsp;px. Sizes come from Dynamic Type, so a person who has raised their system text size gets it.</div>
+  <div class="rule"><b>R5 — menus become sheets.</b> A dropdown anchored to a 31&nbsp;pt button is a desktop idiom.
+    On the phone every menu is a bottom sheet with 52&nbsp;pt rows, opening from the thumb end of the screen.
+    <span class="cite">The Library sheet already does exactly this, at exactly 52&nbsp;pt. It is the pattern; the
+    palette menus and the note context menu are what still have to adopt it.</span></div>
+  <div class="rule"><b>R6 — nothing depends on hover.</b> The list already got this right:
+    <code>.note-pin</code> and <code>.note-close</code> are forced to <code>opacity: 1</code> at phone width
+    rather than waiting for a <code>:hover</code> that never arrives. The rule is that no <em>new</em>
+    affordance may be hover-gated — this webview does not report <code>(hover: none)</code> honestly, so a tap
+    can leave a stuck hover state.
+    <span class="cite">app.css:2137 · window-chrome.ts:2828 — the comment that found it</span></div>
+  <div class="rule"><b>R7 — respect the safe areas.</b> Bottom chrome is padded by
+    <code>env(safe-area-inset-bottom)</code>; nothing sits under the home indicator. Already true of the palette
+    and figure viewer — extend it to every sheet.</div>
+
+  <div class="rule ok">
+    <b>What already works and must not be lost.</b> The keyboard-riding palette position
+    (<code>--keyboard-inset</code> measured from <code>visualViewport</code>), the two-screen phone navigation
+    with a named back button and an edge-swipe counterpart, full-height swipe actions on note rows, the
+    Library-as-sheet at 52&nbsp;pt, and the whole 44&nbsp;pt list pass. This wireframe continues that work
+    into the writing surfaces; it does not redo it.
+  </div>
+
+  <!-- ═══════════════════════════════════ 3 ═══════════════════════════════════ -->
+  <h2><span class="num">3</span>The formatting palette</h2>
+  <p class="lede">
+    The one surface a writer touches constantly, and the smallest. Today it is a 33&nbsp;pt strip of 31&nbsp;pt
+    buttons floating 8&nbsp;pt above the keyboard, with six commands removed to make it fit.
+  </p>
+
+  <div class="compare">
+    <div>
+      <p class="col-label bad"><span class="tag">NOW</span> 31 × 29 pt targets</p>
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="island"></span><span class="right">▪▪ ⌃ ▮</span></div>
+        <div class="screen" style="grid-template-rows: auto minmax(0,1fr) auto;">
+          <div class="nav-now">
+            <div class="grp">
+              <span class="back-now"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg>Notes</span>
+            </div>
+            <span class="fname">storm-atlas</span>
+            <div class="grp trail">
+              <span class="status-now">Saved</span>
+              <span class="join-now">Work with AI</span>
+            </div>
+          </div>
+          <div class="doc">
+            <h4>III. The reserve floor</h4>
+            <p>The committee had already agreed the number before the storm arrived, which is why nobody argued about it afterwards.</p>
+            <div class="chk"><span class="box on"></span><span>Keep the clinic circuit energised</span></div>
+            <div class="chk"><span class="box"></span><span>Spend below the 42% reserve floor</span></div>
+          </div>
+          <div style="position: relative;">
+            <div class="palette-now" style="bottom: calc(100% + 8px);">
+              <span class="sc-now"><svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M6 12h12"/></svg></span>
+              <span class="sc-now"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span>
+              <span class="sc-now"><svg viewBox="0 0 24 24"><path d="M3 19h18M6 14l6-9 6 9-6 3z"/></svg></span>
+              <span class="sc-now"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></span>
+              <span class="sc-now"><span class="aa">Aa</span></span>
+              <span class="sc-now"><span class="wc">412</span></span>
+            </div>
+            <div class="keyboard">
+              <div class="krow"><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span></div>
+              <div class="krow"><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span></div>
+              <div class="krow"><span class="key wide"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key wide"></span></div>
+              <div class="krow"><span class="key wide"></span><span class="key wide" style="flex: 8;"></span><span class="key wide"></span></div>
+            </div>
+            <div class="home-ind"></div>
+          </div>
+        </div>
+        <span class="pin-n" style="right: 128px; bottom: 214px;">1</span>
+        <span class="pin-n" style="left: 16px; bottom: 214px;">2</span>
+        <span class="pin-n" style="right: 14px; top: 46px;">3</span>
+      </div>
+    </div>
+
+    <div>
+      <p class="col-label good"><span class="tag">PROPOSED</span> 44 × 44, nothing hidden</p>
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span class="island"></span><span class="right">▪▪ ⌃ ▮</span></div>
+        <div class="screen" style="grid-template-rows: auto minmax(0,1fr) auto;">
+          <div class="nav-new">
+            <div class="grp">
+              <span class="back-new"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg>Notes</span>
+            </div>
+            <span class="fname">storm-atlas</span>
+            <div class="grp trail">
+              <span class="tool-new" style="color: var(--good); font-size: 11px; min-width: 0;">Saved</span>
+              <span class="tool-new"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg></span>
+            </div>
+          </div>
+          <div class="doc">
+            <h4>III. The reserve floor</h4>
+            <p>The committee had already agreed the number before the storm arrived, which is why nobody argued about it afterwards.</p>
+            <div class="chk"><span class="box on"></span><span>Keep the clinic circuit energised</span></div>
+            <div class="chk"><span class="box"></span><span>Spend below the 42% reserve floor</span></div>
+          </div>
+          <div style="position: relative;">
+            <div class="palette-new" style="bottom: 100%;">
+              <div class="scroller">
+                <span class="sc-new"><b>B</b></span>
+                <span class="sc-new"><i>I</i></span>
+                <span class="sc-new on"><svg viewBox="0 0 24 24"><path d="M4 20h16M6 15l7-9 5 9z"/></svg></span>
+                <span class="sep"></span>
+                <span class="sc-new"><svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M6 12h12"/></svg></span>
+                <span class="sc-new"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span>
+                <span class="sc-new"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.6"/><path d="M5 7.5 6.6 9 8.4 6M13 7h8M13 17h8M3 17l2 2 4-4"/></svg></span>
+                <span class="sc-new"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
+                <span class="sc-new"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M9 10v9"/></svg></span>
+                <span class="sc-new"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="m21 15-5-4-9 8"/></svg></span>
+                <span class="sc-new"><span class="aa">Aa</span></span>
+              </div>
+              <span class="edge r"></span>
+            </div>
+            <div class="keyboard">
+              <div class="krow"><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span></div>
+              <div class="krow"><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span></div>
+              <div class="krow"><span class="key wide"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key wide"></span></div>
+              <div class="krow"><span class="key wide"></span><span class="key wide" style="flex: 8;"></span><span class="key wide"></span></div>
+            </div>
+            <div class="home-ind"></div>
+          </div>
+        </div>
+        <span class="pin-n" style="left: 14px; bottom: 222px;">4</span>
+        <span class="pin-n" style="right: 14px; bottom: 222px;">5</span>
+        <span class="pin-n" style="right: 14px; top: 48px;">6</span>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h4>What changes</h4>
+      <ul>
+        <li data-n="1"><b>Four commands and a number.</b> Headers, Lists, Highlight, More, Aa, word count. Bold, italic,
+          todo, link, table and image are all <code>display: none</code> at this width.</li>
+        <li data-n="2"><b>A floating strip, 8 pt off both edges.</b> 33&nbsp;pt tall with 2&nbsp;pt gaps — three
+          separate R1 and R3 failures in one row.</li>
+        <li data-n="3"><b>The bar above it is already right</b> — 56&nbsp;pt, a 44&nbsp;pt back button, a centred
+          filename. The exception is the trailing pill: "Work with AI" is <code>disabled</code> in this build, and
+          because it carries <code>.join</code> rather than <code>.tool</code> it escapes the
+          <code>.right .tool { display: none }</code> rule that hides the others. A 30&nbsp;pt dead target.</li>
+        <li data-n="4"><b>Full-width accessory bar, edge to edge.</b> 52&nbsp;pt tall, seated on the keyboard's top
+          edge like a real <code>inputAccessoryView</code> — no floating, no drag, nothing to lose behind the fold.
+          Keeps the existing <code>--keyboard-inset</code> machinery.</li>
+        <li data-n="5"><b>One scrolling row, 44 pt targets, every command present.</b> Bold and italic come back to the
+          front. The row scrolls horizontally because its menus now open as sheets rather than upward, which is what
+          lifted the <code>overflow-x</code> ban. A right-edge fade says there is more.</li>
+        <li data-n="6"><b>The dead pill becomes a real More button</b> at 44&nbsp;pt — share, document info, export —
+          and "Saved" stays as text, which is status, not a target.</li>
+      </ul>
+      <div class="legend">
+        <span><i style="background: var(--stop-soft); border: 1px solid var(--stop);"></i> under 44 pt</span>
+        <span><i style="background: var(--good-soft); border: 1px solid var(--good);"></i> 44 pt or more</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>The palette's menus, as sheets</h3>
+  <p class="lede">
+    Headers, Lists, Highlight and More open upward into 27&nbsp;pt rows today. Each becomes a sheet at
+    the thumb end, with 52&nbsp;pt rows and 17&nbsp;pt text.
+  </p>
+
+  <div class="compare">
+    <div>
+      <p class="col-label bad"><span class="tag">NOW</span> 27 pt rows, 13 px text</p>
+      <div class="phone" style="height: 560px;">
+        <div class="statusbar"><span>9:41</span><span class="island"></span><span class="right">▪▪ ⌃ ▮</span></div>
+        <div class="screen" style="grid-template-rows: auto minmax(0,1fr) auto;">
+          <div class="nav-now"><div class="grp"><span class="back-now"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg>Notes</span></div><div class="grp trail"><span class="status-now">Saved</span></div></div>
+          <div class="doc" style="position: relative;">
+            <h4>III. The reserve floor</h4>
+            <p class="sm">The committee had already agreed the number before the storm arrived.</p>
+            <div class="menu-now" style="left: 60px; bottom: -6px;">
+              <div class="mrow">Title</div>
+              <div class="mrow sel">Heading 1</div>
+              <div class="mrow">Heading 2</div>
+              <div class="mrow">Heading 3</div>
+              <div class="msep"></div>
+              <div class="mrow">Body</div>
+              <div class="mrow">Monospaced</div>
+              <div class="mrow">Quote</div>
+              <div class="mrow">Code block</div>
+            </div>
+          </div>
+          <div style="position: relative;">
+            <div class="palette-now" style="bottom: calc(100% + 8px);">
+              <span class="sc-now"><svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M6 12h12"/></svg></span>
+              <span class="sc-now"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span>
+              <span class="sc-now"><svg viewBox="0 0 24 24"><path d="M3 19h18M6 14l6-9 6 9-6 3z"/></svg></span>
+              <span class="sc-now"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></span>
+              <span class="sc-now"><span class="aa">Aa</span></span>
+              <span class="sc-now"><span class="wc">412</span></span>
+            </div>
+            <div class="keyboard" style="padding-bottom: 6px;">
+              <div class="krow"><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span></div>
+              <div class="krow"><span class="key wide"></span><span class="key wide" style="flex: 8;"></span><span class="key wide"></span></div>
+            </div>
+            <div class="home-ind"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="col-label good"><span class="tag">PROPOSED</span> 52 pt rows, 17 pt text</p>
+      <div class="phone" style="height: 560px;">
+        <div class="statusbar"><span>9:41</span><span class="island"></span><span class="right">▪▪ ⌃ ▮</span></div>
+        <div class="screen" style="grid-template-rows: auto minmax(0,1fr);">
+          <div class="nav-new"><div class="grp"><span class="back-new"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg>Notes</span></div><div class="grp trail"><span class="tool-new" style="color: var(--good); font-size: 13px;">Saved</span></div></div>
+          <div class="doc" style="position: relative;">
+            <h4>III. The reserve floor</h4>
+            <p class="sm">The committee had already agreed the number before the storm arrived.</p>
+            <div class="sheet">
+              <div class="grabber"></div>
+              <div class="sheet-title">Paragraph style<button>Done</button></div>
+              <div class="sheet-row">Title</div>
+              <div class="sheet-row sel">Heading 1<span class="count">✓</span></div>
+              <div class="sheet-row">Heading 2</div>
+              <div class="sheet-row">Heading 3</div>
+              <div class="sheet-row">Body</div>
+              <div class="sheet-row">Quote</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h4>Sheet rules</h4>
+      <ul>
+        <li data-n="1"><b>52 pt rows, 17 pt text.</b> Comfortably above the floor, and the same measurement everywhere
+          — palette menus, note context menu, the Library sheet.</li>
+        <li data-n="2"><b>Grabber and Done.</b> Two ways out, both at the thumb end. Tapping outside also dismisses.</li>
+        <li data-n="3"><b>It replaces the keyboard, not the document.</b> Opening a sheet dismisses the keyboard, so the
+          sheet has room and the selection stays put — the palette's existing <code>mousedown</code> suppression
+          already keeps focus in the editor.</li>
+        <li data-n="4"><b>Checkmark, not colour reversal.</b> The current row uses a full-bleed accent fill; a
+          trailing ✓ reads at a glance and survives a dark-mode audit.</li>
+        <li data-n="5"><b>This is the change that unblocks scrolling.</b> With no upward menus, the palette row can
+          take <code>overflow-x: auto</code>, and the six hidden commands come back.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 4 ═══════════════════════════════════ -->
+  <h2><span class="num">4</span>Note list and navigation — mostly landed</h2>
+  <p class="lede">
+    This surface has had its pass. The header is 62&nbsp;pt with 44&nbsp;pt actions, rows are 72&nbsp;pt with
+    16&nbsp;px titles, swipe reveals full-height 76&nbsp;pt actions, and the phone gets its own two-screen
+    navigation rather than a squeezed titlebar. Two residuals remain, and one open question.
+  </p>
+
+  <div class="rule ok">
+    <b>Recorded so the next pass does not undo it.</b> The left-hand frame below is <em>current
+    <code>main</code></em>, not a defect. It is drawn here because §3 and §5 change the same chrome, and
+    because the measurements it establishes — 62&nbsp;pt header, 44&nbsp;pt actions, 72&nbsp;pt rows,
+    52&nbsp;pt sheet rows — are the ones the rest of this wireframe matches rather than reinvents.
+  </div>
+
+  <div class="compare">
+    <div>
+      <p class="col-label good"><span class="tag">ON MAIN</span> already 44 pt</p>
+      <div class="phone" style="height: 660px;">
+        <div class="statusbar"><span>9:41</span><span class="island"></span><span class="right">▪▪ ⌃ ▮</span></div>
+        <div class="screen" style="grid-template-rows: auto minmax(0,1fr) auto;">
+          <div style="min-height: 62px; display: flex; align-items: center; gap: 3px; padding: 0 10px 0 16px; border-bottom: 1px solid var(--line);">
+            <span style="margin-right: auto; min-height: 44px; display: flex; align-items: center; gap: 5px; font: 600 17px var(--sans);">All Notes <span style="color: var(--quiet);">▾</span></span>
+            <span class="tool-new" style="width: 44px; height: 44px; border-radius: 50%; color: var(--soft-ink);"><svg viewBox="0 0 24 24" style="width: 20px; height: 20px;"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>
+            <span class="tool-new" style="width: 44px; height: 44px; border-radius: 50%; color: var(--soft-ink);"><svg viewBox="0 0 24 24" style="width: 20px; height: 20px;"><path d="M12 5v14M5 12h14"/></svg></span>
+          </div>
+          <div class="rows" style="overflow: hidden; padding: 8px 10px;">
+            <div class="row-new" style="min-height: 72px;">
+              <div class="body" style="padding: 12px 14px 11px;">
+                <strong style="font-size: 16px;">project-tanoa-storm-atlas</strong>
+                <span style="font-size: 14px;">Three promises, one battery.</span>
+              </div>
+              <div class="swipe">
+                <button class="pin" style="width: 76px; background: color-mix(in srgb, var(--quiet) 40%, transparent); color: var(--ink);"><svg viewBox="0 0 24 24"><path d="M9 4h6l-1 6 4 3v2H6v-2l4-3z"/><path d="M12 15v5"/></svg></button>
+                <button class="close" style="width: 76px; background: #b4392c;"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+              </div>
+            </div>
+            <div class="row-new" style="min-height: 72px;">
+              <div class="body" style="padding: 12px 14px 11px;">
+                <strong style="font-size: 16px;">reserve-floor-notes</strong>
+                <span style="font-size: 14px;">Spend below the 42% community reserve floor; agreed before the storm.</span>
+              </div>
+            </div>
+            <div class="row-new" style="min-height: 72px;">
+              <div class="body" style="padding: 12px 14px 11px;">
+                <strong style="font-size: 16px;">commissioning-schedule</strong>
+                <span style="font-size: 14px;">Keep the flexible 2.5 kW commissioning load online.</span>
+              </div>
+            </div>
+          </div>
+          <div class="home-ind"></div>
+        </div>
+        <span class="pin-n" style="right: 14px; top: 44px;">1</span>
+        <span class="pin-n" style="right: 88px; top: 128px;">2</span>
+      </div>
+    </div>
+
+    <div>
+      <p class="col-label good"><span class="tag">REMAINING</span> search, menu, thumb arc</p>
+      <div class="phone" style="height: 660px;">
+        <div class="statusbar"><span>9:41</span><span class="island"></span><span class="right">▪▪ ⌃ ▮</span></div>
+        <div class="screen" style="grid-template-rows: auto minmax(0,1fr) auto; position: relative;">
+          <div>
+            <div class="nav-new">
+              <div class="grp"><span class="tool-new"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span></div>
+              <div class="grp trail"><span class="tool-new"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg></span></div>
+            </div>
+            <div class="large-title">All Notes <span style="color: var(--quiet); font-size: 20px;">▾</span></div>
+            <div class="search-new"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search</div>
+          </div>
+          <div class="rows" style="overflow: hidden;">
+            <div class="row-new">
+              <div class="body">
+                <strong>project-tanoa-storm-atlas</strong>
+                <span>Three promises, one battery.</span>
+              </div>
+              <div class="swipe">
+                <button class="pin" style="width: 76px; background: color-mix(in srgb, var(--quiet) 40%, transparent); color: var(--ink);"><svg viewBox="0 0 24 24"><path d="M9 4h6l-1 6 4 3v2H6v-2l4-3z"/><path d="M12 15v5"/></svg>Pin</button>
+                <button class="close" style="width: 76px; background: #b4392c;"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>Close</button>
+              </div>
+            </div>
+            <div class="row-new">
+              <div class="body">
+                <strong>reserve-floor-notes</strong>
+                <span>Spend below the 42% community reserve floor; the number was agreed before the storm.</span>
+              </div>
+            </div>
+            <div class="row-new">
+              <div class="body">
+                <strong>commissioning-schedule</strong>
+                <span>Keep the flexible 2.5 kW commissioning load online.</span>
+              </div>
+            </div>
+          </div>
+          <div class="home-ind"></div>
+          <span class="fab"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+        </div>
+        <span class="pin-n" style="left: 14px; top: 152px;">3</span>
+        <span class="pin-n" style="right: 14px; top: 208px;">4</span>
+        <span class="pin-n" style="left: 14px; top: 108px;">5</span>
+        <span class="pin-n" style="right: 82px; bottom: 46px;">6</span>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h4>Landed, and what is left</h4>
+      <ul>
+        <li data-n="1"><b>Already 44 × 44.</b> Search and new note in a 62&nbsp;pt header, with 20&nbsp;pt icons
+          and a 44&nbsp;pt title target that opens the Library sheet.</li>
+        <li data-n="2"><b>Swipe already reveals full-height 76 pt actions</b>, forced to <code>opacity: 1</code> at
+          this width so nothing waits on a hover that never comes. Icon-only — labels would be the one
+          improvement left, and they are cosmetic.</li>
+        <li data-n="3"><b>Residual: the search field is still 34 pt with 13 px text.</b> It has no phone override
+          at all, so it kept its desktop size while everything around it grew. Drawn here as a permanent
+          44&nbsp;pt field rather than a mode you enter — which also retires the search/close toggle.</li>
+        <li data-n="4"><b>Residual: the note context menu is still a 27 pt dropdown</b> with 13&nbsp;px rows. It is
+          the one menu on this screen that did not become a sheet. Same treatment as §3's menus:
+          52&nbsp;pt rows, 17&nbsp;pt text.</li>
+        <li data-n="5"><b>Open question, not a defect: the large-title shape.</b> Moving the collection name below
+          the bar as a scrolling large title is the standard iOS list, but the current 62&nbsp;pt header is
+          compact and already passes. Worth doing only if the nav bar gains other actions.</li>
+        <li data-n="6"><b>Open question: new note in the thumb arc.</b> The most frequent action in the app sits in
+          the hardest corner to reach one-handed. A 56&nbsp;pt button in the bottom right is the standard answer;
+          the cost is that it floats over the list. Both controls could coexist.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 5 ═══════════════════════════════════ -->
+  <h2><span class="num">5</span>Aa — reader settings</h2>
+  <p class="lede">
+    The densest cluster in the app: a 232&nbsp;pt-wide popover holding roughly twenty controls, several under
+    22&nbsp;pt with 11&nbsp;px labels. It becomes the settings sheet that iOS Books and Safari both use.
+  </p>
+
+  <div class="compare">
+    <div>
+      <p class="col-label bad"><span class="tag">NOW</span> down to 20 pt, 11 px labels</p>
+      <div class="phone" style="height: 600px;">
+        <div class="statusbar"><span>9:41</span><span class="island"></span><span class="right">▪▪ ⌃ ▮</span></div>
+        <div class="screen" style="grid-template-rows: auto minmax(0,1fr) auto;">
+          <div class="nav-now"><div class="grp"><span class="back-now"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg>Notes</span></div><div class="grp trail"><span class="status-now">Saved</span></div></div>
+          <div class="doc" style="position: relative;">
+            <h4>III. The reserve floor</h4>
+            <p class="sm">The committee had already agreed the number.</p>
+            <div class="pop-now" style="right: 8px; bottom: -8px;">
+              <div class="prow"><button>Title</button><button>H1</button><button>H2</button><button>H3</button></div>
+              <div class="prow"><button>Body</button><button>Mono</button><button>Quote</button><button>Code</button></div>
+              <div class="prow"><button><b>B</b></button><button><i>I</i></button><button>U</button><button>S</button></div>
+              <div class="prow family"><button>Serif</button><button>Sans</button><button>Mono</button></div>
+              <div class="prow" style="gap: 6px; padding-top: 8px;">
+                <span class="swatch-now" style="background: #fffefa;"></span>
+                <span class="swatch-now" style="background: #f4ead6;"></span>
+                <span class="swatch-now" style="background: #2b2a26;"></span>
+                <span style="flex: 1;"></span>
+                <span class="prow size" style="padding: 0; gap: 6px;"><button>A</button><button class="lg">A</button></span>
+              </div>
+              <div class="prow" style="display: block; padding-top: 6px;">
+                <span class="lbl">LINE HEIGHT</span>
+                <span class="steps" style="display: flex; gap: 3px; margin-top: 3px;"><button>Tight</button><button>Normal</button><button>Loose</button></span>
+              </div>
+              <div class="prow" style="display: block; padding-top: 6px;">
+                <span class="lbl">MEASURE</span>
+                <span class="steps" style="display: flex; gap: 3px; margin-top: 3px;"><button>Narrow</button><button>Default</button><button>Wide</button></span>
+              </div>
+            </div>
+          </div>
+          <div style="position: relative;">
+            <div class="keyboard" style="padding-bottom: 6px;">
+              <div class="krow"><span class="key wide"></span><span class="key wide" style="flex: 8;"></span><span class="key wide"></span></div>
+            </div>
+            <div class="home-ind"></div>
+          </div>
+        </div>
+        <span class="pin-n" style="right: 14px; top: 150px;">1</span>
+        <span class="pin-n" style="right: 14px; bottom: 130px;">2</span>
+      </div>
+    </div>
+
+    <div>
+      <p class="col-label good"><span class="tag">PROPOSED</span> 44 pt everywhere</p>
+      <div class="phone" style="height: 600px;">
+        <div class="statusbar"><span>9:41</span><span class="island"></span><span class="right">▪▪ ⌃ ▮</span></div>
+        <div class="screen" style="grid-template-rows: auto minmax(0,1fr);">
+          <div class="nav-new"><div class="grp"><span class="back-new"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg>Notes</span></div><div class="grp trail"><span class="tool-new" style="color: var(--good); font-size: 13px;">Saved</span></div></div>
+          <div class="doc" style="position: relative;">
+            <h4>III. The reserve floor</h4>
+            <div class="sheet">
+              <div class="grabber"></div>
+              <div class="sheet-title">Text<button>Done</button></div>
+              <div class="stepper-new" style="margin-bottom: 10px;">
+                <button class="aa-s">A</button>
+                <span class="val">17 pt</span>
+                <button class="aa-l">A</button>
+              </div>
+              <div class="seg" style="margin-bottom: 10px;">
+                <button class="on" style="font-family: var(--serif);">Serif</button>
+                <button>Sans</button>
+                <button style="font-family: var(--mono); font-size: 13px;">Mono</button>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 4px;">
+                <span class="swatch-new on" style="background: #fffefa;"></span>
+                <span class="swatch-new" style="background: #f4ead6;"></span>
+                <span class="swatch-new" style="background: #2b2a26;"></span>
+                <span style="flex: 1;"></span>
+                <span class="tool-new" style="min-width: 44px; height: 44px; border-radius: 12px; background: var(--selection);"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h16"/></svg></span>
+              </div>
+              <div class="sheet-row" style="margin-top: 4px;">Line height<span class="count">Normal ›</span></div>
+              <div class="sheet-row">Measure<span class="count">Default ›</span></div>
+            </div>
+          </div>
+        </div>
+        <span class="pin-n" style="left: 14px; bottom: 268px;">3</span>
+        <span class="pin-n" style="left: 14px; bottom: 216px;">4</span>
+        <span class="pin-n" style="left: 14px; bottom: 158px;">5</span>
+        <span class="pin-n" style="left: 14px; bottom: 74px;">6</span>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h4>What changes</h4>
+      <ul>
+        <li data-n="1"><b>Twenty-odd controls in 232 pt of width.</b> Four-across button rows compute to roughly
+          52&nbsp;pt wide and 26&nbsp;pt tall, with 3&nbsp;pt gaps and 11&nbsp;px labels.</li>
+        <li data-n="2"><b>The size steppers are the smallest thing in the app</b> at about 20&nbsp;pt tall, and they
+          sit next to 30&nbsp;×&nbsp;24 theme swatches.</li>
+        <li data-n="3"><b>Text size gets the whole width</b> as a 44&nbsp;pt stepper with the value stated. It is
+          the control people come here for; it should not be a 20&nbsp;pt afterthought beside the swatches.</li>
+        <li data-n="4"><b>Font family becomes a segmented control</b> — 44&nbsp;pt, three across, each rendered in
+          its own face so the choice shows itself.</li>
+        <li data-n="5"><b>Swatches go to 44 × 44</b> with a selection ring rather than a border change.</li>
+        <li data-n="6"><b>Line height and measure become disclosure rows.</b> They are set once and rarely revisited,
+          so they cost one row here and open their own 44&nbsp;pt options — instead of six 22&nbsp;pt buttons
+          crowding the controls people use daily.</li>
+      </ul>
+      <div class="rule" style="margin-top: 22px; font-size: 13px;">
+        <b>Paragraph and inline styles leave this sheet.</b> Title/H1/H2/H3, Body/Mono/Quote/Code and B/I/U/S are
+        document commands, not reader settings — they belong in the palette (§3), which now has room for them.
+        Aa keeps only what changes how the page <em>reads</em>.
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 6 ═══════════════════════════════════ -->
+  <h2><span class="num">6</span>Figure viewer</h2>
+  <p class="lede">
+    The closest surface to passing already — 36&nbsp;pt controls, safe-area aware, with the document actions
+    correctly moved to the bottom on a phone. It needs 8&nbsp;pt more and labels.
+  </p>
+
+  <div class="compare">
+    <div>
+      <p class="col-label bad"><span class="tag">NOW</span> 36 pt</p>
+      <div class="phone" style="height: 520px;">
+        <div class="statusbar"><span>9:41</span><span class="island"></span><span class="right">▪▪ ⌃ ▮</span></div>
+        <div class="screen">
+          <div class="viewer">
+            <div class="fig"></div>
+            <span class="vbtn-now" style="top: 20px; left: 10px; min-width: 36px; padding: 0 10px;">−</span>
+            <span class="vbtn-now" style="top: 20px; left: 56px; min-width: 36px; padding: 0 10px;">100%</span>
+            <span class="vbtn-now" style="top: 20px; left: 118px; min-width: 36px; padding: 0 10px;">+</span>
+            <span class="vbtn-now" style="top: 20px; right: 10px;">Done</span>
+            <span class="vbtn-now" style="bottom: 62px; left: 74px;">Copy source</span>
+            <span class="vbtn-now" style="bottom: 62px; right: 74px;">Print</span>
+            <p style="position: absolute; bottom: 26px; left: 0; right: 0; margin: 0; text-align: center; color: rgba(255,255,255,.7); font-size: 12px;">Pinch to zoom · drag to pan</p>
+          </div>
+        </div>
+        <span class="pin-n" style="left: 14px; top: 78px;">1</span>
+        <span class="pin-n" style="left: 14px; bottom: 96px;">2</span>
+      </div>
+    </div>
+
+    <div>
+      <p class="col-label good"><span class="tag">PROPOSED</span> 44 pt, labelled</p>
+      <div class="phone" style="height: 520px;">
+        <div class="statusbar"><span>9:41</span><span class="island"></span><span class="right">▪▪ ⌃ ▮</span></div>
+        <div class="screen">
+          <div class="viewer">
+            <div class="fig"></div>
+            <div class="vtop-new">
+              <span class="vzoom-new">
+                <button style="min-width: 44px; min-height: 44px;">−</button>
+                <span class="lvl">100%</span>
+                <button style="min-width: 44px; min-height: 44px;">+</button>
+              </span>
+              <button>Done</button>
+            </div>
+            <div class="vbar-new" style="bottom: 0;">
+              <button><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>Copy source</button>
+              <button><svg viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4v-6h16v6h-2"/><rect x="8" y="14" width="8" height="7" rx="1"/></svg>Print</button>
+              <button><svg viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Share</button>
+            </div>
+          </div>
+        </div>
+        <span class="pin-n" style="left: 14px; top: 78px;">3</span>
+        <span class="pin-n" style="left: 14px; bottom: 84px;">4</span>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h4>What changes</h4>
+      <ul>
+        <li data-n="1"><b>36 pt zoom controls with 6 pt gaps</b>, sitting directly on the drawing.</li>
+        <li data-n="2"><b>Text-only actions</b> floating over the figure, with no background behind them at the
+          bottom — legibility depends entirely on what the drawing happens to look like there.</li>
+        <li data-n="3"><b>44 pt zoom, grouped in one pill</b> with a tabular percentage. One object, not three
+          loose buttons, and it reads against any drawing.</li>
+        <li data-n="4"><b>A real bottom bar</b> with a blurred background, safe-area padding, and icon-plus-label
+          targets at 60&nbsp;×&nbsp;44. The hint line is no longer needed once the bar defines the edge.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 7 ═══════════════════════════════════ -->
+  <h2><span class="num">7</span>Implementation spec</h2>
+  <p class="lede">
+    Tokens first, so the floor is stated once and every rule references it. All of this lives inside the
+    existing <code>max-width: 620px</code> query — the desktop layout does not move.
+  </p>
+
+  <table class="audit">
+    <thead><tr><th>Token</th><th>Value</th><th>Used by</th></tr></thead>
+    <tbody>
+      <tr><td class="sel">--touch-min</td><td class="now">44px</td><td>every control below 620px</td></tr>
+      <tr><td class="sel">--touch-gap</td><td class="now">8px</td><td>spacing between adjacent targets</td></tr>
+      <tr><td class="sel">--sheet-row</td><td class="now">52px</td><td>sheets, menus, list rows in sheets</td></tr>
+      <tr><td class="sel">--phone-body</td><td class="now">17px</td><td>sheet rows, nav titles, list titles</td></tr>
+      <tr><td class="sel">--phone-secondary</td><td class="now">15px</td><td>previews, counts, subtitles</td></tr>
+      <tr><td class="sel">--accessory-bar</td><td class="now">52px</td><td>the keyboard accessory row</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Order of work</h3>
+  <p class="lede">Each step is independently shippable and independently verifiable.</p>
+
+  <table class="audit">
+    <thead><tr><th>#</th><th>Change</th><th>Touches</th><th>Unblocks</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Palette menus become bottom sheets</td><td class="sel">window-chrome.ts · .styles-menu</td><td>lifts the <code>overflow-x</code> ban</td></tr>
+      <tr><td>2</td><td>Accessory bar: full width, 52 pt, 44 pt targets, horizontal scroll</td><td class="sel">.styles-bar · .styles-control</td><td>—</td></tr>
+      <tr><td>3</td><td>Delete the phone overflow rules; every command returns to the row</td><td class="sel">app.css:3713</td><td>bold/italic reachable in one tap</td></tr>
+      <tr><td>4</td><td>Aa becomes a sheet; paragraph/inline styles move to the palette</td><td class="sel">.format-popover · all <code>*-row</code></td><td>needs 1–3 landed first</td></tr>
+      <tr><td>5</td><td>Figure viewer to 44 pt with a blurred bottom bar</td><td class="sel">.figure-viewer-*</td><td>independent of everything above</td></tr>
+      <tr><td>6</td><td>Search field to 44 pt, permanent rather than a mode</td><td class="sel">.workspace-search · .notes-header.searching</td><td>independent</td></tr>
+      <tr><td>7</td><td>Note context menu becomes a sheet at 52 pt</td><td class="sel">.note-context-row</td><td>reuses step 1's sheet</td></tr>
+      <tr><td>8</td><td>The dead "Work with AI" pill becomes a 44 pt More button</td><td class="sel">.join · window-chrome.ts:1529</td><td>independent</td></tr>
+    </tbody>
+  </table>
+
+  <div class="rule">
+    <b>How this gets verified.</b> A Playwright check at 393&nbsp;×&nbsp;852 that walks every element matching
+    <code>button, [role="button"], a</code> inside the phone layout and asserts
+    <code>getBoundingClientRect()</code> is ≥&nbsp;44 in both axes, with an explicit allowlist for anything
+    genuinely exempt. That turns R1 from a design intention into a gate — the same move
+    <code>tests/ui/perf-budget.ts</code> made for wall-clock.
+  </div>
+
+  <div class="rule warn">
+    <b>Two things this wireframe does not settle.</b> First, whether the accessory bar should be a real
+    <code>inputAccessoryView</code> on the Swift side rather than a webview element riding
+    <code>--keyboard-inset</code> — the CSS comment says a webview cannot ask for one, and that is worth
+    re-testing before committing to the measured approach. Second, Dynamic Type: honouring the system text
+    size means the 44&nbsp;pt floor becomes a floor rather than a fixed size, and rows must grow. Both are
+    their own decisions.
+  </div>
+
+  <footer>
+    SimpleMark · iPhone touch-target wireframe · measurements from <code>src/app/styles/app.css</code> and
+    <code>src/app/ui/window-chrome.ts</code> at <code>main</code>. Companion to
+    <code>docs/wireframe-ios.html</code>, which covers navigation and empty states.
+  </footer>
+
+</div>
+</body>
+</html>

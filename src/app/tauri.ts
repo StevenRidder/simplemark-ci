@@ -444,7 +444,10 @@ async function startNative(
     activeCollectionId = collectionId
     saveActiveCollection(window.localStorage, collectionId)
     const catalog = collections.collection(collectionId, inspected.handle)
-    await current.destroy()
+    // Startup can reach this path before there is a composition at all. A
+    // later open replaces the mounted editor; the very first restored note is
+    // the initial mount and therefore has nothing to tear down.
+    if (current !== undefined) await current.destroy()
     activeHandle = opened.handle
     // Whatever was being drafted has either become this file or been left
     // behind; either way the row standing in for it is gone.
@@ -1028,8 +1031,6 @@ async function startNative(
     historyStore.save(history)
   }
 
-  await mountSample()
-
   const mostRecent = collections.recentNotes('').notes[0]
   const restoredCatalog = activeCollectionId === 'recent'
     ? collections.recentNotes('')
@@ -1052,7 +1053,17 @@ async function startNative(
     } catch {
       collections.forgetRecent(restoredNote.handle)
       persistRecentNotes()
+      // There is no existing composition to leave in place here: startup now
+      // mounts the restored note directly instead of first constructing and
+      // immediately destroying the sample editor. If the remembered file has
+      // gone away, make the welcome document the one and only initial mount.
+      await mountSample()
     }
+  } else {
+    // First launch has no recent file. The welcome document is the initial
+    // mount only in that case, never a disposable staging editor for a file we
+    // already know we are about to restore.
+    await mountSample()
   }
 
   await listen<string>('workspace-folder-changed', (event) => {

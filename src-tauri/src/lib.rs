@@ -550,10 +550,31 @@ async fn open_workspace_folder(app: AppHandle) -> Result<Option<WorkspaceCatalog
     workspace_catalog_for_directory(&directory).map(Some)
 }
 
+/// Runs a blocking filesystem read somewhere other than the thread that draws.
+///
+/// A synchronous `#[tauri::command]` runs on the main thread; only an `async`
+/// one reaches the runtime. That distinction does not matter for a local file,
+/// where a read is microseconds, and matters entirely for a cloud-backed one:
+/// iCloud keeps a file as a placeholder until something asks for its bytes, and
+/// the asking is what blocks. On a phone every note is cloud-backed, so a
+/// synchronous read is a UI freeze for as long as the provider takes.
+async fn off_the_ui_thread<T, F>(work: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| format!("The filesystem worker did not finish: {error}"))?
+}
+
 /// Reads a note that is already chosen — used by reopen and by the watcher.
+///
+/// Opening a note is the read that a person is actually waiting on, so it is
+/// the one that must never hold the UI thread. See `off_the_ui_thread`.
 #[tauri::command]
-fn read_note_at(path: String) -> Result<OpenedNote, String> {
-    read_note(Path::new(&path))
+async fn read_note_at(path: String) -> Result<OpenedNote, String> {
+    off_the_ui_thread(move || read_note(Path::new(&path))).await
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -978,14 +999,17 @@ fn workspace_catalog_for_directory(directory: &Path) -> Result<WorkspaceCatalog,
     })
 }
 
+/// Listing walks a directory and stats every entry, which a cloud provider may
+/// also make slow — and this runs on every relist, not only at launch. Off the
+/// UI thread for the same reason reads are (see `off_the_ui_thread`).
 #[tauri::command]
-fn list_workspace(handle: String) -> Result<WorkspaceCatalog, String> {
-    workspace_catalog(Path::new(&handle))
+async fn list_workspace(handle: String) -> Result<WorkspaceCatalog, String> {
+    off_the_ui_thread(move || workspace_catalog(Path::new(&handle))).await
 }
 
 #[tauri::command]
-fn list_workspace_folder(handle: String) -> Result<WorkspaceCatalog, String> {
-    workspace_catalog_for_directory(Path::new(&handle))
+async fn list_workspace_folder(handle: String) -> Result<WorkspaceCatalog, String> {
+    off_the_ui_thread(move || workspace_catalog_for_directory(Path::new(&handle))).await
 }
 
 /// Starts bounded preview reads only after the UI has listed each note.
@@ -2082,6 +2106,35 @@ mod tests {
             Ok(_) => panic!("an unavailable iCloud note must be rejected"),
         };
         assert!(error.contains("Download it in Finder"));
+    }
+
+    /// Reads that may wait on a cloud provider must not be synchronous
+    /// commands.
+    ///
+    /// A synchronous `#[tauri::command]` runs on the main thread; only an
+    /// `async` one reaches the runtime. On a desktop with local files the
+    /// difference is invisible, which is exactly why this went unnoticed: on a
+    /// phone every note lives in iCloud as a placeholder until its bytes are
+    /// asked for, and the asking is what blocks. `read_note_at` was
+    /// synchronous, so opening a note froze the interface for as long as the
+    /// provider took — seconds, on a note that had been evicted.
+    ///
+    /// This is asserted against the source text because there is nothing else
+    /// to assert against. The failure has no behavioural signature anywhere a
+    /// test can run: a simulator has no placeholders, CI has no iCloud, and a
+    /// local temp file materializes instantly. The only durable evidence that
+    /// the invariant still holds is the keyword.
+    #[test]
+    fn commands_that_may_wait_on_a_cloud_provider_are_async() {
+        let source = include_str!("lib.rs");
+        for command in ["read_note_at", "list_workspace", "list_workspace_folder"] {
+            assert!(
+                source.contains(&format!("async fn {command}(")),
+                "`{command}` reads files a cloud provider may not have materialized yet, so it \
+                 must be an async command — a synchronous one runs on the UI thread and freezes \
+                 the app for the length of the download. Wrap the work in `off_the_ui_thread`.",
+            );
+        }
     }
 
     /// The D7 contract in the one place this crate can break it.

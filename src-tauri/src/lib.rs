@@ -655,6 +655,100 @@ fn read_note(path: &Path) -> Result<OpenedNote, String> {
     read_note_after_availability_check(path, local_note_availability(path), || fs::read(path))
 }
 
+/// Reads bytes only after macOS has confirmed that an iCloud item is local.
+///
+/// Derived work such as note summaries has no place to surface an open error,
+/// so it receives `None` for either an unavailable placeholder or an ordinary
+/// read failure. In particular, it must never make iCloud materialize a note
+/// merely to replace the row's extracted preview.
+pub(crate) fn locally_available_note_bytes(path: &Path) -> Option<Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    {
+        let path = summary_read_path(path)?;
+        return summary_note_bytes_after_availability_check(
+            local_note_availability(&path),
+            path_is_in_icloud_storage(&path),
+            || fs::read(&path),
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        fs::read(path).ok()
+    }
+}
+
+/// Follows only the final path component, which is the note entry accepted by
+/// the catalog. `read_link` inspects the link itself; it does not open the
+/// target's bytes. Refuse a loop or an uninspectable path rather than using a
+/// derived summary to trigger provider I/O.
+#[cfg(target_os = "macos")]
+fn summary_read_path(path: &Path) -> Option<PathBuf> {
+    let mut candidate = summary_path_with_resolved_parent(path)?;
+    for _ in 0..16 {
+        let metadata = match fs::symlink_metadata(&candidate) {
+            Ok(metadata) => metadata,
+            // A dangling path can still identify iCloud storage. Let the
+            // availability policy classify it; a later byte read will simply
+            // decline the ordinary missing-file case.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Some(candidate),
+            Err(_) => return None,
+        };
+        if !metadata.file_type().is_symlink() {
+            return Some(candidate);
+        }
+        let target = fs::read_link(&candidate).ok()?;
+        let target = if target.is_absolute() {
+            target
+        } else {
+            candidate.parent()?.join(target)
+        };
+        candidate = summary_path_with_resolved_parent(&target)?;
+    }
+    None
+}
+
+/// Resolves directory links and `..` components without opening the note. The
+/// filename remains uninspected so a dataless item is never materialized just
+/// to decide whether it is safe to summarize.
+#[cfg(target_os = "macos")]
+fn summary_path_with_resolved_parent(path: &Path) -> Option<PathBuf> {
+    let parent = fs::canonicalize(path.parent()?).ok()?;
+    Some(parent.join(path.file_name()?))
+}
+
+/// Summary work is optional, so macOS reads it only when metadata positively
+/// confirms the bytes are local, or when an unknown item is outside iCloud's
+/// on-disk root. An explicit open remains more permissive and can report a
+/// normal filesystem error for an item whose metadata is unknown.
+#[cfg(target_os = "macos")]
+fn summary_note_bytes_after_availability_check(
+    availability: LocalFileAvailability,
+    is_in_icloud_storage: bool,
+    read: impl FnOnce() -> Result<Vec<u8>, std::io::Error>,
+) -> Option<Vec<u8>> {
+    match availability {
+        LocalFileAvailability::Available => read().ok(),
+        LocalFileAvailability::ICloudNotDownloaded => None,
+        LocalFileAvailability::Unknown if is_in_icloud_storage => None,
+        LocalFileAvailability::Unknown => read().ok(),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn path_is_in_icloud_storage(path: &Path) -> bool {
+    let Some(home) = std::env::var_os("HOME") else {
+        return false;
+    };
+    path_is_in_icloud_storage_in(path, Path::new(&home))
+}
+
+#[cfg(target_os = "macos")]
+fn path_is_in_icloud_storage_in(path: &Path, home: &Path) -> bool {
+    let home = fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    path.starts_with(home.join("Library/Mobile Documents"))
+}
+
 fn read_note_after_availability_check(
     path: &Path,
     availability: LocalFileAvailability,
@@ -2088,6 +2182,79 @@ mod tests {
 
         assert_eq!(opened.name, "unknown.md");
         assert_eq!(opened.bytes, BASE64.encode(b"# Unknown\n"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_summary_never_reads_an_icloud_note_with_unknown_local_availability() {
+        let bytes = summary_note_bytes_after_availability_check(
+            LocalFileAvailability::Unknown,
+            true,
+            || -> Result<Vec<u8>, std::io::Error> {
+                panic!("a summary must not read an item whose iCloud state is unknown")
+            },
+        );
+
+        assert!(bytes.is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_summary_reads_an_unknown_note_outside_icloud_storage() {
+        let bytes = summary_note_bytes_after_availability_check(
+            LocalFileAvailability::Unknown,
+            false,
+            || Ok(b"# Local\n".to_vec()),
+        );
+
+        assert_eq!(bytes, Some(b"# Local\n".to_vec()));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_summary_resolves_a_symlink_before_classifying_icloud_storage() {
+        let directory = tempfile::tempdir().unwrap();
+        let home = directory.path().join("home");
+        let icloud = home.join("Library/Mobile Documents/com~apple~CloudDocs");
+        std::fs::create_dir_all(&icloud).unwrap();
+        let linked = directory.path().join("linked.md");
+        let target = icloud.join("offline.md");
+        std::os::unix::fs::symlink(target, &linked).unwrap();
+
+        let resolved = summary_read_path(&linked).expect("symlink target");
+        let bytes = summary_note_bytes_after_availability_check(
+            LocalFileAvailability::Unknown,
+            path_is_in_icloud_storage_in(&resolved, &home),
+            || -> Result<Vec<u8>, std::io::Error> {
+                panic!("a summary must not read an iCloud placeholder through a symlink")
+            },
+        );
+
+        assert!(bytes.is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_summary_resolves_a_symlinked_workspace_before_classifying_icloud_storage() {
+        let directory = tempfile::tempdir().unwrap();
+        let home = directory.path().join("home");
+        let icloud = home.join("Library/Mobile Documents/com~apple~CloudDocs");
+        std::fs::create_dir_all(&icloud).unwrap();
+        let note = icloud.join("offline.md");
+        std::fs::write(&note, "# Offline\n").unwrap();
+        let workspace = directory.path().join("workspace");
+        std::os::unix::fs::symlink(&icloud, &workspace).unwrap();
+
+        let resolved = summary_read_path(&workspace.join("offline.md")).expect("workspace target");
+        let bytes = summary_note_bytes_after_availability_check(
+            LocalFileAvailability::Unknown,
+            path_is_in_icloud_storage_in(&resolved, &home),
+            || -> Result<Vec<u8>, std::io::Error> {
+                panic!("a summary must not read an iCloud note through a workspace symlink")
+            },
+        );
+
+        assert!(bytes.is_none());
     }
 
     #[test]

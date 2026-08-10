@@ -185,9 +185,23 @@ impl SummaryQueue {
         summarizer: &dyn Summarizer,
         now_ms: u64,
     ) -> Option<NoteSummary> {
+        self.drain_next_with_reader(summarizer, now_ms, |path| {
+            crate::locally_available_note_bytes(path)
+        })
+    }
+
+    /// The reader is injected so the queue rule stays testable without a
+    /// particular cloud provider. A `None` means there are no local bytes to
+    /// summarize, and the row keeps its existing extractor preview.
+    fn drain_next_with_reader(
+        &mut self,
+        summarizer: &dyn Summarizer,
+        now_ms: u64,
+        mut read: impl FnMut(&Path) -> Option<Vec<u8>>,
+    ) -> Option<NoteSummary> {
         while !self.wanted.is_empty() {
             let handle = self.wanted.remove(0);
-            let Ok(bytes) = fs::read(&handle) else {
+            let Some(bytes) = read(Path::new(&handle)) else {
                 continue;
             };
             let digest = crate::note_preview::content_digest(&bytes);
@@ -534,6 +548,20 @@ mod tests {
 
         assert!(queue.drain_next(&summarizer, 2_000).is_none());
         assert_eq!(queue.cache_len(), 1);
+    }
+
+    /// A cloud placeholder has a catalog row but no local bytes. It must keep
+    /// its extractor preview without making the summarizer wait for a download.
+    #[test]
+    fn skips_a_note_when_local_bytes_are_unavailable() {
+        let summarizer = StubSummarizer { reply: Some("must not run".into()) };
+        let mut queue = SummaryQueue::new(SummaryCache::default());
+        queue.request(&["/iCloudDrive/offline.md".into()]);
+
+        assert!(queue
+            .drain_next_with_reader(&summarizer, 1_000, |_| None)
+            .is_none());
+        assert_eq!(queue.cache_len(), 0);
     }
 
     /// The first handle is the active note. It must be served before the rows

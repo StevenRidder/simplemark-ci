@@ -574,22 +574,33 @@ async function startNative(
       if (catalog === null) return
       collections.addFolder(catalog)
       persistFolders()
-      await watchFolder(catalog.handle)
       if (!(await flush())) return
+      const startWatchingFolder = (): void => {
+        void watchFolder(catalog.handle).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error)
+          current.setStatus('error', `Folder opened, but changes cannot be watched — ${message}`)
+        })
+      }
+      // Selecting a folder succeeds independently from opening its first
+      // document. iCloud can take time to materialise that document; holding
+      // the collection switch until then leaves the person stranded in Samples
+      // even though the native picker already accepted their folder.
+      activeCollectionId = catalog.handle
+      saveActiveCollection(window.localStorage, catalog.handle)
+      workspaceHandle = catalog.handle
+      reconcileWorkspace('', catalog.handle)
       if (catalog.notes.length === 0) {
-        activeCollectionId = catalog.handle
-        saveActiveCollection(window.localStorage, catalog.handle)
-        workspaceHandle = catalog.handle
         // An empty folder is still a real destination. On a phone this moves
         // to its note list; on a wider window the current document stays
         // visible while the selected, empty folder is shown beside it.
-        reconcileWorkspace('', catalog.handle)
+        startWatchingFolder()
         return
       }
       const next = catalog.notes.find((note) => note.handle === activeHandle) ?? catalog.notes[0]!
       const port = new TauriFilePort(invoke)
       const opened = await port.openAt(next.handle)
       await install(port, opened, catalog.handle)
+      startWatchingFolder()
     })
   }
 

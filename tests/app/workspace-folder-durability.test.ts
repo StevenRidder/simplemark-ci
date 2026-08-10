@@ -21,6 +21,7 @@ import { retainedFolderHandles } from '../../src/app/workspace-collections.js'
 
 const TAURI = readFileSync('src/app/tauri.ts', 'utf8')
 const BOOTSTRAP = readFileSync('src/app/bootstrap.ts', 'utf8')
+const IOS_WORKSPACE_PICKER = readFileSync('src-tauri/swift/SimpleMarkWorkspacePicker.swift', 'utf8')
 
 describe('folders that could not be listed this launch', () => {
   it('stay in the store rather than being erased', () => {
@@ -104,6 +105,11 @@ describe('an empty folder selected from the add-folder action', () => {
     expect(addFolder).toContain('collections.addFolder(catalog)')
     expect(addFolder).toContain('activeCollectionId = catalog.handle')
     expect(addFolder).toContain("reconcileWorkspace('', catalog.handle)")
+    expect(addFolder.indexOf("reconcileWorkspace('', catalog.handle)")).toBeLessThan(
+      addFolder.indexOf('const opened = await port.openAt(next.handle)'),
+    )
+    expect(addFolder).not.toContain('await watchFolder(')
+    expect(addFolder).toContain('void watchFolder(catalog.handle).catch')
   })
 
   it('routes the shared Open Folder command to the native folder action', () => {
@@ -120,6 +126,13 @@ describe('an empty folder selected from the add-folder action', () => {
   it('gives every native mount the same folder action as the plus-folder button', () => {
     const mounts = TAURI.match(/onOpenFolder: addFolder/g) ?? []
     expect(mounts).toHaveLength(4)
+  })
+
+  it('uses the native Files folder picker instead of reopening the app container', () => {
+    expect(IOS_WORKSPACE_PICKER).toContain('UIDocumentPickerViewController(')
+    expect(IOS_WORKSPACE_PICKER).toContain('forOpeningContentTypes: [.folder]')
+    expect(IOS_WORKSPACE_PICKER).toContain('asCopy: false')
+    expect(IOS_WORKSPACE_PICKER).toContain('startAccessingSecurityScopedResource()')
   })
 })
 

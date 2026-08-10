@@ -17,6 +17,10 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
+#[cfg(target_os = "ios")]
+use std::collections::HashSet;
+#[cfg(target_os = "ios")]
+use std::ffi::{c_char, CStr};
 use std::fs::{self, File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
@@ -75,6 +79,38 @@ use objc2_foundation::{
 };
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use tauri::RunEvent;
+
+/// iOS owns the security-scoped folder token, because UIKit creates it. Rust
+/// receives only an already-authorized path and keeps all normal workspace
+/// listing and document operations in the existing native transport.
+#[cfg(target_os = "ios")]
+mod ios_workspace_picker {
+    use super::*;
+
+    unsafe extern "C" {
+        fn simplemark_pick_workspace_folder() -> *mut c_char;
+        fn simplemark_workspace_picker_free(pointer: *mut c_char);
+    }
+
+    unsafe fn take_path(pointer: *mut c_char) -> Option<PathBuf> {
+        if pointer.is_null() {
+            return None;
+        }
+        // Swift returns a malloc'd UTF-8 path and provides the matching free
+        // entrypoint. Invalid UTF-8 cannot become a local Rust path, so treat
+        // it as a cancelled/unavailable selection rather than guessing.
+        let path = CStr::from_ptr(pointer).to_str().ok().map(PathBuf::from);
+        simplemark_workspace_picker_free(pointer);
+        path
+    }
+
+    pub fn pick_folder() -> Option<PathBuf> {
+        // The command runs off the UI thread; Swift presents UIKit on its main
+        // queue and waits only for the person's explicit choice.
+        unsafe { take_path(simplemark_pick_workspace_folder()) }
+    }
+
+}
 
 /// Which commit produced this bundle, captured at compile time by `build.rs`.
 ///
@@ -542,21 +578,33 @@ async fn open_workspace_folder(app: AppHandle) -> Result<Option<WorkspaceCatalog
     workspace_catalog_for_directory(&directory).map(Some)
 }
 
-/// On iOS there is no folder picker, and there does not need to be.
-///
-/// The application owns one document directory, exposed to the Files app and
-/// replicated by iCloud, so the folder that would be chosen on desktop is
-/// already known. Adopting a collection is therefore not a prompt but a fact:
-/// return the catalog of the directory the operating system gave this app.
-///
-/// This is the mobile half of the same `WorkspaceCatalogPort` contract — a
-/// folder of ordinary Markdown files — reached by a different route.
+/// On iOS, select a real Files folder through UIKit and retain its
+/// security-scoped authorization. That lets a person choose iCloud Drive's
+/// existing Simplemark directory instead of silently switching to the app's
+/// different private iCloud container.
 #[cfg(mobile)]
 #[tauri::command]
 async fn open_workspace_folder(app: AppHandle) -> Result<Option<WorkspaceCatalog>, String> {
-    // This action must resolve the same published workspace as startup. Using
-    // Tauri's private documents directory here made the Folder action open an
-    // unrelated empty collection immediately after the app listed iCloud.
+    #[cfg(target_os = "ios")]
+    {
+        let picked = tauri::async_runtime::spawn_blocking(ios_workspace_picker::pick_folder)
+            .await
+            .map_err(|error| format!("The iOS folder picker stopped unexpectedly: {error}"))?;
+        return match picked {
+            Some(directory) => {
+                eprintln!("SimpleMark iOS folder picker returned {}", directory.display());
+                off_the_ui_thread(move || workspace_catalog_for_directory(&directory))
+                    .await
+                    .map(Some)
+            }
+            None => {
+                eprintln!("SimpleMark iOS folder picker returned no folder");
+                Ok(None)
+            }
+        };
+    }
+
+    #[cfg(not(target_os = "ios"))]
     mobile_workspace_catalog(&app).map(Some)
 }
 
@@ -1591,6 +1639,38 @@ fn opened_markdown_paths(urls: &[Url]) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Files hands an iOS editor a security-scoped URL. Converting that URL to a
+/// Rust path does not carry the permission with it, so opening it without this
+/// call commonly looks like an empty launch: the shell receives an open event,
+/// then the first real read is denied. Keep each explicitly delivered document
+/// scope alive for the app process. A document stays open/editable for that
+/// process, and iOS releases the scopes when the process exits.
+#[cfg(target_os = "ios")]
+fn retain_opened_document_scopes(paths: &[PathBuf]) {
+    use std::sync::OnceLock;
+
+    static OPENED_SCOPES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    let scopes = OPENED_SCOPES.get_or_init(|| Mutex::new(HashSet::new()));
+    let Ok(mut scopes) = scopes.lock() else {
+        return;
+    };
+
+    for path in paths {
+        if !scopes.insert(path.clone()) {
+            continue;
+        }
+
+        use objc2_foundation::{NSString, NSURL};
+        let path = NSString::from_str(&path.to_string_lossy());
+        let url = NSURL::fileURLWithPath(&path);
+        // The URL is supplied by Files/Open In rather than the webview. A
+        // false result is still not a reason to discard it: app-owned paths do
+        // not need a scope, while the ordinary reader below gives the person a
+        // concrete error if the provider later refuses the bytes.
+        let _ = unsafe { url.startAccessingSecurityScopedResource() };
+    }
+}
+
 #[cfg_attr(mobile, allow(dead_code))]
 fn opened_markdown_args(args: &[String], cwd: &str) -> Vec<PathBuf> {
     args.iter()
@@ -1635,7 +1715,10 @@ fn queue_opened_paths(app: &AppHandle, paths: Vec<PathBuf>) {
 }
 
 fn queue_opened_notes(app: &AppHandle, urls: &[Url]) {
-    queue_opened_paths(app, opened_markdown_paths(urls));
+    let paths = opened_markdown_paths(urls);
+    #[cfg(target_os = "ios")]
+    retain_opened_document_scopes(&paths);
+    queue_opened_paths(app, paths);
 }
 
 /// Writes bytes atomically: temp file in the same directory, fsync, rename.

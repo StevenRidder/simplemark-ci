@@ -39,6 +39,7 @@ fn main() {
         println!("cargo:rerun-if-changed={path}");
     }
 
+    build_workspace_picker_bridge();
     build_intelligence_bridge();
 
     tauri_build::build()
@@ -139,6 +140,58 @@ fn swift_toolchain_libraries(platform: &str) -> Option<String> {
     libraries
         .is_dir()
         .then(|| libraries.to_string_lossy().into_owned())
+}
+
+/// Compiles the iOS-only folder picker bridge.
+///
+/// Tauri's dialog plugin deliberately returns `FolderPickerNotImplemented` on
+/// mobile. A Markdown workspace, however, is a folder, and iOS provides the
+/// correct capability through `UIDocumentPickerViewController` plus a
+/// security-scoped URL. Keep that UIKit transport in one tiny Swift file; the
+/// Rust command remains an ordinary `WorkspaceCatalog` transport.
+fn build_workspace_picker_bridge() {
+    println!("cargo:rerun-if-changed=swift/SimpleMarkWorkspacePicker.swift");
+
+    let target = std::env::var("TARGET").unwrap_or_default();
+    let Some((sdk_name, os, suffix)) = bridge_target(&target) else {
+        return;
+    };
+    if sdk_name != "iphoneos" && sdk_name != "iphonesimulator" {
+        return;
+    }
+
+    let (Some(out_dir), Some(sdk_path)) = (
+        std::env::var("OUT_DIR").ok(),
+        run("xcrun", &["--sdk", sdk_name, "--show-sdk-path"]),
+    ) else {
+        println!("cargo:warning=the iOS workspace picker bridge could not be built");
+        return;
+    };
+
+    let triple = format!("arm64-apple-{os}{}{suffix}", deployment_target(sdk_name));
+    let library = format!("{out_dir}/libSimpleMarkWorkspacePicker.a");
+    let compiled = Command::new("swiftc")
+        .args([
+            "-O",
+            "-sdk",
+            &sdk_path,
+            "-target",
+            &triple,
+            "-emit-library",
+            "-static",
+            "-module-name",
+            "SimpleMarkWorkspacePicker",
+            "-o",
+            &library,
+            "swift/SimpleMarkWorkspacePicker.swift",
+        ])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+
+    assert!(compiled, "swiftc failed to build the required iOS workspace picker bridge");
+    println!("cargo:rustc-link-search=native={out_dir}");
+    println!("cargo:rustc-link-lib=static=SimpleMarkWorkspacePicker");
 }
 
 /// Compiles the Foundation Models bridge and links it into this binary.

@@ -39,7 +39,7 @@ import { closeHistory } from '@milkdown/kit/prose/history'
 import { DOMSerializer, Fragment } from '@milkdown/kit/prose/model'
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { toggleMark } from '@milkdown/kit/prose/commands'
-import { NodeSelection, Plugin, Selection, TextSelection } from '@milkdown/kit/prose/state'
+import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorState } from '@milkdown/kit/prose/state'
 import {
   addRowAfter,
@@ -52,7 +52,7 @@ import {
   moveTableColumn,
   moveTableRow,
 } from '@milkdown/kit/prose/tables'
-import type { EditorView } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 
 import type {
   AssetReference,
@@ -550,6 +550,13 @@ export class MilkdownEditor {
           },
         }),
       })))
+      // WebKit asks AppleSpell to check the entire contenteditable root after
+      // a layout change. On a long Markdown document that synchronous native
+      // round-trip can block scrolling for seconds. Keep the root out of the
+      // continuous checker and opt only the current prose block back in, so a
+      // correction still gets normal macOS spelling help without making the
+      // rest of the document an input buffer.
+      .use($prose(() => activeBlockSpellcheckPlugin()))
       // Quiet gutter folding (EDITOR-3). View state only: a fold hides content
       // with decorations and never changes the serialised Markdown.
       .use(foldingPlugin)
@@ -2038,6 +2045,55 @@ export class MilkdownEditor {
     this.#activeTableCell = undefined
     await this.editor.destroy()
   }
+}
+
+/**
+ * WebKit's continuous spell checker treats one `contenteditable` root as one
+ * checking unit. That is fine for a short field, but it turns an ordinary
+ * long note into repeated whole-document synchronous work while a person
+ * scrolls. The root is therefore explicitly off; the prose block holding the
+ * caret is the only descendant that turns it back on.
+ *
+ * This is a view-only policy. It neither changes the ProseMirror document nor
+ * disables the macOS text-service commands; those commands still target the
+ * focused block through AppKit's responder chain.
+ */
+function activeBlockSpellcheckPlugin(): Plugin {
+  return new Plugin({
+    key: activeBlockSpellcheckKey,
+    state: {
+      init: (_config, state) => activeBlockSpellcheckDecorations(state),
+      apply: (transaction, decorations, previousState, nextState) =>
+        transaction.docChanged || !previousState.selection.eq(nextState.selection)
+          ? activeBlockSpellcheckDecorations(nextState)
+          : decorations.map(transaction.mapping, transaction.doc),
+    },
+    props: {
+      decorations: (state) => activeBlockSpellcheckKey.getState(state),
+    },
+    view: (view: EditorView) => {
+      // This is deliberately on the editable root, which ProseMirror does not
+      // own or rewrite. The selected descendant's attribute comes from a node
+      // decoration, so ProseMirror preserves it across its own DOM updates.
+      view.dom.spellcheck = false
+      view.dom.setAttribute('spellcheck', 'false')
+      return {}
+    },
+  })
+}
+
+const activeBlockSpellcheckKey = new PluginKey<DecorationSet>('simplemark-active-block-spellcheck')
+
+/** Decorates exactly the text block that holds the selection. */
+function activeBlockSpellcheckDecorations(state: EditorState): DecorationSet {
+  const $head = state.selection.$head
+  for (let depth = $head.depth; depth > 0; depth -= 1) {
+    const node = $head.node(depth)
+    if (!node.isTextblock || node.type.spec.code === true) continue
+    const from = $head.before(depth)
+    return DecorationSet.create(state.doc, [Decoration.node(from, from + node.nodeSize, { spellcheck: 'true' })])
+  }
+  return DecorationSet.empty
 }
 
 

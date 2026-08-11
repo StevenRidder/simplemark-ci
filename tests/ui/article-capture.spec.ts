@@ -31,7 +31,24 @@ const FULL_PAGE = `<html><head><title>Gemini is Cooked</title></head><body>
   <footer><a href="/terms">Terms</a><a href="/privacy">Privacy</a></footer>
 </body></html>`
 
+// The parallel text/plain flavour a real whole-page selection carries. BUG-8
+// requires this to describe the same complete selection as the rich flavour;
+// a title-only synthetic payload would correctly veto HTML as incomplete.
+const FULL_PAGE_TEXT = [
+  // These anchors are inline with no separating source whitespace, which is
+  // also how the browser's text/plain serializer exposes them.
+  'HomeArchiveAbout',
+  'Gemini is Cooked',
+  PROSE,
+  'Chip Gen',
+  'TPU v7',
+  PROSE,
+  'ShareCommentRestack',
+  'TermsPrivacy',
+].join('\n')
+
 const ORDINARY = `<div><p>${PROSE}</p><p>A second <strong>rich</strong> paragraph.</p></div>`
+const ORDINARY_TEXT = `${PROSE}\nA second rich paragraph.`
 
 async function caretAtEnd(page: import('@playwright/test').Page) {
   await page.evaluate(() => window.simplemark!.editor.focusEnd())
@@ -126,18 +143,18 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('a pasted web page offers to trim its chrome', async ({ page }) => {
-  await pasteAtEnd(page, 'Gemini is Cooked', FULL_PAGE)
+  await pasteAtEnd(page, FULL_PAGE_TEXT, FULL_PAGE)
   await expect(page.locator('.page-trim-offer')).toBeVisible()
 })
 
 test('an ordinary rich paste raises no offer', async ({ page }) => {
-  await pasteAtEnd(page, 'plain', ORDINARY)
+  await pasteAtEnd(page, ORDINARY_TEXT, ORDINARY)
   await expect(page.locator(editor)).toContainText('A second rich paragraph.')
   await expect(page.locator('.page-trim-offer')).toHaveCount(0)
 })
 
 test('the faithful paste lands before anything is offered', async ({ page }) => {
-  await pasteAtEnd(page, 'Gemini is Cooked', FULL_PAGE)
+  await pasteAtEnd(page, FULL_PAGE_TEXT, FULL_PAGE)
   const markdown = await serialize(page)
   expect(markdown).toContain('# Gemini is Cooked')
   // Nothing was removed without being asked.
@@ -145,7 +162,7 @@ test('the faithful paste lands before anything is offered', async ({ page }) => 
 })
 
 test('dismissing leaves the faithful paste exactly as it was', async ({ page }) => {
-  await pasteAtEnd(page, 'Gemini is Cooked', FULL_PAGE)
+  await pasteAtEnd(page, FULL_PAGE_TEXT, FULL_PAGE)
   const before = await serialize(page)
   await page.locator('.page-trim-offer-dismiss').click()
   await expect(page.locator('.page-trim-offer')).toHaveCount(0)
@@ -153,13 +170,13 @@ test('dismissing leaves the faithful paste exactly as it was', async ({ page }) 
 })
 
 test('Escape dismisses the offer', async ({ page }) => {
-  await pasteAtEnd(page, 'Gemini is Cooked', FULL_PAGE)
+  await pasteAtEnd(page, FULL_PAGE_TEXT, FULL_PAGE)
   await page.keyboard.press('Escape')
   await expect(page.locator('.page-trim-offer')).toHaveCount(0)
 })
 
 test('trimming removes the page furniture', async ({ page }) => {
-  await pasteAtEnd(page, 'Gemini is Cooked', FULL_PAGE)
+  await pasteAtEnd(page, FULL_PAGE_TEXT, FULL_PAGE)
   await page.locator('.page-trim-offer-accept').click()
   const markdown = await serialize(page)
   expect(markdown).not.toContain('Archive')
@@ -168,7 +185,7 @@ test('trimming removes the page furniture', async ({ page }) => {
 })
 
 test('trimming keeps the heading, the prose and the table', async ({ page }) => {
-  await pasteAtEnd(page, 'Gemini is Cooked', FULL_PAGE)
+  await pasteAtEnd(page, FULL_PAGE_TEXT, FULL_PAGE)
   await page.locator('.page-trim-offer-accept').click()
   const markdown = await serialize(page)
   expect(markdown).toContain('# Gemini is Cooked')
@@ -189,7 +206,7 @@ test('trimming keeps the heading, the prose and the table', async ({ page }) => 
 // clipboard names one", which passes.
 
 test('one undo restores the faithful paste after a trim', async ({ page }) => {
-  await pasteAtEnd(page, 'Gemini is Cooked', FULL_PAGE)
+  await pasteAtEnd(page, FULL_PAGE_TEXT, FULL_PAGE)
   const faithful = await serialize(page)
   await page.locator('.page-trim-offer-accept').click()
   expect(await serialize(page)).not.toBe(faithful)
@@ -202,7 +219,7 @@ test('one undo restores the faithful paste after a trim', async ({ page }) => {
 test('a remote image survives a paste unchanged where no store is composed', async ({ page }) => {
   await pasteAtEnd(
     page,
-    'picture',
+    PROSE,
     `<div><p>${PROSE}</p><p><img src="https://example.com/chart.png" alt="A chart"></p></div>`,
   )
   // Milkdown's commonmark image parseDOM falls back to `alt` for `title` when
@@ -229,7 +246,7 @@ test('a remote image survives a paste unchanged where no store is composed', asy
  * never match regardless of whether the underlying property held.
  */
 test('typing right after a paste is not swallowed by an accepted trim', async ({ page }) => {
-  await pasteAtEnd(page, 'Gemini is Cooked', FULL_PAGE)
+  await pasteAtEnd(page, FULL_PAGE_TEXT, FULL_PAGE)
   await page.keyboard.type('TYPEDAFTERPASTE')
 
   await page.locator('.page-trim-offer-accept').click()
@@ -244,7 +261,7 @@ test('typing right after a paste is not swallowed by an accepted trim', async ({
  * leaving the chrome behind instead of the reverse.
  */
 test('an edit above a full-page paste survives a trim, and the chrome is still removed', async ({ page }) => {
-  await pasteAtEnd(page, 'Gemini is Cooked', FULL_PAGE)
+  await pasteAtEnd(page, FULL_PAGE_TEXT, FULL_PAGE)
   await caretAtStart(page)
   await page.keyboard.type('A paragraph written before any of this was pasted.')
 
@@ -269,7 +286,7 @@ test('an edit above a full-page paste survives a trim, and the chrome is still r
  * the replacement.
  */
 test('replacing the whole document drops a stale trim offer', async ({ page }) => {
-  await pasteAtEnd(page, 'Gemini is Cooked', FULL_PAGE)
+  await pasteAtEnd(page, FULL_PAGE_TEXT, FULL_PAGE)
   await expect(page.locator('.page-trim-offer')).toBeVisible()
 
   await page.keyboard.press('ControlOrMeta+a')
@@ -295,9 +312,14 @@ const MIXED_LINKS = `<div><h2>Contact</h2><p>${PROSE}</p><p>
   <a href="notes/other.md">A sibling note</a>
   <a href="file:///device-root/secret.pdf">A local file</a>
 </p></div>`
+const MIXED_LINKS_TEXT = [
+  'Contact',
+  PROSE,
+  'Click me The story Email us Call us Jump to contact A sibling note A local file',
+].join('\n')
 
 test('a pasted script link loses its destination and keeps its words', async ({ page }) => {
-  await pasteAtEnd(page, 'Contact', MIXED_LINKS)
+  await pasteAtEnd(page, MIXED_LINKS_TEXT, MIXED_LINKS)
   const markdown = await serialize(page)
 
   expect(markdown).not.toContain('javascript:')
@@ -317,7 +339,7 @@ test('a pasted script link loses its destination and keeps its words', async ({ 
  * directly in `tests/domain/paste-urls.test.ts`.
  */
 test('every legitimate link shape survives the same paste', async ({ page }) => {
-  await pasteAtEnd(page, 'Contact', MIXED_LINKS)
+  await pasteAtEnd(page, MIXED_LINKS_TEXT, MIXED_LINKS)
   const markdown = await serialize(page)
 
   expect(markdown).toContain('](https://example.com/story)')
@@ -330,7 +352,7 @@ test('every legitimate link shape survives the same paste', async ({ page }) => 
 test('an inline data: image still lands, and a script image source does not', async ({ page }) => {
   await pasteAtEnd(
     page,
-    'pictures',
+    PROSE,
     `<div><p>${PROSE}</p><p><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="A pixel">` +
       `<img src="javascript:alert(1)" alt="Not a picture"></p></div>`,
   )
@@ -353,7 +375,11 @@ test('accepting a trim does not reintroduce a script link', async ({ page }) => 
     `<p>${PROSE}</p>`,
     `<p>${PROSE} <a href="javascript:alert(1)">Read the source</a></p>`,
   )
-  await pasteAtEnd(page, 'Gemini is Cooked', withScriptLink)
+  await pasteAtEnd(
+    page,
+    FULL_PAGE_TEXT.replace(PROSE, `${PROSE} Read the source`),
+    withScriptLink,
+  )
   await page.locator('.page-trim-offer-accept').click()
 
   const markdown = await serialize(page)

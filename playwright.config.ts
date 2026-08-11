@@ -5,6 +5,11 @@ const baseURL = `http://127.0.0.1:${port}`
 const configuredCiWorkers = Number(process.env['PLAYWRIGHT_WORKERS'] ?? '8')
 const ciWorkers = Number.isInteger(configuredCiWorkers) && configuredCiWorkers > 0 ? configuredCiWorkers : 8
 const workerConfig = process.env['CI'] === 'true' ? { workers: ciWorkers } : {}
+const configuredBrowser = process.env['SIMPLEMARK_TEST_BROWSER'] ?? 'chromium'
+if (configuredBrowser !== 'chromium' && configuredBrowser !== 'webkit') {
+  throw new Error(`SIMPLEMARK_TEST_BROWSER must be chromium or webkit, received ${configuredBrowser}`)
+}
+const browserDevice = configuredBrowser === 'webkit' ? 'Desktop Safari' : 'Desktop Chrome'
 
 /**
  * UI validation for the browser development shell.
@@ -38,7 +43,10 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // Chromium remains the canonical gate. BUG-8 can additionally run an exact
+  // paste regression through Playwright WebKit, the engine family used by the
+  // native WKWebView shell, without doubling every CI run.
+  projects: [{ name: configuredBrowser, use: { ...devices[browserDevice] } }],
   webServer: {
     command: `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`,
     url: baseURL,

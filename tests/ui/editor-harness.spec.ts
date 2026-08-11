@@ -506,7 +506,12 @@ test('GFM constructs render: tables, task lists, strikethrough', async ({ page }
 // outright — deterministically, with no other suite involved — the day that
 // document grew past one diagram.
 async function pasteAtEnd(page: import('@playwright/test').Page, text: string, html?: string) {
-  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  // Chromium exposes explicit clipboard permissions to Playwright; WebKit
+  // does not recognise those permission names and instead gates the focused
+  // page's clipboard API directly.
+  if (page.context().browser()?.browserType().name() === 'chromium') {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  }
   await page.bringToFront()
   await caretAtEnd(page)
   await page.evaluate(
@@ -528,6 +533,46 @@ async function pasteAtEnd(page: import('@playwright/test').Page, text: string, h
   await page.keyboard.press('Enter')
   await page.keyboard.press('ControlOrMeta+v')
 }
+
+// BUG-8. The native WebKit shell returned a structured HTML flavour for a
+// 261-line ChatGPT selection, but that path inserted only one paragraph from
+// the middle. text/plain still held the complete selection. A rich paste may
+// keep its formatting only after the parsed HTML accounts for the complete
+// plain-text payload; otherwise the lossless Markdown path must win.
+test('a truncated rich parse falls back to the complete long clipboard text (BUG-8)', async ({
+  page,
+}) => {
+  const first = 'BUG8-BEGIN — the first line of the selection'
+  const middle =
+    'One active MIDMARK registration covers diagnostic software and connected workflow technology.'
+  const last = 'BUG8-SOURCES-END — the final line of the selection'
+  const lines = Array.from(
+    { length: 261 },
+    (_, index) =>
+      `Selection line ${String(index + 1).padStart(3, '0')}: supporting context that must survive the paste intact.`,
+  )
+  lines[0] = first
+  lines[98] = middle
+  lines[260] = last
+
+  // WebKit prefixes clipboard HTML with a document prologue. The important
+  // failure shape is the parsed result: one marked-up paragraph remains even
+  // though the parallel text/plain flavour is the complete 261-line payload.
+  const truncatedHtml =
+    '<!DOCTYPE html><head><meta charset="UTF-8"></head>' +
+    `<p><strong>${middle}</strong></p>`
+
+  await pasteAtEnd(page, lines.join('\n'), truncatedHtml)
+
+  await expect
+    .poll(async () => page.evaluate(() => window.simplemark!.session.snapshot().markdown))
+    .toContain(last)
+  const markdown = await page.evaluate(() => window.simplemark!.session.snapshot().markdown)
+  expect(markdown).toContain(first)
+  expect(markdown).toContain(middle)
+  expect(markdown).toContain(last)
+  expect(markdown.split(/Selection line \d{3}:/)).toHaveLength(259)
+})
 
 const BARE_MERMAID = 'flowchart LR\n  PASTE[Bare paste] --> PIC[Becomes a picture]'
 

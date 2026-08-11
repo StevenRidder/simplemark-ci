@@ -7,15 +7,14 @@ import {
 } from '../support/clipboard-payloads.js'
 
 /**
- * What the HTML path actually costs, measured rather than assumed.
+ * The rich-paste fidelity gate, measured through the real editor.
  *
  * When an assistant answer is copied out of a browser chat UI the clipboard
  * carries two complete descriptions of the same message: the authored Markdown
- * in `text/plain`, and a rendering of it in `text/html`. DESIGN.md §4.2 rules
- * that structured HTML wins, and `tests/adapters/paste-source-routing.test.ts`
- * pins that routing — with the reservation that the round trip
- * (HTML → ProseMirror schema → Markdown on save) is lossy in principle and
- * that nobody had measured it. This file is that measurement.
+ * in `text/plain`, and a rendering of it in `text/html`. DESIGN.md §4.2 lets
+ * structured HTML keep its formatting only when its parsed readable text
+ * matches the Markdown parse of `text/plain`. This file proves that ordinary
+ * rich structure survives and that known lossy interpretations fall back.
  *
  * Every test pastes the same recorded payload twice:
  *
@@ -25,18 +24,9 @@ import {
  *
  * Both run through the real editor, because the answer is produced by the real
  * schema and the real serialiser and cannot be simulated. The assertions are
- * characterization, not aspiration: they record today's answer, so a change to
- * the paste pipeline shows up here as a diff instead of as a surprise in
- * someone's document. Where the answer is a loss it is pinned as a loss.
- *
- * One row has since moved. Task-list state was pinned here as lost — the schema
- * had no rule for `<input type="checkbox">`, so the ticks were discarded — and
- * is now lossless; `tests/ui/paste-task-list.spec.ts` owns that behaviour in
- * full. The math and Mermaid rows are still losses and still pinned as losses.
- *
- * Nothing here argues for changing the routing rule. Those remaining losses are
- * the price of a rule that also rescues `BROWSER_CHAT_SELECTION_COPY`, whose
- * `text/plain` is stripped prose with no Markdown in it at all.
+ * schema and the real serialiser and cannot be simulated. A complete HTML
+ * interpretation may still win; an incomplete one must serialize identically
+ * to the lossless text/plain path because that path is the fallback.
  */
 
 const RICH_MARKER = 'original paper'
@@ -105,128 +95,99 @@ const sourceOnly = (payload: ClipboardPayload): ClipboardPayload => ({
   html: '',
 })
 
-test('the HTML path keeps marks, links, nesting, the table, each fence language and task state', async ({
+test('a two-flavour rich answer keeps marks, nesting, tables, fences and task state', async ({
   page,
 }, testInfo) => {
-  const html = await pasteAndSerialize(page, BROWSER_CHAT_RICH_ANSWER_COPY, RICH_MARKER)
-  const markdown = await pasteAndSerialize(
+  const bothFlavours = await pasteAndSerialize(page, BROWSER_CHAT_RICH_ANSWER_COPY, RICH_MARKER)
+  const plainTextOnly = await pasteAndSerialize(
     page,
     sourceOnly(BROWSER_CHAT_RICH_ANSWER_COPY),
     RICH_MARKER,
   )
-  await testInfo.attach('html-path.md', { body: html, contentType: 'text/markdown' })
-  await testInfo.attach('markdown-path.md', { body: markdown, contentType: 'text/markdown' })
+  await testInfo.attach('both-flavours.md', { body: bothFlavours, contentType: 'text/markdown' })
+  await testInfo.attach('plain-text-only.md', { body: plainTextOnly, contentType: 'text/markdown' })
+
+  // This recorded payload contains KaTeX output that cannot round-trip
+  // faithfully, so its rich candidate is vetoed and the complete source wins.
+  expect(bothFlavours).toBe(plainTextOnly)
 
   // Marks and links survive the round trip intact.
-  expect(html).toContain('**Python**')
-  expect(html).toContain('*numerically unstable*')
-  expect(html).toContain('`count`')
-  expect(html).toContain('[original paper](https://example.test/welford)')
+  expect(bothFlavours).toContain('**Python**')
+  expect(bothFlavours).toContain('*numerically unstable*')
+  expect(bothFlavours).toContain('`count`')
+  expect(bothFlavours).toContain('[original paper](https://example.test/welford)')
 
   // Headings keep their level.
-  expect(html).toContain('## Welford')
-  expect(html).toContain('### Steps')
+  expect(bothFlavours).toContain('## Welford')
+  expect(bothFlavours).toContain('### Steps')
 
   // An unordered list nested inside an ordered one keeps both its kinds and
   // its depth. (The bullet marker is the serialiser's `*`, not the source `-`,
   // on both paths — see the loss test below for what is a real difference.)
-  expect(html).toMatch(/^1\. Seed the accumulators\./m)
-  expect(html).toMatch(/^ {2,}\* `count` starts at zero$/m)
-  expect(html).toMatch(/^ {2,}1\. update the count$/m)
+  expect(bothFlavours).toMatch(/^1\. Seed the accumulators\./m)
+  expect(bothFlavours).toMatch(/^ {2,}\* `count` starts at zero$/m)
+  expect(bothFlavours).toMatch(/^ {2,}1\. update the count$/m)
 
   // The table arrives as a table, marks inside the cells included.
-  expect(html).toMatch(/\|\s*\*Welford\*\s*\|\s*1\s*\|\s*\*\*yes\*\*\s*\|/)
+  expect(bothFlavours).toMatch(/\|\s*\*Welford\*\s*\|\s*1\s*\|\s*\*\*yes\*\*\s*\|/)
 
   // The load-bearing one: `<pre><code class="language-x">` reaches the schema
   // as a fence that still names its language, so the block is highlightable
   // and a renderer can still claim it. A bare fence here would be silent.
-  expect(html).toContain('```python')
-  expect(html).toContain('```ts')
-  expect(html).toContain('def welford(samples):')
-  expect(html).toContain('xs.reduce((a, b) => a + b, 0)')
+  expect(bothFlavours).toContain('```python')
+  expect(bothFlavours).toContain('```ts')
+  expect(bothFlavours).toContain('def welford(samples):')
+  expect(bothFlavours).toContain('xs.reduce((a, b) => a + b, 0)')
 
   // Task lists. This row used to read "state lost": `<input type="checkbox">`
   // had no schema rule, so the items arrived as ordinary bullets with the ticks
   // discarded, and the assertion here was `not.toMatch(/\[[ x]\]/)`. It is now
   // lossless — `task-list-paste.ts` adds the missing `parseDOM` rule — so both
   // paths agree, and this is the pin that keeps them agreeing.
-  expect(html).toMatch(/^\* \[x] Handles streaming input$/m)
-  expect(html).toMatch(/^\* \[ ] Handles removing a sample$/m)
-  expect(markdown).toContain('[x] Handles streaming input')
-  expect(markdown).toContain('[ ] Handles removing a sample')
+  expect(bothFlavours).toMatch(/^\* \[x] Handles streaming input$/m)
+  expect(bothFlavours).toMatch(/^\* \[ ] Handles removing a sample$/m)
+  expect(plainTextOnly).toContain('[x] Handles streaming input')
+  expect(plainTextOnly).toContain('[ ] Handles removing a sample')
 })
 
-test('the HTML path loses the math the source would have kept', async ({
+test('an incomplete rich parse falls back before it can flatten math', async ({
   page,
 }, testInfo) => {
-  const html = await pasteAndSerialize(page, BROWSER_CHAT_RICH_ANSWER_COPY, RICH_MARKER)
-  const markdown = await pasteAndSerialize(
+  const bothFlavours = await pasteAndSerialize(page, BROWSER_CHAT_RICH_ANSWER_COPY, RICH_MARKER)
+  const plainTextOnly = await pasteAndSerialize(
     page,
     sourceOnly(BROWSER_CHAT_RICH_ANSWER_COPY),
     RICH_MARKER,
   )
-  await testInfo.attach('html-path.md', { body: html, contentType: 'text/markdown' })
-  await testInfo.attach('markdown-path.md', { body: markdown, contentType: 'text/markdown' })
+  await testInfo.attach('both-flavours.md', { body: bothFlavours, contentType: 'text/markdown' })
+  await testInfo.attach('plain-text-only.md', { body: plainTextOnly, contentType: 'text/markdown' })
 
-  // Math. KaTeX publishes three descriptions of one formula — a MathML branch,
-  // the `\annotation` carrying the original TeX, and the visible glyph spans —
-  // and the schema parse has a rule for none of them, so all three land as
-  // text, concatenated. The `$$` block does not survive in any form.
-  expect(html).not.toContain('$$')
-  expect(html).not.toContain('$O(n \\log n)$')
-  expect(html).toContain('O(nlogn)') // the glyph spans, flattened
-  expect(html).toContain('O(n \\log n)') // ...and the TeX beside them, as prose
-  expect(html).toContain('\\sqrt{\\frac{1}{N}') // the display formula, likewise
-
-  // Worse than flattened: KaTeX draws a stretchy radical with an inline
-  // `<svg>`, and §4.2's svg-in-place rule turns that glyph into an `svg` fence
-  // in the middle of the sentence it came from.
-  expect(html).toContain('```svg')
-  // And a KaTeX spacing character becomes a paragraph of its own.
-  expect(html.split('\n').some((line) => line.trim() === '​')).toBe(true)
-
-  // The Markdown source would have kept every one of those as source.
-  expect(markdown).toContain('$O(n \\log n)$')
-  expect(markdown).toContain('$$')
-  expect(markdown).toContain('\\sigma = \\sqrt{\\frac{1}{N}')
-  expect(markdown).not.toContain('```svg')
-  expect(markdown).not.toContain('O(nlogn)')
+  expect(bothFlavours).toBe(plainTextOnly)
+  expect(bothFlavours).toContain('$O(n \\log n)$')
+  expect(bothFlavours).toContain('$$')
+  expect(bothFlavours).toContain('\\sigma = \\sqrt{\\frac{1}{N}')
+  expect(bothFlavours).not.toContain('```svg')
+  expect(bothFlavours).not.toContain('O(nlogn)')
 })
 
-test('a rendered diagram lands as its picture, and the Mermaid source is gone', async ({
+test('an incomplete rendered diagram falls back to its editable Mermaid source', async ({
   page,
 }, testInfo) => {
-  const html = await pasteAndSerialize(page, BROWSER_CHAT_DIAGRAM_ANSWER_COPY, DIAGRAM_MARKER)
-  const markdown = await pasteAndSerialize(
+  const bothFlavours = await pasteAndSerialize(page, BROWSER_CHAT_DIAGRAM_ANSWER_COPY, DIAGRAM_MARKER)
+  const plainTextOnly = await pasteAndSerialize(
     page,
     sourceOnly(BROWSER_CHAT_DIAGRAM_ANSWER_COPY),
     DIAGRAM_MARKER,
   )
-  await testInfo.attach('html-path.md', { body: html, contentType: 'text/markdown' })
-  await testInfo.attach('markdown-path.md', { body: markdown, contentType: 'text/markdown' })
+  await testInfo.attach('both-flavours.md', { body: bothFlavours, contentType: 'text/markdown' })
+  await testInfo.attach('plain-text-only.md', { body: plainTextOnly, contentType: 'text/markdown' })
 
-  // The prose around the diagram is fine on both paths.
-  expect(html).toContain('The routing is **one** decision')
-  expect(markdown).toContain('The routing is **one** decision')
-
-  // The picture is kept, faithfully — that is what `svgToCodeFenceHtml` is for,
-  // and it is the right answer for an `<svg>` with no source behind it.
-  expect(html).toContain('```svg')
-  expect(html).toContain('<svg')
-
-  // But this `<svg>` did have source behind it, in the other flavour, and none
-  // of it is in the document: not the fence, not the diagram language, not a
-  // line of the four-line graph. The block is no longer editable as a diagram.
-  expect(html).not.toContain('```mermaid')
-  expect(html).not.toContain('flowchart TD')
-  expect(html).not.toContain('A[Clipboard]')
-
-  // The Markdown source would have landed as the fence it was.
-  expect(markdown).toContain('```mermaid')
-  expect(markdown).toContain('flowchart TD')
-  expect(markdown).toContain('B -- yes --> C[HTML path]')
-
-  // The size of the trade, in the bytes that reach the file: a laid-out SVG
-  // with mermaid's theme stylesheet inlined, in place of four lines of source.
-  expect(html.length).toBeGreaterThan(markdown.length * 30)
+  expect(bothFlavours).toBe(plainTextOnly)
+  expect(bothFlavours).toContain('The routing is **one** decision')
+  expect(bothFlavours).toContain('```mermaid')
+  expect(bothFlavours).toContain('flowchart TD')
+  expect(bothFlavours).toContain('A[Clipboard]')
+  expect(bothFlavours).toContain('B -- yes --> C[HTML path]')
+  expect(bothFlavours).not.toContain('```svg')
+  expect(bothFlavours.length).toBeLessThan(plainTextOnly.length * 2)
 })

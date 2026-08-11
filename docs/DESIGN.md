@@ -174,7 +174,8 @@ Cmd+V
  │      standalone-block test wins
  │
  ├─ 3. No sniffer hit → structured HTML: ProseMirror parses the DOM
- │      (SVG becomes an svg fence in place); else remark parses text/plain as Markdown
+ │      (SVG becomes an svg fence in place), then the parsed readable text
+ │      must match text/plain parsed as Markdown; else the Markdown path wins
  │
  └─ 4. Insert into the document → NodeViews render
         one Cmd+Z restores the raw pasted text
@@ -207,7 +208,7 @@ A sniffer may convert **only** when all four hold:
 | Case | Ruling |
 |---|---|
 | Clipboard has `text/html` wrapping an `<svg>` | `svg-in-html` claims it. HTML path is not consulted. |
-| Clipboard `text/html` carries document structure (a heading, list, table, two or more paragraphs, or any mark) | **HTML path.** Real headings, marks, lists and tables. An inline `<svg>` becomes an `svg` block in place. |
+| Clipboard `text/html` carries document structure (a heading, list, table, two or more paragraphs, or any mark) | **HTML path, only when complete.** Real headings, marks, lists and tables. An inline `<svg>` becomes an `svg` block in place. Before dispatch, the original HTML parse's readable text must match `text/plain` parsed as Markdown, and the proposed transaction must contain the whole rewritten slice; a partial or extra rich interpretation falls back to the complete Markdown path. |
 | Clipboard `text/html` references remote images | **HTML path, then local.** The faithful paste lands with its remote URLs; each image is downloaded into `assets/` beside the note and its reference rewritten to `![alt](assets/<hash>.<ext>)` by a later transaction, outside undo history ([`ADR-0008`](decisions/0008-pasted-images-become-local-files.md)). A download that fails or is declined keeps the remote URL, visibly unchanged. |
 | Clipboard `text/html` is a whole web page wrapped around an article | **HTML path, unchanged, plus an explicit offer.** A dismissible "trim page chrome?" bar appears; accepting replaces the pasted range in one undoable step with the extracted article, and a source URL detected in the clipboard is prepended as `> Source: …`. Never automatic, and declining leaves the faithful paste. |
 | Clipboard `text/html` is only a wrapper, or absent | Markdown path on `text/plain`. A plain-text copy of Markdown source must still parse as Markdown (BUG-1). |
@@ -489,9 +490,11 @@ flowchart TB
   SNIFF -->|"mermaid.parse() ✓"| MER["Mermaid block"]
   SNIFF -->|"no claim, html structured"| HTML["ProseMirror DOM parse<br/>svg → fence in place"]
   SNIFF -->|"no claim, no structure"| MD["remark parse<br/>per-fence conversion"]
+  HTML --> COMPLETE{"Readable text complete<br/>and transaction whole?"}
+  COMPLETE -->|"no"| MD
+  COMPLETE -->|"yes"| DOC
   MER --> DOC["Insert into document"]
   SVG --> DOC
-  HTML --> DOC
   MD --> DOC
   DOC --> VIEW["NodeViews render on the canvas"]
   DOC --> DISK["Serialize dirty blocks only<br/>portable fence on disk"]

@@ -120,12 +120,10 @@ describe('LLM output copied from a browser chat UI', () => {
    * nesting and a table's alignment all have to survive ProseMirror's DOM
    * parser, where the Markdown path would not have to survive anything.
    *
-   * How much is lost is now measured, in `tests/ui/paste-chat-answer-fidelity.
-   * spec.ts` — a live editor, which this suite is not. The short version: marks,
-   * links, headings, nested lists, tables and both fence languages come through
-   * intact; a task list loses its checkboxes; a formula loses its `$$` and lands
-   * as flattened glyphs; and a rendered Mermaid chart lands as a kilobytes-long
-   * `svg` fence with its four lines of source nowhere in the document.
+   * The actual parse is measured in `tests/ui/paste-chat-answer-fidelity.spec.ts`
+   * — a live editor, which this suite is not. BUG-8 added a second decision at
+   * that boundary: this predicate may nominate HTML, but the parsed rich slice
+   * is vetoed when its readable text differs from text/plain parsed as Markdown.
    *
    * And it is fragile in the other direction. Anything that narrows the
    * predicate far enough to send this payload down the Markdown path would also
@@ -135,9 +133,8 @@ describe('LLM output copied from a browser chat UI', () => {
    * indistinguishable from the HTML alone, which is why the predicate cannot be
    * the place that separates them.
    *
-   * So: pinned as `html`, deliberately, with the reservation recorded. If this
-   * assertion ever fails, the question to answer first is which of those two
-   * payloads the change was aimed at.
+   * So: pinned as an HTML candidate, deliberately. Complete ordinary rich
+   * selections keep it; math/diagram renderings that lose source fall back.
    */
   it('takes the HTML path when the UI puts Markdown source in text/plain (BUG-1)', () => {
     expect(routePaste(BROWSER_CHAT_MARKDOWN_COPY)).toBe('html')
@@ -162,8 +159,8 @@ describe('LLM output copied from a browser chat UI', () => {
     expect(routePaste(BROWSER_CHAT_MARKDOWN_COPY, { atBlockBoundary: false })).toBe('html')
   })
 
-  // An answer with fences, math and a task list in it takes the same path.
-  // What that costs is measured in tests/ui/paste-chat-answer-fidelity.spec.ts.
+  // An answer with fences, math and a task list nominates HTML too. The live
+  // fidelity gate rejects the candidate when its parse loses the math source.
   it('takes the HTML path for a rich answer as well', () => {
     expect(routePaste(BROWSER_CHAT_RICH_ANSWER_COPY)).toBe('html')
   })
@@ -174,9 +171,9 @@ describe('LLM output copied from a browser chat UI', () => {
    * Worth its own assertion because a reader would expect `svg-in-html` to
    * claim a payload with a whole `<svg>` in it. It declines: BUG-5's rule says
    * a document that contains a chart is not a chart, and the surrounding
-   * `<p>`/`<strong>` make this a document. So the `<svg>` is kept in place as
-   * an `svg` fence by the HTML path — and the Mermaid source sitting in
-   * `text/plain` is not consulted.
+   * `<p>`/`<strong>` make this a document. HTML is therefore nominated here;
+   * the live fidelity gate then rejects it because the SVG labels do not
+   * account for the Mermaid source in text/plain.
    */
   it('takes the HTML path for an answer whose diagram arrives rendered', () => {
     expect(routePaste(BROWSER_CHAT_DIAGRAM_ANSWER_COPY)).toBe('html')

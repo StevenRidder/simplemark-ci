@@ -52,6 +52,7 @@ export {
 } from './paste/formal.js'
 export { CALLOUT_TYPES, matchCalloutMarker } from './paste/callout.js'
 export type { CalloutMarker, CalloutType } from './paste/callout.js'
+export { pastedTextIsComplete } from './paste/fidelity.js'
 export { isPortableAssetReference, isRemoteImageSource } from './paste/images.js'
 export { isSafePastedImageSrc, isSafePastedLinkHref } from './paste/urls.js'
 export { analysePastedPage } from './paste/page.js'

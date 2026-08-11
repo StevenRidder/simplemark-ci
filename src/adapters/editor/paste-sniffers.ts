@@ -21,6 +21,7 @@ import {
   looksLikeStackTrace,
   looksLikeSvg,
   looksLikeTsv,
+  pastedTextIsComplete,
   stripMathDelimiters,
   svgInHtml,
   svgToCodeFenceHtml,
@@ -264,8 +265,19 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
      * parse that throws must not claim the paste while inserting nothing, so
      * the caller falls back to the text path instead of trusting this blindly.
      */
-    const insertHtml = (view: EditorView, html: string): boolean => {
+    const insertHtml = (view: EditorView, html: string, text: string): boolean => {
       try {
+        // Compare what the editor schema can read from the original clipboard
+        // HTML. Do this before SVG rewriting: a picture may legitimately add a
+        // portable `svg` fence even when text/plain has no source for it, and
+        // that generated fence is not missing or extra *readable clipboard
+        // text*. A rendered diagram with meaningful text/source still fails
+        // the comparison because the schema drops the SVG while text/plain
+        // retains the editable Mermaid/code source.
+        const fidelityDom = new window.DOMParser().parseFromString(html, 'text/html')
+        const fidelitySlice = ProseDOMParser.fromSchema(view.state.schema).parseSlice(
+          fidelityDom.body,
+        )
         const dom = new window.DOMParser().parseFromString(svgToCodeFenceHtml(html), 'text/html')
         // The code_block schema's own parseDOM reads a `<pre data-language>` —
         // the shape its toDOM writes back out. svgToCodeFenceHtml marks the
@@ -283,6 +295,23 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
         stripUnsafePastedUrls(dom.body)
         const slice = ProseDOMParser.fromSchema(view.state.schema).parseSlice(dom.body)
 
+        // BUG-8: WebKit handed the editor a full two-flavour ChatGPT
+        // selection, but the rich parse produced one paragraph from its
+        // middle. Parse text/plain through the same Markdown path we would use
+        // as the fallback, then require the proposed rich slice to carry the
+        // same readable content. This compares semantic text rather than raw
+        // clipboard bytes, so Markdown punctuation and HTML markup do not
+        // manufacture a mismatch.
+        const parsedText = ctx.get(parserCtx)(text)
+        if (parsedText === null || parsedText === undefined) return false
+        const referenceText = parsedText.textBetween(0, parsedText.content.size, '\n')
+        const candidateText = fidelitySlice.content.textBetween(
+          0,
+          fidelitySlice.content.size,
+          '\n',
+        )
+        if (!pastedTextIsComplete(referenceText, candidateText)) return false
+
         const from = view.state.selection.from
         let tr = view.state.tr.replaceSelection(slice).scrollIntoView()
         // A whole web page keeps its faithful shape and is offered a trim
@@ -291,6 +320,16 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
         if (looksLikeFullPagePaste(html)) {
           tr = offerPageTrim(tr, { from, to: tr.selection.from, html })
         }
+
+        // Validate the proposed transaction too, not only its source slice.
+        // A host/schema interaction that preserves the parse but collapses the
+        // replacement must still fall back before anything is dispatched. This
+        // comparison uses the rewritten slice on both sides, so a legitimate
+        // generated SVG fence is accounted for rather than treated as extra
+        // clipboard prose.
+        const expectedInsertedText = slice.content.textBetween(0, slice.content.size, '\n')
+        const insertedText = tr.doc.textBetween(from, tr.selection.from, '\n')
+        if (!pastedTextIsComplete(expectedInsertedText, insertedText)) return false
         view.dispatch(tr)
 
         // Pictures follow the paste (ADR-0008). Sources are collected from what
@@ -349,7 +388,7 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
             // link, list and table in a paste from a browser. A parse that
             // throws is not a claim (§4.4) — it falls through to the text
             // path below instead of swallowing the paste with nothing to show.
-            if (htmlCarriesDocumentStructure(html) && insertHtml(view, html)) {
+            if (htmlCarriesDocumentStructure(html) && insertHtml(view, html, text)) {
               return true
             }
             if (text.trim() === '') return false

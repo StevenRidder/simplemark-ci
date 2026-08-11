@@ -22,7 +22,7 @@ describe('app icon catalog', () => {
       'Live Layers',
       'Movable Blocks',
       'Blue Trio',
-      'Electric + Black',
+      'Clear Azure',
       'Midnight',
       'Blue Page',
     ])

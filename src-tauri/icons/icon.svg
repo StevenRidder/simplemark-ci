@@ -1,28 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">SimpleMark</title>
-  <desc id="desc">The SimpleMark document and Markdown badge on a warm tan app tile.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">SimpleMark Clear Azure</title>
+  <desc id="desc">A living document made of one clear azure and two charcoal movable blocks with an azure Markdown badge.</desc>
   <defs>
-    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fffefa"/>
-      <stop offset="1" stop-color="#f3efe4"/>
+    <linearGradient id="clear-azure" x1="350" y1="365" x2="690" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#168CFF"/>
+      <stop offset="1" stop-color="#0064E8"/>
     </linearGradient>
+    <filter id="soft-shadow" x="-30%" y="-30%" width="170%" height="190%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0059B8" flood-opacity=".22"/>
+    </filter>
   </defs>
-
-  <rect x="34" y="34" width="444" height="444" rx="100" fill="url(#paper)"/>
-  <rect x="34" y="34" width="444" height="444" rx="100" fill="none" stroke="#e3ddcf" stroke-width="4"/>
-
-  <!-- Keep the native icon in lockstep with the logo used by the private website. -->
-  <g transform="translate(72 72) scale(.71875)">
-    <g fill="none" stroke="#242321" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M152 52h178l94 94v278a24 24 0 0 1-24 24H152a24 24 0 0 1-24-24V76a24 24 0 0 1 24-24Z" stroke-width="28"/>
-      <path d="M330 52v78a16 16 0 0 0 16 16h78" stroke-width="28"/>
-      <path d="M214 194h142M214 242h142M214 290h100" stroke-width="22"/>
-    </g>
-    <rect x="42" y="280" width="266" height="184" rx="38" fill="#D08A32"/>
-    <g fill="none" stroke="#FFF7EA" stroke-linecap="round" stroke-linejoin="round" stroke-width="23">
-      <path d="M78 416v-88l50 54 50-54v88"/>
-      <path d="M242 328v78"/>
-      <path d="m215 382 27 27 27-27"/>
-    </g>
+  <rect data-tile-background="#FFFFFF" x="60" y="60" width="904" height="904" rx="206" fill="#FFFFFF"/>
+  <rect x="62" y="62" width="900" height="900" rx="204" fill="none" stroke="#E5E7EB" stroke-width="6"/>
+  <g fill="none" stroke="#20201F" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M340 170h300l150 150v430c0 44-36 80-80 80H340c-44 0-80-36-80-80V250c0-44 36-80 80-80Z" stroke-width="50"/>
+    <path d="M640 170v116c0 19 15 34 34 34h116" stroke-width="50"/>
+  </g>
+  <g data-block-palette="clear-azure-charcoal-charcoal" filter="url(#soft-shadow)">
+    <rect x="350" y="385" width="340" height="104" rx="28" fill="url(#clear-azure)" transform="rotate(7 520 437)"/>
+    <rect x="388" y="530" width="330" height="104" rx="28" fill="#20201F"/>
+    <rect x="348" y="676" width="330" height="104" rx="28" fill="#20201F"/>
+    <rect x="142" y="652" width="350" height="230" rx="64" fill="url(#clear-azure)"/>
+  </g>
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="34">
+    <path d="M196 824V704l66 72 66-72v120"/>
+    <path d="M410 705v108"/>
+    <path d="m370 778 40 40 40-40"/>
   </g>
 </svg>

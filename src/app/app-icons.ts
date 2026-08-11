@@ -39,7 +39,7 @@ export const APP_ICON_CHOICES = [
   },
   {
     id: 'electric-blocks',
-    label: 'Electric + Black',
+    label: 'Clear Azure',
     source: new URL('../../src-tauri/icons/alternates/electric-blocks.svg', import.meta.url).href,
   },
   {

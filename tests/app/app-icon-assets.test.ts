@@ -16,6 +16,8 @@ const ICON_IDS = [
 const alternate = (path: string): string =>
   resolve(process.cwd(), 'src-tauri', 'icons', 'alternates', path)
 
+const native = (path: string): string => resolve(process.cwd(), 'src-tauri', 'icons', path)
+
 describe('alternate app icon assets', () => {
   test('ships a vector master and generated PNG for every offered icon', () => {
     for (const id of ICON_IDS) {
@@ -34,12 +36,23 @@ describe('alternate app icon assets', () => {
     },
   )
 
-  test('uses the approved Live Layers palette for both blue block treatments', () => {
+  test('uses the approved palettes for both blue block treatments', () => {
     const trio = readFileSync(alternate('blue-trio.svg'), 'utf8')
     const electric = readFileSync(alternate('electric-blocks.svg'), 'utf8')
 
     expect(trio).toContain('data-block-palette="royal-sky-cyan"')
-    expect(electric).toContain('data-block-palette="royal-charcoal-charcoal"')
+    expect(electric).toContain('data-block-palette="clear-azure-charcoal-charcoal"')
+  })
+
+  test('keeps the Clear Azure palette aligned across desktop, chooser, and iOS masters', () => {
+    const sources = [native('icon.svg'), alternate('electric-blocks.svg'), native('ios-icon.svg')]
+
+    for (const source of sources) {
+      const svg = readFileSync(source, 'utf8')
+      expect(svg, `${source} must use the approved light endpoint`).toContain('#168CFF')
+      expect(svg, `${source} must use the approved deep endpoint`).toContain('#0064E8')
+      expect(svg, `${source} must not retain the violet endpoint`).not.toContain('#1548E7')
+    }
   })
 
   test('centres the Live Layers MDown mark on its front panel', () => {

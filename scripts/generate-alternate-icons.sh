@@ -9,7 +9,7 @@ generated_root="$icon_root/.generated"
 mkdir -p "$icon_root/png"
 trap 'rm -rf "$generated_root"' EXIT
 
-for icon_id in original live-layers movable-blocks midnight blue-page; do
+for icon_id in original live-layers movable-blocks blue-trio electric-blocks midnight blue-page; do
   output_dir="$generated_root/$icon_id"
   "$repo_root/node_modules/.bin/tauri" icon \
     --png 1024 \

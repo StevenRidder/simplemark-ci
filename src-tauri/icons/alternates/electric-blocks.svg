@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
-  <title id="title">SimpleMark Electric and Black</title>
-  <desc id="desc">A living document made of one electric blue and two charcoal movable blocks with a blue Markdown badge.</desc>
+  <title id="title">SimpleMark Clear Azure</title>
+  <desc id="desc">A living document made of one clear azure and two charcoal movable blocks with an azure Markdown badge.</desc>
   <defs>
-    <linearGradient id="royal" x1="350" y1="365" x2="690" y2="760" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2D67FF"/>
-      <stop offset="1" stop-color="#1548E7"/>
+    <linearGradient id="clear-azure" x1="350" y1="365" x2="690" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#168CFF"/>
+      <stop offset="1" stop-color="#0064E8"/>
     </linearGradient>
     <filter id="soft-shadow" x="-30%" y="-30%" width="170%" height="190%">
-      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0F172A" flood-opacity=".22"/>
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0059B8" flood-opacity=".22"/>
     </filter>
   </defs>
   <rect data-tile-background="#FFFFFF" x="60" y="60" width="904" height="904" rx="206" fill="#FFFFFF"/>
@@ -16,11 +16,11 @@
     <path d="M340 170h300l150 150v430c0 44-36 80-80 80H340c-44 0-80-36-80-80V250c0-44 36-80 80-80Z" stroke-width="50"/>
     <path d="M640 170v116c0 19 15 34 34 34h116" stroke-width="50"/>
   </g>
-  <g data-block-palette="royal-charcoal-charcoal" filter="url(#soft-shadow)">
-    <rect x="350" y="385" width="340" height="104" rx="28" fill="url(#royal)" transform="rotate(7 520 437)"/>
+  <g data-block-palette="clear-azure-charcoal-charcoal" filter="url(#soft-shadow)">
+    <rect x="350" y="385" width="340" height="104" rx="28" fill="url(#clear-azure)" transform="rotate(7 520 437)"/>
     <rect x="388" y="530" width="330" height="104" rx="28" fill="#20201F"/>
     <rect x="348" y="676" width="330" height="104" rx="28" fill="#20201F"/>
-    <rect x="142" y="652" width="350" height="230" rx="64" fill="url(#royal)"/>
+    <rect x="142" y="652" width="350" height="230" rx="64" fill="url(#clear-azure)"/>
   </g>
   <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="34">
     <path d="M196 824V704l66 72 66-72v120"/>

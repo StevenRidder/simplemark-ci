@@ -97,7 +97,8 @@
 
   /*
    * Reader affordances that only mean something to a pointer: the block drag
-   * gutter, the fold chevron, the diagram's hover label and source editor.
+   * gutter, the fold chevron, the diagram's hover label and source editor,
+   * Open figure, and the resize grip.
    *
    * The drag affordance lives on `::after`; a callout's type label — NOTE,
    * WARNING — lives on `::before`. Hiding only the former keeps the label on
@@ -108,7 +109,9 @@
   .diagram-label,
   .diagram-source-sheet,
   .diagram-error-actions,
-  .diagram-chips {
+  .diagram-chips,
+  .diagram-expand,
+  .diagram-resize-grip {
     display: none;
   }
 
@@ -213,6 +216,36 @@
   .diagram-render svg {
     max-width: 100%;
     height: auto;
+  }
+
+  /*
+   * Wide figures scroll on screen (`.diagram-render.is-wide` + fade mask).
+   * Paper has no scrollport: unwrap the clip, drop the mask, and shrink the
+   * SVG to the sheet. The `.is-wide svg` selectors are load-bearing — screen
+   * sets `width: auto; max-width: none` at higher specificity than
+   * `.diagram-render svg`, and without matching specificity print loses.
+   */
+  .diagram,
+  .diagram-render,
+  .diagram-render.is-wide {
+    overflow: visible;
+  }
+
+  .diagram-render.is-wide {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .diagram-render svg,
+  .diagram-render.is-wide svg {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+  }
+
+  .diagram-render {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   /* A table crossing the fold repeats its header rather than losing it. */

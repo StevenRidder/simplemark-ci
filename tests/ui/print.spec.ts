@@ -103,3 +103,78 @@ test('paper is white and a fixed size, whatever the reader chose on screen', asy
   // The inline style is the reader's on-screen size; paper pins its own.
   expect(paper.scale).toBe('0.8')
 })
+
+const render = '.diagram-render'
+
+/** Same shape figure-viewer.spec.ts uses to trip `.is-wide`. */
+function wideMermaid(): string {
+  return [
+    'flowchart LR',
+    ...Array.from(
+      { length: 12 },
+      (_, i) => `  N${i}[Stage number ${i}] --> N${i + 1}[Stage number ${i + 1}]`,
+    ),
+  ].join('\n')
+}
+
+async function setFirstDiagramSource(
+  page: import('@playwright/test').Page,
+  source: string,
+): Promise<void> {
+  await page.locator(render).first().click()
+  await page.locator('.diagram-chips').first().getByRole('button', { name: 'Edit source' }).click()
+  const textarea = page.locator('textarea.diagram-source').first()
+  await textarea.fill(source)
+  await expect
+    .poll(async () => page.locator(`${render} svg`).first().getAttribute('viewBox'))
+    .not.toBe(null)
+  await page.locator('.diagram-source-close').first().click()
+}
+
+test('wide diagrams fit the sheet and drop Open figure chrome on paper', async ({ page }) => {
+  await expect(page.locator('.milkdown .ProseMirror')).toBeVisible()
+  await expect(page.locator(`${render} svg`).first()).toBeVisible()
+
+  await setFirstDiagramSource(page, wideMermaid())
+  const figure = page.locator('.diagram').first()
+  const wideRender = figure.locator('.diagram-render')
+  await expect(wideRender).toHaveClass(/is-wide/, { timeout: 20_000 })
+
+  // Selection hides `.diagram-expand` in favour of chips; deselect so the
+  // corner affordance is the on-screen control paper must drop.
+  await page.locator('.milkdown .ProseMirror p').first().click()
+  await expect(figure.locator('.diagram-expand')).toBeVisible()
+
+  await page.emulateMedia({ media: 'print' })
+
+  await expect(figure.locator('.diagram-expand'), 'Open figure must not reach paper').toBeHidden()
+  await expect(figure.locator('.diagram-resize-grip')).toBeHidden()
+
+  const paper = await wideRender.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const svg = element.querySelector('svg')
+    const svgStyle = svg ? getComputedStyle(svg) : null
+    return {
+      overflowX: style.overflowX,
+      overflowY: style.overflowY,
+      maskImage: style.maskImage || (style as CSSStyleDeclaration & { webkitMaskImage?: string }).webkitMaskImage || '',
+      svgMaxWidth: svgStyle?.maxWidth ?? '',
+      svgWidth: svgStyle?.width ?? '',
+      printColorAdjust:
+        style.printColorAdjust
+        || (style as CSSStyleDeclaration & { webkitPrintColorAdjust?: string }).webkitPrintColorAdjust
+        || '',
+    }
+  })
+
+  expect(paper.overflowX, 'wide render must not keep a horizontal clip on paper').toBe('visible')
+  expect(paper.overflowY).toBe('visible')
+  expect(
+    paper.maskImage === 'none' || paper.maskImage === '',
+    `mask must clear on paper, got ${paper.maskImage}`,
+  ).toBe(true)
+  expect(paper.svgMaxWidth).toBe('100%')
+  // Fit-to-page: not the screen is-wide `width: auto` path.
+  expect(paper.svgWidth).not.toBe('auto')
+  expect(paper.printColorAdjust).toBe('exact')
+})

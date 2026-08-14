@@ -69,8 +69,10 @@
   }
 
   html,
-  body {
+  body,
+  #root {
     height: auto;
+    min-height: 0;
     overflow: visible;
     background: #ffffff;
   }
@@ -147,6 +149,21 @@
 
   .page {
     width: 100%;
+  }
+
+  /*
+   * The native shell pins its app window to `100vh` with a selector more
+   * specific than the shared `.window` rule above. If that viewport height
+   * survives into WKWebView's print operation, WebKit paginates some overflow
+   * and then drops the document tail. Match the native selector here so the
+   * later print declaration wins and every ancestor grows with the document.
+   */
+  :root[data-shell='native'] .stage,
+  :root[data-shell='native'] .window {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
   }
 
   /* The 26px gutter exists to catch a drag. Paper has no pointer. */

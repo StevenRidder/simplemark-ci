@@ -82,6 +82,53 @@ test('the document scroller becomes one continuous flow instead of a clipped pag
   expect(onPaper.clipped).toBe(false)
 })
 
+test('the native shell releases its viewport height before paginating a long document', async ({ page }) => {
+  await page.evaluate(() => {
+    document.documentElement.dataset['shell'] = 'native'
+    const editor = document.querySelector<HTMLElement>('.milkdown .ProseMirror')!
+    for (let index = 0; index < 160; index += 1) {
+      const paragraph = document.createElement('p')
+      paragraph.textContent = `Native printed line ${index + 1}: the document tail must reach paper.`
+      editor.append(paragraph)
+    }
+  })
+
+  const onScreen = await page.locator('section.editor').evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    overflowY: getComputedStyle(element).overflowY,
+  }))
+  expect(onScreen.overflowY).toBe('auto')
+  expect(onScreen.scrollHeight).toBeGreaterThan(onScreen.clientHeight)
+
+  await page.emulateMedia({ media: 'print' })
+
+  const onPaper = await page.evaluate(() =>
+    Object.fromEntries(
+      ['#root', '.stage', '.window'].map((selector) => {
+        const element = document.querySelector<HTMLElement>(selector)!
+        return [
+          selector,
+          {
+            clientHeight: element.clientHeight,
+            scrollHeight: element.scrollHeight,
+            height: getComputedStyle(element).height,
+            overflow: getComputedStyle(element).overflow,
+          },
+        ]
+      }),
+    ),
+  )
+
+  for (const [selector, layout] of Object.entries(onPaper)) {
+    expect(layout.overflow, `${selector} must not clip native print overflow`).toBe('visible')
+    expect(
+      layout.clientHeight,
+      `${selector} must expand to the full native print document`,
+    ).toBeGreaterThanOrEqual(layout.scrollHeight - 1)
+  }
+})
+
 test('paper is white and a fixed size, whatever the reader chose on screen', async ({ page }) => {
   await page.evaluate(() => {
     document.documentElement.dataset['readerTheme'] = 'night'

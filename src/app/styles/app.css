@@ -3283,7 +3283,8 @@ section.editor::-webkit-scrollbar {
  * `svg` blocks are the exception: DiagramNodeView writes an explicit width
  * (the author's own size, capped at the column), which beats the 100% here.
  */
-.diagram-render svg {
+.diagram-render svg,
+.diagram-render img.diagram-snapshot {
   width: 100%;
   max-width: min(100%, 720px);
   height: auto;
@@ -3300,7 +3301,8 @@ section.editor::-webkit-scrollbar {
   overscroll-behavior-x: contain;
 }
 
-.diagram-render.is-wide svg {
+.diagram-render.is-wide svg,
+.diagram-render.is-wide img.diagram-snapshot {
   width: auto;
   max-width: none;
 }

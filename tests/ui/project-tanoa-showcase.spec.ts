@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 
+import { revealLiveDrawing } from './reveal-live-drawing'
+
 const NOTE_NAME = 'project-tanoa.md'
 const NOTE = readFileSync(new URL('../../docs/showcase/project-tanoa.md', import.meta.url), 'utf8')
 const JSON_FLOOR = '"reserve_floor": 0.42'
@@ -43,7 +45,14 @@ test('the exact Project Tanoa report renders every decision artifact without an 
   await openFile(page)
 
   await expect(page.getByRole('heading', { name: 'Holding the island through the storm' })).toBeVisible()
-  await expect(page.locator('.diagram .diagram-render svg')).toHaveCount(4, { timeout: 30_000 })
+  const drawings = page.locator('.diagram').filter({
+    has: page.locator('.diagram-label', { hasText: /^(svg|mermaid|dot|graphviz|vega-lite)$/ }),
+  })
+  const drawingCount = await drawings.count()
+  expect(drawingCount).toBeGreaterThanOrEqual(4)
+  for (let index = 0; index < drawingCount; index += 1) {
+    await revealLiveDrawing(drawings.nth(index))
+  }
   await expect(page.locator('.math-block .katex')).toHaveCount(3)
   await expect(page.locator('.ansi-card')).toContainText('SHORT BY 1.8 h')
   await expect(page.locator('.json-card')).toContainText('0.42')

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { revealLiveDrawing } from './reveal-live-drawing'
+
 /**
  * EDITOR-1 acceptance, driven in a real browser.
  *
@@ -13,10 +15,13 @@ import { expect, test } from '@playwright/test'
 
 const editor = '.milkdown .ProseMirror'
 
-const handbookMermaid = (page: import('@playwright/test').Page) =>
-  page.locator('.diagram').filter({
+async function handbookMermaid(page: import('@playwright/test').Page) {
+  const diagram = page.locator('.diagram').filter({
     has: page.locator('.diagram-label', { hasText: 'mermaid' }),
   }).first()
+  await revealLiveDrawing(diagram)
+  return diagram
+}
 
 /**
  * Caret at the end of the document, via the editor's own focusEnd.
@@ -223,7 +228,7 @@ test('a formatting command reaches the document as Markdown', async ({ page }) =
 // separate, selection-triggered affordance since the chip-chrome spec (§2) —
 // hover alone now reveals only the language tag, not any control.
 test('the diagram label is hidden at rest and revealed on hover', async ({ page }) => {
-  const diagram = handbookMermaid(page)
+  const diagram = await handbookMermaid(page)
   const label = diagram.locator('.diagram-label')
 
   await expect(label).toHaveCSS('opacity', '0')
@@ -237,7 +242,7 @@ test('the diagram label is hidden at rest and revealed on hover', async ({ page 
 })
 
 test('the Mermaid fence renders as a diagram and toggles to editable source', async ({ page }) => {
-  const diagram = handbookMermaid(page)
+  const diagram = await handbookMermaid(page)
   await expect(diagram).toBeVisible()
 
   // Rendered by the real engine, not a placeholder.
@@ -264,7 +269,7 @@ test('the Mermaid fence renders as a diagram and toggles to editable source', as
 })
 
 test('invalid diagram source fails visibly and keeps its source editable', async ({ page }) => {
-  const diagram = handbookMermaid(page)
+  const diagram = await handbookMermaid(page)
   await diagram.locator('.diagram-render').click()
   await diagram.getByRole('button', { name: 'Edit source' }).click()
   const source = page.locator('.diagram-source-sheet:not([hidden]) .diagram-source')
@@ -339,7 +344,7 @@ test('saving round-trips through the port and reopens as portable Markdown', asy
 })
 
 test('captures the calm state for wireframe comparison', async ({ page }, testInfo) => {
-  await expect(handbookMermaid(page).locator('.diagram-render svg')).toBeVisible()
+  await handbookMermaid(page)
   const shot = await page.locator('.window').screenshot()
   await testInfo.attach('calm-state', { body: shot, contentType: 'image/png' })
 })

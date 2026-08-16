@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 
+import { revealLiveDrawing } from './reveal-live-drawing'
+
 const NAME = 'simplemark-1.0-launch-plan.md'
 const NOTE = readFileSync(new URL('../../docs/showcase/simplemark-1.0-launch-plan.md', import.meta.url), 'utf8')
 
@@ -26,7 +28,7 @@ test('the exact 1.0 plan renders as an evidence-led launch document', async ({ p
   await openLaunchPlan(page)
 
   await expect(page.getByRole('heading', { name: 'SimpleMark 1.0' })).toBeVisible()
-  await expect(page.locator('.diagram .diagram-render svg')).toHaveCount(1, { timeout: 30_000 })
+  await revealLiveDrawing(page.locator('.diagram').first())
   await expect(page.locator('.json-card')).toContainText('known_byte_loss_regressions')
   await expect(page.locator('.tree-card')).toContainText('RELEASE_NOTES.md')
   await expect(page.locator('.callout-warning')).toContainText('launch can slip')

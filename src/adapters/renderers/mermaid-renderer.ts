@@ -47,6 +47,16 @@ function ensureInitialised(): void {
 }
 
 let renderSequence = 0
+let renderTail: Promise<unknown> = Promise.resolve()
+
+function enqueueRender<T>(work: () => Promise<T>): Promise<T> {
+  const run = renderTail.then(work, work)
+  renderTail = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
 
 export class MermaidRenderer implements DiagramRenderer {
   readonly languages = ['mermaid'] as const
@@ -61,15 +71,17 @@ export class MermaidRenderer implements DiagramRenderer {
       return { ok: false, message: 'Diagram source is empty' }
     }
 
-    try {
-      ensureInitialised()
-      // parse() first so a syntax error is reported as a syntax error, before
-      // render() has a chance to leave orphaned nodes in the document.
-      await mermaid.parse(trimmed)
-      const { svg } = await mermaid.render(`simplemark-diagram-${(renderSequence += 1)}`, trimmed)
-      return { ok: true, markup: svg }
-    } catch (error) {
-      return { ok: false, message: error instanceof Error ? error.message : String(error) }
-    }
+    return enqueueRender(async () => {
+      try {
+        ensureInitialised()
+        // parse() first so a syntax error is reported as a syntax error, before
+        // render() has a chance to leave orphaned nodes in the document.
+        await mermaid.parse(trimmed)
+        const { svg } = await mermaid.render(`simplemark-diagram-${(renderSequence += 1)}`, trimmed)
+        return { ok: true, markup: svg }
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : String(error) }
+      }
+    })
   }
 }

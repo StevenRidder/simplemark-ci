@@ -8,6 +8,8 @@
  */
 export { TABLE_CELL_BUDGET, planTableRendering } from './render/table-budget.js'
 export type { TableRenderPlan } from './render/table-budget.js'
+export { planDiagramSurface, shouldPaintLiveDrawing } from './render/diagram-surface.js'
+export type { DiagramSurface } from './render/diagram-surface.js'
 export { firstByteDifference } from './source/byte-diff.js'
 export { buildSourceMap, emitDocument } from './source/source-map.js'
 export { parseFenceLayout, withFenceMetaKey } from './source/fence-meta.js'

@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 
+import { revealLiveDrawing } from './reveal-live-drawing'
+
 const WELCOME_SOURCE = readFileSync(
   new URL('../../docs/showcase/welcome-to-simplemark.md', import.meta.url),
   'utf8',
@@ -33,14 +35,14 @@ test('the handbook renders every promised technical form without a blank', async
       has: page.locator('.diagram-label', { hasText: language }),
     })
     await expect(block).toHaveCount(1)
-    await expect(block.locator('.diagram-render svg')).toBeVisible({ timeout: 30_000 })
+    await revealLiveDrawing(block)
   }
   const charts = page.locator('.diagram').filter({
     has: page.locator('.diagram-label', { hasText: 'vega-lite' }),
   })
   await expect(charts).toHaveCount(2)
-  await expect(charts.nth(0).locator('.diagram-render svg').first()).toBeVisible({ timeout: 30_000 })
-  await expect(charts.nth(1).locator('.diagram-render svg').first()).toBeVisible({ timeout: 30_000 })
+  await revealLiveDrawing(charts.nth(0))
+  await revealLiveDrawing(charts.nth(1))
   await expect(page.locator('.math-block .katex')).toBeVisible()
   for (const selector of ['.ansi-card', '.diff-card', '.json-card', '.tree-card', '.stack-card']) {
     await expect(page.locator(selector)).toBeVisible()
@@ -57,6 +59,7 @@ async function replaceSource(
   // §2 of the chip-chrome spec: Edit source lives on the selection-triggered
   // chip toolbar, not always in the DOM — select the block first, the same
   // way diagram-frame.spec.ts and project-tanoa-showcase.spec.ts already do.
+  await block.scrollIntoViewIfNeeded()
   await block.locator('.diagram-render').click()
   await block.getByRole('button', { name: 'Edit source' }).click()
   const source = page.locator('.diagram-source-sheet:not([hidden]) .diagram-source')
@@ -74,6 +77,7 @@ test('the four guided corrections visibly redraw their blocks', async ({ page })
   const charts = page.locator('.diagram').filter({
     has: page.locator('.diagram-label', { hasText: 'vega-lite' }),
   })
+  await revealLiveDrawing(charts.first())
   const chartBefore = await charts.first().locator('svg').innerHTML()
   await replaceSource(
     page,

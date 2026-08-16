@@ -4,7 +4,7 @@ import { NodeSelection, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 
 import type { ClipboardPort, DiagramFixPort, DiagramRenderer, RenderedDiagram } from '../../application/index.js'
-import { parseFenceLayout, withFenceMetaKey } from '../../domain/index.js'
+import { parseFenceLayout, planDiagramSurface, shouldPaintLiveDrawing, withFenceMetaKey } from '../../domain/index.js'
 import { openFigureViewer } from './figure-viewer.js'
 import type { FigureViewerHandle } from './figure-viewer.js'
 import { rasterizeSvgToPng, serializeSvgForExport } from './figure-export.js'
@@ -225,6 +225,18 @@ export class DiagramNodeView implements NodeView {
   #closeViewer: FigureViewerHandle | undefined
   /** Present on every diagram block (§3) — absent on math, which offers no resize. */
   #grip: HTMLElement | undefined
+  /**
+   * Off-screen charts drop their live SVG for a still frame. Starts false so
+   * a chart below the fold is not drawn until it intersects.
+   */
+  #visible = false
+  /** Self-contained SVG still frame, used while the chart is off-screen. */
+  #snapshotSrc: string | undefined
+  /** Last drawn box, so a still frame or placeholder keeps the same height. */
+  #frameHeight = 0
+  /** Language + source + scheme of the last successful live paint. */
+  #paintedSignature: string | undefined
+  #visibility: IntersectionObserver | undefined
 
   readonly #render: HTMLElement
   readonly #sheet: HTMLElement
@@ -403,7 +415,11 @@ export class DiagramNodeView implements NodeView {
     // the theme the way CSS does. Without this, switching the system appearance
     // leaves a light diagram stranded on dark paper.
     this.#scheme = window.matchMedia?.('(prefers-color-scheme: dark)')
-    this.#onSchemeChange = () => void this.#paint()
+    this.#onSchemeChange = () => {
+      this.#forgetSnapshot()
+      this.#paintedSignature = undefined
+      this.#applySurface()
+    }
     this.#scheme?.addEventListener('change', this.#onSchemeChange)
 
     // Fit-or-scroll is a question about the column, not the diagram, so it has
@@ -416,7 +432,22 @@ export class DiagramNodeView implements NodeView {
     })
     this.#resize.observe(this.#render)
 
-    void this.#paint()
+    if (isDiagramLanguage(this.language()) && typeof IntersectionObserver === 'function') {
+      this.#visibility = new IntersectionObserver(
+        (entries) => {
+          const visible = entries.some((entry) => entry.isIntersecting)
+          if (visible === this.#visible) return
+          this.#visible = visible
+          this.#applySurface()
+        },
+        { rootMargin: '400px 0px', threshold: 0 },
+      )
+      this.#visibility.observe(this.dom)
+      this.#setSurface('placeholder')
+    } else {
+      this.#visible = true
+      void this.#paint()
+    }
     this.registry?.register(this)
   }
 
@@ -875,7 +906,7 @@ export class DiagramNodeView implements NodeView {
    * Re-syncs the parts of `#chips` that can go stale without a full rebuild:
    * the active float segment and the zoom readout. Called from `#paint()`'s
    * two outcomes — an undo, an API call, another chip's own commit all flow
-   * through `update()`, which always repaints — so a toolbar left standing
+   * through `update()`, which now only repaints when the source changed — so a toolbar left standing
    * across one keeps agreeing with the document instead of showing whatever
    * was true when it was first built.
    *
@@ -1184,9 +1215,14 @@ export class DiagramNodeView implements NodeView {
     if (result.ok) {
       this.#render.innerHTML = result.markup
       this.#error.hidden = true
+      this.#render.style.removeProperty('min-height')
       this.#fitDiagram()
+      this.#paintedSignature = this.#signature()
+      this.#captureSnapshot()
+      this.#setSurface('live')
       this.#refreshChipState()
       this.#refreshNarrow()
+      if (!this.#visible) this.#applySurface()
       return result
     }
 
@@ -1238,7 +1274,7 @@ export class DiagramNodeView implements NodeView {
    * HTML with no `<svg>` to serialize.
    */
   async copyImage(): Promise<boolean> {
-    const svg = this.#renderedSvg()
+    const svg = await this.#ensureLiveSvg()
     if (svg === undefined) return false
     const png = await rasterizeSvgToPng(serializeSvgForExport(svg))
     return this.copyImagePort === undefined ? copyImageWithWebClipboard(png) : this.copyImagePort(png)
@@ -1251,7 +1287,7 @@ export class DiagramNodeView implements NodeView {
    * `copyImage()`.
    */
   async saveImage(format: 'png' | 'svg' = 'png'): Promise<boolean> {
-    const svg = this.#renderedSvg()
+    const svg = await this.#ensureLiveSvg()
     if (svg === undefined) return false
     const suggestedName = `${this.language() || 'figure'}`
     const bytes =
@@ -1277,6 +1313,103 @@ export class DiagramNodeView implements NodeView {
     return true
   }
 
+  #signature(): string {
+    const scheme = this.#scheme?.matches === true ? 'dark' : 'light'
+    return `${scheme}\n${this.language()}\n${this.#node.textContent}`
+  }
+
+  #setSurface(surface: 'placeholder' | 'snapshot' | 'live'): void {
+    this.dom.dataset['diagramSurface'] = surface
+  }
+
+  #forgetSnapshot(): void {
+    this.#snapshotSrc = undefined
+  }
+
+  #reserveFrame(): void {
+    if (this.#frameHeight > 0) this.#render.style.minHeight = `${this.#frameHeight}px`
+  }
+
+  #captureSnapshot(): void {
+    const svg = this.#renderedSvg()
+    if (svg === undefined) return
+    const figure = serializeSvgForExport(svg)
+    this.#snapshotSrc = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(figure.svgText)}`
+    const box = svg.getBoundingClientRect()
+    this.#frameHeight = box.height > 0 ? box.height : figure.height
+  }
+
+  #showPlaceholder(): void {
+    this.#render.replaceChildren()
+    this.#reserveFrame()
+  }
+
+  #showSnapshot(): void {
+    if (this.#snapshotSrc === undefined) return
+    if (this.#render.querySelector('img.diagram-snapshot') !== null) return
+    const image = document.createElement('img')
+    image.className = 'diagram-snapshot'
+    image.alt = ''
+    image.setAttribute('aria-hidden', 'true')
+    image.src = this.#snapshotSrc
+    this.#render.replaceChildren(image)
+    this.#reserveFrame()
+  }
+
+  /**
+   * Applies the domain surface rule: live on screen, still frame off screen,
+   * empty box until the first visit.
+   */
+  #applySurface(): void {
+    if (this.#destroyed) return
+    if (!isDiagramLanguage(this.language())) {
+      if (
+        shouldPaintLiveDrawing({
+          visible: true,
+          sourceChanged: this.#paintedSignature !== this.#signature(),
+          hasLiveDrawing: this.#renderedSvg() !== undefined,
+        })
+      ) {
+        void this.#paint()
+      }
+      return
+    }
+
+    const hasLiveDrawing = this.#renderedSvg() !== undefined
+    const surface = planDiagramSurface({
+      visible: this.#visible,
+      hasLiveDrawing,
+      hasSnapshot: this.#snapshotSrc !== undefined,
+    })
+    this.#setSurface(surface)
+    if (surface === 'snapshot') {
+      this.#showSnapshot()
+      return
+    }
+    if (surface === 'placeholder') {
+      this.#showPlaceholder()
+      return
+    }
+    if (
+      shouldPaintLiveDrawing({
+        visible: true,
+        sourceChanged: this.#paintedSignature !== this.#signature(),
+        hasLiveDrawing,
+      })
+    ) {
+      void this.#paint()
+    }
+  }
+
+  /** Restores a live SVG when an export path needs one and the block is a still frame. */
+  async #ensureLiveSvg(): Promise<SVGElement | undefined> {
+    const existing = this.#renderedSvg()
+    if (existing !== undefined) return existing
+    this.#visible = true
+    await this.#paint()
+    return this.#renderedSvg()
+  }
+
   /** The rendered `<svg>`, or `undefined` for a text card/math render with none. */
   #renderedSvg(): SVGElement | undefined {
     const content = this.#render.querySelector('svg') ?? this.#render.firstElementChild
@@ -1294,13 +1427,25 @@ export class DiagramNodeView implements NodeView {
 
   update(node: ProseNode): boolean {
     if (node.type !== this.#node.type) return false
+    const previous = this.#node
     this.#node = node
     this.#applyFloat()
     if (this.#textarea.value !== node.textContent && document.activeElement !== this.#textarea) {
       // Refresh source without recreating the NodeView or stealing focus.
       this.#textarea.value = node.textContent
     }
-    void this.#paint()
+    const sourceChanged =
+      previous.textContent !== node.textContent ||
+      previous.attrs['language'] !== node.attrs['language']
+    if (sourceChanged) {
+      this.#forgetSnapshot()
+      this.#paintedSignature = undefined
+      this.#applySurface()
+      return true
+    }
+    this.#fitDiagram()
+    this.#refreshChipState()
+    this.#refreshNarrow()
     return true
   }
 
@@ -1405,6 +1550,7 @@ export class DiagramNodeView implements NodeView {
     // Same reasoning, for the selection-Escape listener: destroyed while
     // selected (e.g. the whole editor unmounts) must not leak it onto <body>.
     document.removeEventListener('keydown', this.#onSelectionEscape)
+    this.#visibility?.disconnect()
     this.#resize.disconnect()
     this.#sheet.remove()
     // The menu lives on <body> too, so it would outlive its block just the same.

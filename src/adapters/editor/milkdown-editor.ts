@@ -62,7 +62,7 @@ import type {
   NoteImageStore,
 } from '../../application/index.js'
 import { looksLikeMermaid, looksLikeSvg, withFenceMetaKey } from '../../domain/index.js'
-import type { Thread } from '../../domain/index.js'
+import type { Anchor, Thread } from '../../domain/index.js'
 import { AssetImageNodeView } from './asset-image-node-view.js'
 import { codeBlockMetaSchema } from './code-fence-meta.js'
 import { pastedTaskListSchema } from './task-list-paste.js'
@@ -80,7 +80,13 @@ import { foldingKey, foldingPlugin } from './folding.js'
 import { codeHighlightPlugin } from './code-highlight.js'
 import { findKey, findPlugin } from './find.js'
 import type { FindState } from './find.js'
-import { documentText as noteDocumentText, notesPlugin, setThreads } from './note-decorations.js'
+import {
+  currentAnchors,
+  documentText as noteDocumentText,
+  notesPlugin,
+  replaceText,
+  setThreads,
+} from './note-decorations.js'
 import { calloutRemark, calloutSchema } from './callout.js'
 import { largeTableRemark, largeTableSchema } from './large-table.js'
 import { mathBlockSchema, mathRemark } from './math-block.js'
@@ -1890,6 +1896,18 @@ export class MilkdownEditor {
   noteDocumentText(): string {
     const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
     return noteDocumentText(view.state)
+  }
+
+  /** Fresh anchors from each live decoration — the derivation NOTES-10 will persist. */
+  currentNoteAnchors(): Record<string, Anchor> {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    return Object.fromEntries(currentAnchors(view))
+  }
+
+  /** Rewords the first occurrence of `from` so a test can prove re-derivation. */
+  replaceTextForTest(from: string, to: string): void {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    replaceText(view, from, to)
   }
 
   /** Moves to the next or previous match, unfolding whatever hides it. */

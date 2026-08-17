@@ -15,7 +15,7 @@ import {
   detachThread,
   resolveThread,
 } from '../domain/index.js'
-import type { Thread } from '../domain/index.js'
+import type { Anchor, Thread } from '../domain/index.js'
 import { DocumentSession } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import type { DiagramController } from '../adapters/editor/milkdown-editor.js'
@@ -96,6 +96,10 @@ export interface AppComposition {
     setThreadsForTest(threads: readonly Thread[]): void
     /** Optional NOTES-8 hook. Called after the editor receives the threads. */
     onThreadsForTest?: (threads: readonly Thread[]) => void
+    /** Rewords the first occurrence of `from` so NOTES-9 can prove re-derivation. */
+    replaceTextForTest(from: string, to: string): void
+    /** Fresh anchors from each live decoration (NOTES-9). */
+    currentAnchorsForTest(): Record<string, Anchor>
   }
   /** Tears down the editor and presentation observers before remounting. */
   destroy(): Promise<void>
@@ -891,6 +895,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   let noteThreads: readonly Thread[] = []
   paintNotes = (): void => {
     if (editor === undefined) return
+    const derived = editor.currentNoteAnchors()
+    noteThreads = noteThreads.map((thread) => {
+      if (thread.state !== 'open') return thread
+      const next = derived[thread.id]
+      return next === undefined ? thread : { ...thread, anchor: next }
+    })
     const text = editor.noteDocumentText()
     editor.setNoteThreads(noteThreads)
     renderNoteRail(noteRailHost, noteThreads, {
@@ -918,6 +928,10 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       const hook = notes.onThreadsForTest
       if (typeof hook === 'function') hook(threads)
     },
+    replaceTextForTest: (from, to) => {
+      editor?.replaceTextForTest(from, to)
+    },
+    currentAnchorsForTest: () => editor?.currentNoteAnchors() ?? {},
   }
 
   /**

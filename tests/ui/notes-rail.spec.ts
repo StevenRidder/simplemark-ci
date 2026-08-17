@@ -6,8 +6,9 @@ import { expect, test } from '@playwright/test'
  * An unmatched open thread is an orphan: it keeps the original quote, tints
  * nowhere, and offers Reattach / Keep as note / Delete. A matched open thread
  * offers Resolve. Resolve removes the decoration and writes nothing to the
- * document (ADR-0007). An in-session edit that destroys a match turns that
- * row into an orphan without waiting for a later close (NOTES-9).
+ * document (ADR-0007). Deleting the mapped passage drops the decoration and
+ * turns that row into an orphan. Rewording the passage updates the quote
+ * (NOTES-9) instead of orphaning it.
  */
 
 const MATCHED_QUOTE = 'This document is the demo'
@@ -67,7 +68,7 @@ test('an edit that destroys a match turns the row into an orphan', async ({ page
   await expect(rail.locator('[data-action="resolve"]')).toHaveCount(1)
 
   await page.locator('.milkdown .ProseMirror').getByText(MATCHED_QUOTE).click({ clickCount: 3 })
-  await page.keyboard.type('gone')
+  await page.keyboard.press('Backspace')
   await page.evaluate(() => window.simplemark!.flushPendingChanges())
 
   await expect(rail.locator('[data-orphan="true"]')).toHaveCount(1)

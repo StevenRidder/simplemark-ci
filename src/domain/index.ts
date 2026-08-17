@@ -69,3 +69,5 @@ export {
 } from './clipboard/formats.js'
 export { CONTEXT_LENGTH, buildAnchor, matchAnchor } from './notes/anchor.js'
 export type { Anchor } from './notes/anchor.js'
+export { detachThread, resolveThread } from './notes/thread.js'
+export type { Thread } from './notes/thread.js'

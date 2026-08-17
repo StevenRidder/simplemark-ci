@@ -282,6 +282,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   applyPreferences(preferences)
 
   let editor: MilkdownEditor | undefined
+  let paintNotes = (): void => {}
   let nativeContextSelection: ReturnType<MilkdownEditor['contextSelection']> | undefined
   let chrome: WindowChrome
   /**
@@ -855,6 +856,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 
       chrome.setStatus('dirty')
       chrome.refreshStatistics()
+      paintNotes()
       if (autosaveMs > 0 && options.onSaveDraft === undefined) {
         // Debounced save on pause, never per keystroke (DESIGN.md §8).
         clearTimeout(saveTimer)
@@ -887,7 +889,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   chrome.editorHost.closest('.document-surface')?.append(noteRailHost)
 
   let noteThreads: readonly Thread[] = []
-  const paintNotes = (): void => {
+  paintNotes = (): void => {
     if (editor === undefined) return
     const text = editor.noteDocumentText()
     editor.setNoteThreads(noteThreads)

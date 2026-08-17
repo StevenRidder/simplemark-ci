@@ -1649,5 +1649,11 @@ const root = document.querySelector<HTMLElement>('#root')
 if (root !== null) {
   void start(root).then((app) => {
     window.simplemark = app
+  }).catch((error: unknown) => {
+    // A shell that fails to start must say so. A rejected promise with no
+    // handler leaves the window blank, and blank is indistinguishable from
+    // hung — that is exactly how the 2026-08-17 notes-key failure presented.
+    const message = error instanceof Error ? error.message : String(error)
+    root.textContent = `SimpleMark could not start — ${message}`
   })
 }

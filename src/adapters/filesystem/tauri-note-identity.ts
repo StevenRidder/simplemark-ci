@@ -16,7 +16,15 @@ export class TauriNoteIdentity implements NoteIdentity {
   constructor(private readonly invoke: TauriNotesInvoke) {}
 
   async readId(documentHandle: string): Promise<string | undefined> {
-    const id = await this.invoke('read_note_id', { documentHandle })
+    let id: unknown
+    try {
+      id = await this.invoke('read_note_id', { documentHandle })
+    } catch {
+      // Not every handle is a readable file: the welcome sample, an unsaved
+      // draft, an iCloud placeholder. A document we cannot read has no id we
+      // can see, and saying so must never cost the person the document itself.
+      return undefined
+    }
     return typeof id === 'string' && id !== '' ? id : undefined
   }
 

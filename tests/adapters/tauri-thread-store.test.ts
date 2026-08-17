@@ -119,6 +119,14 @@ describe('TauriNoteIdentity', () => {
     expect(await new TauriNoteIdentity(invoke).readId('/tmp/note.md')).toBeUndefined()
   })
 
+  it('treats a handle the native side cannot read as having no id', async () => {
+    // The welcome sample (`fixture:...`), an unsaved draft, or a note that is
+    // still an iCloud placeholder all reach here with no file to read. A read
+    // that only reads must answer "no id", not take the whole composition down.
+    const invoke = vi.fn().mockRejectedValue('No such file or directory (os error 2)')
+    expect(await new TauriNoteIdentity(invoke).readId('fixture:welcome-to-simplemark')).toBeUndefined()
+  })
+
   it('returns unwritable when ensure cannot stamp an id', async () => {
     const invoke = vi.fn().mockResolvedValue({ id: null, unwritable: true })
     expect(await new TauriNoteIdentity(invoke).ensureId('/tmp/note.md')).toEqual({

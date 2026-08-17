@@ -171,8 +171,17 @@ pub struct EnsureNoteId {
 /// modifies what it reads is the behaviour this whole design exists to avoid.
 #[tauri::command]
 pub fn read_note_id(document_handle: String) -> Result<Option<String>, String> {
-    let text = fs::read_to_string(&document_handle).map_err(|error| error.to_string())?;
-    Ok(extract_id(&text))
+    read_id_at(Path::new(&document_handle))
+}
+
+/// A handle with no readable file behind it (the welcome sample, an unsaved
+/// draft) has no id. Opening a document must never fail on its notes.
+fn read_id_at(path: &Path) -> Result<Option<String>, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(extract_id(&text)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 fn extract_id(text: &str) -> Option<String> {
@@ -348,6 +357,11 @@ mod tests {
             out,
             "---\nid: abc\ncomments: .simplemark/abc.json\ntitle: x\n---\n\nbody"
         );
+    }
+
+    #[test]
+    fn a_handle_that_is_not_a_file_has_no_id() {
+        assert_eq!(read_id_at(Path::new("fixture:welcome-to-simplemark")), Ok(None));
     }
 
     #[test]

@@ -922,10 +922,13 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     noteStackHost.replaceChildren()
   }
 
+  // A host with no identity port has no front matter to consult: the handle
+  // is the document's identity, on read and on ensure alike, so the key the
+  // composer saves under is the key a reload lists.
   const identity: NoteIdentity =
     ports.identity ??
     {
-      readId: async () => undefined,
+      readId: async (handle) => handle,
       ensureId: async (handle) => ({ id: handle }),
     }
   const persist: ThreadStore = ports.threads ?? new LocalThreadStore(storage)
@@ -940,11 +943,23 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       noteThreads = noteThreads.filter((thread) => thread.id !== threadId)
     },
   }
+  // Without a front-matter id the key is derived from the handle the same way
+  // the composer's `degradedKey` derives it. The raw handle is a path, and the
+  // native store refuses a key with a separator in it — a refusal that once
+  // took the whole composition down on every open of an id-less note.
   const noteKeyForOpenDocument = async (): Promise<string> => {
     const handle = session.documentHandle()
-    return (await identity.readId(handle)) ?? handle
+    return (await identity.readId(handle)) ?? noteKeyForPath(handle)
   }
-  let noteThreads: readonly Thread[] = await persist.list(await noteKeyForOpenDocument())
+  // Notes are a layer over the document, so a store that cannot answer costs
+  // exactly the notes: the document still opens, and the shell says why.
+  let noteThreads: readonly Thread[] = []
+  let notesLoadError: string | undefined
+  try {
+    noteThreads = await persist.list(await noteKeyForOpenDocument())
+  } catch (error) {
+    notesLoadError = error instanceof Error ? error.message : String(error)
+  }
 
   const persistDerivedAnchors = async (): Promise<void> => {
     if (editor === undefined) return
@@ -1026,6 +1041,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     currentAnchorsForTest: () => editor?.currentNoteAnchors() ?? {},
   }
   paintNotes()
+  if (notesLoadError !== undefined) {
+    chrome.setStatus('error', `Notes for this document could not be read — ${notesLoadError}`)
+  }
 
   const noteCapture =
     editor === undefined

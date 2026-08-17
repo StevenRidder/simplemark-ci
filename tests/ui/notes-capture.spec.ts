@@ -40,6 +40,19 @@ test('Escape discards without creating a note', async ({ page }) => {
   await expect(page.locator('.sm-note-anchor')).toHaveCount(0)
 })
 
+test('closing an empty composer without Return removes the draft', async ({ page }) => {
+  await page.evaluate((quote) => window.simplemark!.notes.selectTextForTest(quote), MATCHED_QUOTE)
+  await page.keyboard.press('Meta+Shift+M')
+  await expect(page.locator('.sm-note-composer')).toBeVisible()
+  await expect(page.locator('.sm-note-rail')).toBeVisible()
+
+  await page.locator('.titlebar').click()
+
+  await expect(page.locator('.sm-note-composer')).toHaveCount(0)
+  await expect(page.locator('.sm-note-rail')).toHaveCount(0)
+  await expect(page.locator('.sm-note-anchor')).toHaveCount(0)
+})
+
 test('Return saves and the passage tints immediately', async ({ page }) => {
   await page.evaluate((quote) => window.simplemark!.notes.selectTextForTest(quote), MATCHED_QUOTE)
   await page.keyboard.press('Meta+Shift+M')

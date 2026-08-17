@@ -88,7 +88,7 @@ import {
   replaceText,
   setThreads,
 } from './note-decorations.js'
-import { installNoteCapture } from './note-capture.js'
+import { installNoteCapture, anchorFromView } from './note-capture.js'
 import type { NoteCaptureDeps } from './note-capture.js'
 import { calloutRemark, calloutSchema } from './callout.js'
 import { largeTableRemark, largeTableSchema } from './large-table.js'
@@ -1928,6 +1928,12 @@ export class MilkdownEditor {
       view.focus()
       return true
     })
+  }
+
+  /** The current selection as a note anchor, or nothing if the selection is empty. */
+  anchorFromSelection(): Anchor | undefined {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    return anchorFromView(view)
   }
 
   /** Listens for ⌘⇧M and opens the note composer on the current selection. */

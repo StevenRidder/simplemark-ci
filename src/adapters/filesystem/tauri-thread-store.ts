@@ -29,7 +29,10 @@ export class TauriThreadStore implements ThreadStore {
     if (text === '') return []
     try {
       const parsed: unknown = JSON.parse(text)
-      return Array.isArray(parsed) ? (parsed as Thread[]) : []
+      if (!Array.isArray(parsed)) {
+        throw new Error('The notes for this document could not be read')
+      }
+      return parsed as Thread[]
     } catch {
       throw new Error('The notes for this document could not be read')
     }

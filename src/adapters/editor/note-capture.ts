@@ -2,7 +2,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 
 import type { NoteIdentity, ThreadStore } from '../../application/index.js'
 import { buildAnchor } from '../../domain/index.js'
-import type { Thread } from '../../domain/index.js'
+import type { Anchor, Thread } from '../../domain/index.js'
 
 import { indexDocumentText } from './note-decorations.js'
 
@@ -26,12 +26,33 @@ export interface NoteCaptureDeps {
 
 const NEED_SELECTION = 'Select the text this note is about'
 
+/** The current editor selection as a note anchor, or nothing if it is empty. */
+export function anchorFromView(view: EditorView): Anchor | undefined {
+  const { empty, from, to } = view.state.selection
+  if (empty || from === to) return undefined
+
+  const $from = view.state.doc.resolve(from)
+  const clampedTo = Math.min(to, $from.end())
+  if (clampedTo <= from) return undefined
+
+  const indexed = indexDocumentText(view.state.doc)
+  const start = indexed.offsetAt(from)
+  const last = indexed.offsetAt(clampedTo - 1)
+  if (start === undefined || last === undefined || last < start) return undefined
+  return buildAnchor(indexed.text, start, last + 1, $from.index(0))
+}
+
 export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): () => void {
   let composer: HTMLElement | undefined
   let draft: Thread | undefined
   let busy = false
+  let onPointerDown: ((event: PointerEvent) => void) | undefined
 
   const closeComposer = (): void => {
+    if (onPointerDown !== undefined) {
+      view.dom.ownerDocument.removeEventListener('pointerdown', onPointerDown, true)
+      onPointerDown = undefined
+    }
     composer?.remove()
     composer = undefined
   }
@@ -90,6 +111,13 @@ export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): () 
     host.append(panel)
     composer = panel
     textarea.focus()
+
+    onPointerDown = (event: PointerEvent): void => {
+      if (!(event.target instanceof Node) || panel.contains(event.target)) return
+      if (textarea.value.trim() !== '') return
+      void discardDraft()
+    }
+    view.dom.ownerDocument.addEventListener('pointerdown', onPointerDown, true)
   }
 
   const capture = async (): Promise<void> => {
@@ -100,17 +128,8 @@ export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): () 
       return
     }
 
-    const $from = view.state.doc.resolve(from)
-    const clampedTo = Math.min(to, $from.end())
-    if (clampedTo <= from) {
-      deps.onNeedSelection()
-      return
-    }
-
-    const indexed = indexDocumentText(view.state.doc)
-    const start = indexed.offsetAt(from)
-    const last = indexed.offsetAt(clampedTo - 1)
-    if (start === undefined || last === undefined || last < start) {
+    const anchor = anchorFromView(view)
+    if (anchor === undefined) {
       deps.onNeedSelection()
       return
     }
@@ -132,7 +151,6 @@ export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): () 
         }
       }
 
-      const anchor = buildAnchor(indexed.text, start, last + 1, $from.index(0))
       const thread: Thread = {
         id: crypto.randomUUID(),
         noteKey,

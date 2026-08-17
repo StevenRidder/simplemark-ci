@@ -78,3 +78,72 @@ test('an edit that destroys a match turns the row into an orphan', async ({ page
   await expect(rail.locator('[data-action="resolve"]')).toHaveCount(0)
   await expect(page.locator('.sm-note-anchor')).toHaveCount(0)
 })
+
+test('reattach waits for the next selection and binds the note there', async ({ page }) => {
+  await page.evaluate(() => window.simplemark!.notes.setThreadsForTest([
+    { id: 't1', noteKey: 'n', author: 'local', createdAt: '', body: 'still relevant?',
+      anchor: { quote: 'A SENTENCE THAT IS GONE', prefix: '', suffix: '', blockIndex: 0 },
+      state: 'open' },
+  ]))
+
+  const row = page.locator('.sm-note-rail [data-thread="t1"]')
+  await row.locator('[data-action="reattach"]').click()
+  await expect(row).toHaveAttribute('data-waiting', 'true')
+  await expect(page.locator('.sm-note-anchor')).toHaveCount(0)
+
+  await page.evaluate((quote) => window.simplemark!.notes.selectTextForTest(quote), MATCHED_QUOTE)
+
+  await expect(row).toHaveAttribute('data-orphan', 'false')
+  await expect(row).toHaveAttribute('data-waiting', 'false')
+  await expect(page.locator('.sm-note-anchor')).toHaveCount(1)
+  await expect(page.locator('.sm-note-anchor').first()).toContainText(MATCHED_QUOTE)
+})
+
+test('Escape cancels reattach and leaves the note orphaned', async ({ page }) => {
+  await page.evaluate(() => window.simplemark!.notes.setThreadsForTest([
+    { id: 't1', noteKey: 'n', author: 'local', createdAt: '', body: 'still relevant?',
+      anchor: { quote: 'A SENTENCE THAT IS GONE', prefix: '', suffix: '', blockIndex: 0 },
+      state: 'open' },
+  ]))
+
+  const row = page.locator('.sm-note-rail [data-thread="t1"]')
+  await row.locator('[data-action="reattach"]').click()
+  await expect(row).toHaveAttribute('data-waiting', 'true')
+
+  await page.keyboard.press('Escape')
+
+  await expect(row).toHaveAttribute('data-waiting', 'false')
+  await expect(row).toHaveAttribute('data-orphan', 'true')
+  await expect(page.locator('.sm-note-anchor')).toHaveCount(0)
+})
+
+test('clicking a stacked tint opens every note on that passage', async ({ page }) => {
+  await page.evaluate((quote) => window.simplemark!.notes.setThreadsForTest([
+    { id: 't1', noteKey: 'n', author: 'local', createdAt: '', body: 'first stacked note',
+      anchor: { quote, prefix: '', suffix: '', blockIndex: 0 }, state: 'open' },
+    { id: 't2', noteKey: 'n', author: 'local', createdAt: '', body: 'second stacked note',
+      anchor: { quote, prefix: '', suffix: '', blockIndex: 0 }, state: 'open' },
+  ]), MATCHED_QUOTE)
+
+  await page.locator('.sm-note-anchor').first().click()
+
+  const stack = page.locator('.sm-note-stack')
+  await expect(stack).toBeVisible()
+  await expect(stack.locator('[data-thread]')).toHaveCount(2)
+  await expect(stack).toContainText('first stacked note')
+  await expect(stack).toContainText('second stacked note')
+})
+
+test('clicking a single tint shows that note', async ({ page }) => {
+  await page.evaluate((quote) => window.simplemark!.notes.setThreadsForTest([
+    { id: 't1', noteKey: 'n', author: 'local', createdAt: '', body: 'only this note',
+      anchor: { quote, prefix: '', suffix: '', blockIndex: 0 }, state: 'open' },
+  ]), MATCHED_QUOTE)
+
+  await page.locator('.sm-note-anchor').first().click()
+
+  const stack = page.locator('.sm-note-stack')
+  await expect(stack).toBeVisible()
+  await expect(stack.locator('[data-thread]')).toHaveCount(1)
+  await expect(stack).toContainText('only this note')
+})

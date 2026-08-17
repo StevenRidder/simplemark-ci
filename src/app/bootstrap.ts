@@ -23,7 +23,7 @@ import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import type { DiagramController } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
 import { createFindBar } from './ui/find-bar.js'
-import { renderNoteRail } from './ui/note-rail.js'
+import { renderNoteRail, renderNoteStack } from './ui/note-rail.js'
 import { NEED_SELECTION } from '../adapters/editor/note-capture.js'
 import { noteKeyForPath } from '../adapters/filesystem/tauri-thread-store.js'
 import type { EditorCommand } from './ui/window-chrome.js'
@@ -898,9 +898,28 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 
   const noteRailHost = document.createElement('div')
   noteRailHost.className = 'sm-note-rail-host'
-  chrome.editorHost.closest('.document-surface')?.append(noteRailHost)
+  const noteStackHost = document.createElement('div')
+  noteStackHost.className = 'sm-note-stack-host'
+  const documentSurface = chrome.editorHost.closest('.document-surface')
+  documentSurface?.append(noteRailHost, noteStackHost)
 
   let noteThreads: readonly Thread[] = []
+  let waitingReattachId: string | undefined
+
+  const closeNoteStack = (): void => {
+    noteStackHost.replaceChildren()
+  }
+
+  const applyWaitingReattach = (): void => {
+    if (waitingReattachId === undefined || editor === undefined) return
+    const anchor = editor.anchorFromSelection()
+    if (anchor === undefined) return
+    const id = waitingReattachId
+    waitingReattachId = undefined
+    noteThreads = noteThreads.map((thread) => (thread.id === id ? { ...thread, anchor } : thread))
+    paintNotes()
+  }
+
   paintNotes = (): void => {
     if (editor === undefined) return
     const derived = editor.currentNoteAnchors()
@@ -913,30 +932,40 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     editor.setNoteThreads(noteThreads)
     renderNoteRail(noteRailHost, noteThreads, {
       resolve: (id) => {
+        waitingReattachId = undefined
         noteThreads = noteThreads.map((thread) => (thread.id === id ? resolveThread(thread) : thread))
         paintNotes()
       },
       detach: (id) => {
+        waitingReattachId = undefined
         noteThreads = noteThreads.map((thread) => (thread.id === id ? detachThread(thread) : thread))
         paintNotes()
       },
       remove: (id) => {
+        if (waitingReattachId === id) waitingReattachId = undefined
         noteThreads = noteThreads.filter((thread) => thread.id !== id)
         paintNotes()
       },
-      reattach: () => {
-        // Reattach needs the capture selection path from NOTES-7.
+      reattach: (id) => {
+        waitingReattachId = id
+        paintNotes()
       },
-    }, text)
+    }, text, waitingReattachId)
   }
   const notes: AppComposition['notes'] = {
     setThreadsForTest: (threads) => {
+      waitingReattachId = undefined
+      closeNoteStack()
       noteThreads = threads
       paintNotes()
       const hook = notes.onThreadsForTest
       if (typeof hook === 'function') hook(threads)
     },
-    selectTextForTest: (quote) => editor?.selectQuote(quote) ?? false,
+    selectTextForTest: (quote) => {
+      const ok = editor?.selectQuote(quote) ?? false
+      if (ok) applyWaitingReattach()
+      return ok
+    },
     replaceTextForTest: (from, to) => {
       editor?.replaceTextForTest(from, to)
     },
@@ -969,6 +998,36 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
           onSaved: () => paintNotes(),
           onNeedSelection: () => chrome.setStatus('error', NEED_SELECTION),
         })
+
+  const onNotesEscape = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape') return
+    if (waitingReattachId !== undefined) {
+      event.preventDefault()
+      waitingReattachId = undefined
+      paintNotes()
+    }
+    closeNoteStack()
+  }
+  const onEditorSelectionSettled = (): void => {
+    applyWaitingReattach()
+  }
+  const onDocumentClick = (event: MouseEvent): void => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (target.closest('.sm-note-stack') !== null) return
+    const tint = target.closest('.sm-note-anchor')
+    if (tint === null) {
+      closeNoteStack()
+      return
+    }
+    const ids = (tint.getAttribute('data-threads') ?? '').split(/\s+/).filter((id) => id !== '')
+    const stacked = ids.flatMap((id) => noteThreads.filter((thread) => thread.id === id))
+    renderNoteStack(noteStackHost, stacked, tint.getBoundingClientRect())
+  }
+  chrome.editorHost.addEventListener('mouseup', onEditorSelectionSettled)
+  chrome.editorHost.addEventListener('keyup', onEditorSelectionSettled)
+  chrome.element.ownerDocument.addEventListener('click', onDocumentClick)
+  chrome.element.ownerDocument.addEventListener('keydown', onNotesEscape)
 
   /**
    * Moving between notes on ⌘⌥ plus an arrow.
@@ -1137,6 +1196,10 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     async destroy() {
       clearTimeout(saveTimer)
       uninstallCapture()
+      chrome.element.ownerDocument.removeEventListener('keydown', onNotesEscape)
+      chrome.editorHost.removeEventListener('mouseup', onEditorSelectionSettled)
+      chrome.editorHost.removeEventListener('keyup', onEditorSelectionSettled)
+      chrome.element.ownerDocument.removeEventListener('click', onDocumentClick)
       chrome.dispose()
       await editor.destroy()
     },

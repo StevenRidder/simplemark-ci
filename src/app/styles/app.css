@@ -3980,6 +3980,45 @@ section.editor::-webkit-scrollbar {
   border-bottom-width: 3px;
 }
 
+.sm-note-rail article[data-waiting="true"] {
+  outline: 1px solid var(--note-line, #e3ce93);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.sm-note-stack-host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.sm-note-stack {
+  position: absolute;
+  z-index: 22;
+  pointer-events: auto;
+  width: min(280px, calc(100% - 36px));
+  max-height: min(320px, calc(100% - 96px));
+  overflow: auto;
+  padding: 10px;
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(32, 29, 24, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.sm-note-stack article + article {
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.sm-note-stack-body {
+  margin: 0;
+  font: 13px/1.4 var(--sans);
+  color: var(--ink);
+}
+
 .sm-note-rail-host:empty {
   display: none;
 }

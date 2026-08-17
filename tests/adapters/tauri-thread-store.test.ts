@@ -65,6 +65,14 @@ describe('TauriThreadStore', () => {
     expect(invoke).not.toHaveBeenCalledWith('write_note_threads', expect.anything())
   })
 
+  it('refuses JSON that is not an array without writing', async () => {
+    const invoke = vi.fn().mockResolvedValue('{"threads":[]}')
+    const store = new TauriThreadStore(invoke)
+
+    await expect(store.list('n1')).rejects.toThrow(/could not be read/)
+    expect(invoke).not.toHaveBeenCalledWith('write_note_threads', expect.anything())
+  })
+
   it('removes one thread and leaves the rest', async () => {
     let stored = ''
     const invoke = vi.fn(async (command: string, args: Record<string, unknown>) => {

@@ -12,12 +12,16 @@ import {
   markdownTableToCsv,
   markdownTableToHtml,
   markdownToPlainText,
+  detachThread,
+  resolveThread,
 } from '../domain/index.js'
+import type { Thread } from '../domain/index.js'
 import { DocumentSession } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import type { DiagramController } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
 import { createFindBar } from './ui/find-bar.js'
+import { renderNoteRail } from './ui/note-rail.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import { COMMANDS } from '../application/index.js'
 import type { BlockBoundaryPort, DocumentCommandId } from '../application/index.js'
@@ -82,6 +86,15 @@ export interface AppComposition {
    * already keep.
    */
   readonly diagram: DiagramController
+  /**
+   * In-memory notes surface for the anchored-notes rail (NOTES-8).
+   *
+   * Persistence and capture arrive in later NOTES tasks. The Playwright
+   * harness drives this directly so the rail can be proven without a store.
+   */
+  readonly notes: {
+    setThreadsForTest(threads: readonly Thread[]): void
+  }
   /** Tears down the editor and presentation observers before remounting. */
   destroy(): Promise<void>
   /** Flushes any pending debounced save. `false` leaves the current document in place. */
@@ -867,6 +880,40 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     }
   })
 
+  const noteRailHost = document.createElement('div')
+  noteRailHost.className = 'sm-note-rail-host'
+  chrome.editorHost.closest('.document-surface')?.append(noteRailHost)
+
+  let noteThreads: readonly Thread[] = []
+  const paintNotes = (): void => {
+    if (editor === undefined) return
+    const text = editor.noteDocumentText()
+    editor.setNoteThreads(noteThreads)
+    renderNoteRail(noteRailHost, noteThreads, {
+      resolve: (id) => {
+        noteThreads = noteThreads.map((thread) => (thread.id === id ? resolveThread(thread) : thread))
+        paintNotes()
+      },
+      detach: (id) => {
+        noteThreads = noteThreads.map((thread) => (thread.id === id ? detachThread(thread) : thread))
+        paintNotes()
+      },
+      remove: (id) => {
+        noteThreads = noteThreads.filter((thread) => thread.id !== id)
+        paintNotes()
+      },
+      reattach: () => {
+        // Reattach needs the capture selection path from NOTES-7.
+      },
+    }, text)
+  }
+  const notes = {
+    setThreadsForTest: (threads: readonly Thread[]): void => {
+      noteThreads = threads
+      paintNotes()
+    },
+  }
+
   /**
    * Moving between notes on ⌘⌥ plus an arrow.
    *
@@ -1030,6 +1077,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     reconcileWorkspace: (workspace) => chrome.reconcileWorkspace(workspace),
     session,
     editor,
+    notes,
     async destroy() {
       clearTimeout(saveTimer)
       chrome.dispose()

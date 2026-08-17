@@ -3963,6 +3963,85 @@ section.editor::-webkit-scrollbar {
   outline-offset: 0;
 }
 
+/*
+ * A note's highlight. One tint regardless of how many notes share the
+ * passage: two overlapping tints blend into a third colour that means
+ * nothing and gives a click no obvious target.
+ */
+.sm-note-anchor {
+  background: var(--note-tint, #f6e7bd88);
+  border-bottom: 2px solid var(--note-line, #e3ce93);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.sm-note-anchor-stacked {
+  border-bottom-style: double;
+  border-bottom-width: 3px;
+}
+
+.sm-note-rail-host:empty {
+  display: none;
+}
+
+.sm-note-rail {
+  position: absolute;
+  z-index: 21;
+  top: 72px;
+  right: 18px;
+  width: min(280px, calc(100% - 36px));
+  max-height: calc(100% - 96px);
+  overflow: auto;
+  padding: 10px;
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(32, 29, 24, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.sm-note-rail article {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 4px;
+}
+
+.sm-note-rail article + article {
+  border-top: 1px solid var(--line);
+}
+
+.sm-note-rail-body,
+.sm-note-rail-quote {
+  margin: 0;
+  font: 13px/1.4 var(--sans);
+  color: var(--ink);
+}
+
+.sm-note-rail-quote {
+  color: var(--ink-3);
+}
+
+.sm-note-rail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sm-note-rail-actions button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+  color: var(--ink-2);
+  font: 11px var(--sans);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.sm-note-rail-actions button:hover {
+  color: var(--ink);
+}
+
 /* ---- paste-exhaust cards (RENDERERS.md, the exhaust tier) ---- */
 
 .text-card {

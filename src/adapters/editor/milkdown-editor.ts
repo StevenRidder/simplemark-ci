@@ -62,6 +62,7 @@ import type {
   NoteImageStore,
 } from '../../application/index.js'
 import { looksLikeMermaid, looksLikeSvg, withFenceMetaKey } from '../../domain/index.js'
+import type { Thread } from '../../domain/index.js'
 import { AssetImageNodeView } from './asset-image-node-view.js'
 import { codeBlockMetaSchema } from './code-fence-meta.js'
 import { pastedTaskListSchema } from './task-list-paste.js'
@@ -79,6 +80,7 @@ import { foldingKey, foldingPlugin } from './folding.js'
 import { codeHighlightPlugin } from './code-highlight.js'
 import { findKey, findPlugin } from './find.js'
 import type { FindState } from './find.js'
+import { documentText as noteDocumentText, notesPlugin, setThreads } from './note-decorations.js'
 import { calloutRemark, calloutSchema } from './callout.js'
 import { largeTableRemark, largeTableSchema } from './large-table.js'
 import { mathBlockSchema, mathRemark } from './math-block.js'
@@ -565,6 +567,7 @@ export class MilkdownEditor {
       // active. Diagram fences keep their NodeView and stay unhighlighted.
       .use(codeHighlightPlugin(options.renderer.languages))
       .use(findPlugin)
+      .use(notesPlugin)
       .use(mathRemark)
       .use(inlineMathSchema)
       .use(mathBlockSchema)
@@ -1875,6 +1878,18 @@ export class MilkdownEditor {
       if (found.active >= 0) this.revealAndScrollTo(found.matches[found.active]!.from)
       return { count: found.matches.length, active: found.active }
     })
+  }
+
+  /** Replaces the open-note set the decoration plugin tints. */
+  setNoteThreads(threads: readonly Thread[]): void {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    setThreads(view, threads)
+  }
+
+  /** Plain text the note matcher uses — the same offsets as the decorations. */
+  noteDocumentText(): string {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    return noteDocumentText(view.state)
   }
 
   /** Moves to the next or previous match, unfolding whatever hides it. */

@@ -38,6 +38,8 @@ export type {
   StepApplicationResult,
   MarkdownStepResult,
   StepDocumentPort,
+  NoteIdentity,
+  ThreadStore,
 } from './ports.js'
 export { isAiConfigured } from './ports.js'
 export { DocumentSession } from './document-session.js'

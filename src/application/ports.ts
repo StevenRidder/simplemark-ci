@@ -11,6 +11,8 @@
  * (a lone CR, an invalid sequence, a missing final newline).
  */
 
+import type { Thread } from '../domain/index.js'
+
 /** A document opened through a file port, with the bytes exactly as stored. */
 export interface OpenedDocument {
   /** Opaque handle the adapter uses to write back to the same location. */
@@ -382,4 +384,30 @@ export interface StepDocumentPort {
     replacement: string,
     range?: StepDocumentRange,
   ): MarkdownStepResult
+}
+
+/**
+ * Where anchored notes are stored.
+ *
+ * Optional in exactly the way `ChartDataReader` is: the browser build has no
+ * filesystem, so it receives no store and the notes affordances are not
+ * offered. An absent capability is not an error to report at use time; it is a
+ * feature that is not present.
+ */
+export interface ThreadStore {
+  list(noteKey: string): Promise<Thread[]>
+  save(thread: Thread): Promise<void>
+  remove(noteKey: string, threadId: string): Promise<void>
+}
+
+/**
+ * A document's stable identity, so notes survive it being renamed or moved.
+ *
+ * Two calls rather than one, and the split is the whole point: `readId` cannot
+ * write, so opening a document can never modify it. Only creating the first
+ * note on a document calls `ensureId`.
+ */
+export interface NoteIdentity {
+  readId(documentHandle: string): Promise<string | undefined>
+  ensureId(documentHandle: string): Promise<{ id: string } | { unwritable: true }>
 }

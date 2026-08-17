@@ -25,6 +25,7 @@ import { createWindowChrome } from './ui/window-chrome.js'
 import { createFindBar } from './ui/find-bar.js'
 import { renderNoteRail, renderNoteStack } from './ui/note-rail.js'
 import { NEED_SELECTION } from '../adapters/editor/note-capture.js'
+import { LocalThreadStore } from '../adapters/filesystem/local-thread-store.js'
 import { noteKeyForPath } from '../adapters/filesystem/tauri-thread-store.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import { COMMANDS } from '../application/index.js'
@@ -77,7 +78,7 @@ export interface AppPorts {
   readonly blockBoundaries?: BlockBoundaryPort
   /** Absent in hosts that cannot keep images beside the note. */
   readonly images?: ImageStorePort
-  /** Absent in the browser shell until a later NOTES task wires a store. */
+  /** Native notes store. Absent in the browser shell; bootstrap then uses localStorage. */
   readonly threads?: ThreadStore
   readonly identity?: NoteIdentity
 }
@@ -94,10 +95,10 @@ export interface AppComposition {
    */
   readonly diagram: DiagramController
   /**
-   * In-memory notes surface for the anchored-notes rail (NOTES-8).
+   * Notes surface for the rail, capture, and Playwright harness.
    *
-   * Persistence and capture arrive in later NOTES tasks. The Playwright
-   * harness drives this directly so the rail can be proven without a store.
+   * Desktop injects `TauriThreadStore`. The browser harness keeps threads in
+   * localStorage so a reload can prove the same promise.
    */
   readonly notes: {
     setThreadsForTest(threads: readonly Thread[]): void
@@ -903,21 +904,59 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const documentSurface = chrome.editorHost.closest('.document-surface')
   documentSurface?.append(noteRailHost, noteStackHost)
 
-  let noteThreads: readonly Thread[] = []
   let waitingReattachId: string | undefined
 
   const closeNoteStack = (): void => {
     noteStackHost.replaceChildren()
   }
 
+  const identity: NoteIdentity =
+    ports.identity ??
+    {
+      readId: async () => undefined,
+      ensureId: async (handle) => ({ id: handle }),
+    }
+  const persist: ThreadStore = ports.threads ?? new LocalThreadStore(storage)
+  const store: ThreadStore = {
+    list: (noteKey) => persist.list(noteKey),
+    save: async (thread) => {
+      await persist.save(thread)
+      noteThreads = [...noteThreads.filter((candidate) => candidate.id !== thread.id), thread]
+    },
+    remove: async (noteKey, threadId) => {
+      await persist.remove(noteKey, threadId)
+      noteThreads = noteThreads.filter((thread) => thread.id !== threadId)
+    },
+  }
+  const noteKeyForOpenDocument = async (): Promise<string> => {
+    const handle = session.documentHandle()
+    return (await identity.readId(handle)) ?? handle
+  }
+  let noteThreads: readonly Thread[] = await persist.list(await noteKeyForOpenDocument())
+
+  const persistDerivedAnchors = async (): Promise<void> => {
+    if (editor === undefined) return
+    const derived = editor.currentNoteAnchors()
+    const persisted = await persist.list(await noteKeyForOpenDocument())
+    const persistedById = new Map(persisted.map((thread) => [thread.id, thread]))
+    for (const thread of noteThreads) {
+      if (thread.state !== 'open') continue
+      const next = derived[thread.id]
+      if (next === undefined) continue
+      const previous = persistedById.get(thread.id)
+      if (previous !== undefined && anchorsEqual(previous.anchor, next)) continue
+      await persist.save({ ...thread, anchor: next })
+    }
+  }
+
   const applyWaitingReattach = (): void => {
     if (waitingReattachId === undefined || editor === undefined) return
     const anchor = editor.anchorFromSelection()
     if (anchor === undefined) return
-    const id = waitingReattachId
+    const thread = noteThreads.find((candidate) => candidate.id === waitingReattachId)
+    if (thread === undefined) return
     waitingReattachId = undefined
-    noteThreads = noteThreads.map((thread) => (thread.id === id ? { ...thread, anchor } : thread))
-    paintNotes()
+    void store.save({ ...thread, anchor }).then(() => paintNotes())
   }
 
   paintNotes = (): void => {
@@ -933,18 +972,21 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     renderNoteRail(noteRailHost, noteThreads, {
       resolve: (id) => {
         waitingReattachId = undefined
-        noteThreads = noteThreads.map((thread) => (thread.id === id ? resolveThread(thread) : thread))
-        paintNotes()
+        const thread = noteThreads.find((candidate) => candidate.id === id)
+        if (thread === undefined) return
+        void store.save(resolveThread(thread)).then(() => paintNotes())
       },
       detach: (id) => {
         waitingReattachId = undefined
-        noteThreads = noteThreads.map((thread) => (thread.id === id ? detachThread(thread) : thread))
-        paintNotes()
+        const thread = noteThreads.find((candidate) => candidate.id === id)
+        if (thread === undefined) return
+        void store.save(detachThread(thread)).then(() => paintNotes())
       },
       remove: (id) => {
         if (waitingReattachId === id) waitingReattachId = undefined
-        noteThreads = noteThreads.filter((thread) => thread.id !== id)
-        paintNotes()
+        const thread = noteThreads.find((candidate) => candidate.id === id)
+        if (thread === undefined) return
+        void store.remove(thread.noteKey, id).then(() => paintNotes())
       },
       reattach: (id) => {
         waitingReattachId = id
@@ -971,27 +1013,13 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     },
     currentAnchorsForTest: () => editor?.currentNoteAnchors() ?? {},
   }
+  paintNotes()
 
-  const memoryStore: ThreadStore = {
-    list: async (noteKey) => noteThreads.filter((thread) => thread.noteKey === noteKey),
-    save: async (thread) => {
-      noteThreads = [...noteThreads.filter((candidate) => candidate.id !== thread.id), thread]
-    },
-    remove: async (_noteKey, threadId) => {
-      noteThreads = noteThreads.filter((thread) => thread.id !== threadId)
-    },
-  }
-  const identity: NoteIdentity =
-    ports.identity ??
-    {
-      readId: async () => undefined,
-      ensureId: async (handle) => ({ id: handle }),
-    }
   const uninstallCapture =
     editor === undefined
       ? () => {}
       : editor.installNoteCapture({
-          store: ports.threads ?? memoryStore,
+          store,
           identity,
           handle: () => session.documentHandle(),
           degradedKey: noteKeyForPath,
@@ -1195,6 +1223,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     notes,
     async destroy() {
       clearTimeout(saveTimer)
+      await persistDerivedAnchors()
       uninstallCapture()
       chrome.element.ownerDocument.removeEventListener('keydown', onNotesEscape)
       chrome.editorHost.removeEventListener('mouseup', onEditorSelectionSettled)
@@ -1350,4 +1379,14 @@ function applyPreferences(preferences: ReaderPreferences): void {
   for (const [name, value] of Object.entries(preferenceVariables(preferences))) {
     root.style.setProperty(name, value)
   }
+}
+
+function anchorsEqual(left: Anchor | undefined, right: Anchor): boolean {
+  return (
+    left !== undefined &&
+    left.quote === right.quote &&
+    left.prefix === right.prefix &&
+    left.suffix === right.suffix &&
+    left.blockIndex === right.blockIndex
+  )
 }

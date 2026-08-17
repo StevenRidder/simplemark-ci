@@ -24,6 +24,8 @@ import { TauriWorkspaceCatalogPort } from '../adapters/filesystem/tauri-workspac
 import { TauriDocumentLinkPort } from '../adapters/filesystem/tauri-document-link-port.js'
 import { TauriChartDataReader } from '../adapters/filesystem/tauri-chart-data-reader.js'
 import { TauriImageStore } from '../adapters/filesystem/tauri-image-store.js'
+import { TauriNoteIdentity } from '../adapters/filesystem/tauri-note-identity.js'
+import { TauriThreadStore } from '../adapters/filesystem/tauri-thread-store.js'
 import { VegaLiteRenderer } from '../adapters/renderers/vega-lite-renderer.js'
 import type { FilePort, WorkspaceCatalog } from '../application/index.js'
 import { suggestedMarkdownFileName } from '../domain/index.js'
@@ -1208,6 +1210,8 @@ async function mount(
       assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
       links: new TauriDocumentLinkPort(invoke),
       images: new TauriImageStore((command, args) => invoke(command, args)),
+      threads: new TauriThreadStore((command, args) => invoke(command, args)),
+      identity: new TauriNoteIdentity((command, args) => invoke(command, args)),
       clipboard: new BrowserClipboardPort(),
       diagramFix: new OpenAiCompatibleDiagramFixPort(chatCompletionTransport, () => loadAiSettings(window.localStorage)),
       // Lets a save re-emit untouched blocks from the file's own bytes instead

@@ -1,0 +1,30 @@
+import type { NoteIdentity } from '../../application/index.js'
+
+type TauriNotesInvoke = (
+  command: string,
+  args: Record<string, unknown>,
+) => Promise<unknown>
+
+/**
+ * Two calls, and the separation is the guarantee.
+ *
+ * `readId` reaches a command that only reads, so no code path exists by which
+ * opening a document could modify it. `ensureId` is reached only when the
+ * author creates their first note.
+ */
+export class TauriNoteIdentity implements NoteIdentity {
+  constructor(private readonly invoke: TauriNotesInvoke) {}
+
+  async readId(documentHandle: string): Promise<string | undefined> {
+    const id = await this.invoke('read_note_id', { documentHandle })
+    return typeof id === 'string' && id !== '' ? id : undefined
+  }
+
+  async ensureId(documentHandle: string): Promise<{ id: string } | { unwritable: true }> {
+    const result = (await this.invoke('ensure_note_id', { documentHandle })) as {
+      id?: string
+      unwritable?: boolean
+    }
+    return typeof result.id === 'string' ? { id: result.id } : { unwritable: true }
+  }
+}

@@ -324,6 +324,17 @@ pub struct WorkspaceCatalog {
 #[derive(Clone, Default)]
 pub struct WriteLedger(Arc<Mutex<HashMap<PathBuf, u64>>>);
 
+impl WriteLedger {
+    /// Record what we are about to write so `watch_note` can ignore our own save.
+    pub(crate) fn record_bytes(&self, path: PathBuf, bytes: &[u8]) -> Result<(), String> {
+        self.0
+            .lock()
+            .map_err(|_| "The write ledger was poisoned by an earlier panic".to_string())?
+            .insert(path, content_hash(bytes));
+        Ok(())
+    }
+}
+
 /// Owns the one filesystem watcher associated with the current document.
 ///
 /// Reopening or switching a note replaces the previous generation and signals

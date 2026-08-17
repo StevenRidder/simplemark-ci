@@ -6,6 +6,8 @@ import type {
   DocumentLinkPort,
   FilePort,
   ImageStorePort,
+  NoteIdentity,
+  ThreadStore,
 } from '../application/index.js'
 import {
   codeFenceContent,
@@ -22,6 +24,8 @@ import type { DiagramController } from '../adapters/editor/milkdown-editor.js'
 import { createWindowChrome } from './ui/window-chrome.js'
 import { createFindBar } from './ui/find-bar.js'
 import { renderNoteRail } from './ui/note-rail.js'
+import { NEED_SELECTION } from '../adapters/editor/note-capture.js'
+import { noteKeyForPath } from '../adapters/filesystem/tauri-thread-store.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import { COMMANDS } from '../application/index.js'
 import type { BlockBoundaryPort, DocumentCommandId } from '../application/index.js'
@@ -73,6 +77,9 @@ export interface AppPorts {
   readonly blockBoundaries?: BlockBoundaryPort
   /** Absent in hosts that cannot keep images beside the note. */
   readonly images?: ImageStorePort
+  /** Absent in the browser shell until a later NOTES task wires a store. */
+  readonly threads?: ThreadStore
+  readonly identity?: NoteIdentity
 }
 
 export interface AppComposition {
@@ -94,6 +101,7 @@ export interface AppComposition {
    */
   readonly notes: {
     setThreadsForTest(threads: readonly Thread[]): void
+    selectTextForTest(quote: string): boolean
     /** Optional NOTES-8 hook. Called after the editor receives the threads. */
     onThreadsForTest?: (threads: readonly Thread[]) => void
     /** Rewords the first occurrence of `from` so NOTES-9 can prove re-derivation. */
@@ -928,11 +936,39 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       const hook = notes.onThreadsForTest
       if (typeof hook === 'function') hook(threads)
     },
+    selectTextForTest: (quote) => editor?.selectQuote(quote) ?? false,
     replaceTextForTest: (from, to) => {
       editor?.replaceTextForTest(from, to)
     },
     currentAnchorsForTest: () => editor?.currentNoteAnchors() ?? {},
   }
+
+  const memoryStore: ThreadStore = {
+    list: async (noteKey) => noteThreads.filter((thread) => thread.noteKey === noteKey),
+    save: async (thread) => {
+      noteThreads = [...noteThreads.filter((candidate) => candidate.id !== thread.id), thread]
+    },
+    remove: async (_noteKey, threadId) => {
+      noteThreads = noteThreads.filter((thread) => thread.id !== threadId)
+    },
+  }
+  const identity: NoteIdentity =
+    ports.identity ??
+    {
+      readId: async () => undefined,
+      ensureId: async (handle) => ({ id: handle }),
+    }
+  const uninstallCapture =
+    editor === undefined
+      ? () => {}
+      : editor.installNoteCapture({
+          store: ports.threads ?? memoryStore,
+          identity,
+          handle: () => session.documentHandle(),
+          degradedKey: noteKeyForPath,
+          onSaved: () => paintNotes(),
+          onNeedSelection: () => chrome.setStatus('error', NEED_SELECTION),
+        })
 
   /**
    * Moving between notes on ⌘⌥ plus an arrow.
@@ -1100,6 +1136,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     notes,
     async destroy() {
       clearTimeout(saveTimer)
+      uninstallCapture()
       chrome.dispose()
       await editor.destroy()
     },

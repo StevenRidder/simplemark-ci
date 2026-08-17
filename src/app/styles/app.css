@@ -4042,6 +4042,60 @@ section.editor::-webkit-scrollbar {
   color: var(--ink);
 }
 
+.sm-note-composer,
+.sm-note-unwritable {
+  position: absolute;
+  z-index: 22;
+  width: min(320px, calc(100% - 36px));
+  padding: 10px;
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(32, 29, 24, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.sm-note-composer-quote {
+  margin: 0 0 8px;
+  font: 13px/1.4 var(--sans);
+  color: var(--ink-3);
+}
+
+.sm-note-composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 13px/1.4 var(--sans);
+  padding: 8px;
+}
+
+.sm-note-unwritable p {
+  margin: 0 0 8px;
+  font: 13px/1.4 var(--sans);
+  color: var(--ink);
+}
+
+.sm-note-unwritable div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sm-note-unwritable button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+  color: var(--ink-2);
+  font: 11px var(--sans);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
 /* ---- paste-exhaust cards (RENDERERS.md, the exhaust tier) ---- */
 
 .text-card {

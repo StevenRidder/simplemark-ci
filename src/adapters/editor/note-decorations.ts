@@ -36,10 +36,11 @@ export const notesKey = new PluginKey<NotesState>('simplemark-notes')
  * `textBetween(..., '\n', '\n')` plus `offset + 1` only works inside the first
  * block. Later blocks insert positions that the string never counts.
  */
-function indexDocumentText(doc: ProseNode): {
+export function indexDocumentText(doc: ProseNode): {
   readonly text: string
   posAt(offset: number): number | undefined
   offsetsInside(from: number, to: number): { fromOffset: number; lastOffset: number } | undefined
+  offsetAt(pos: number): number | undefined
 } {
   const chars: Array<{ ch: string; pos: number | undefined }> = []
   let separated = true
@@ -77,6 +78,10 @@ function indexDocumentText(doc: ProseNode): {
       }
       if (fromOffset === undefined || lastOffset === undefined) return undefined
       return { fromOffset, lastOffset }
+    },
+    offsetAt: (pos) => {
+      const index = chars.findIndex((entry) => entry.pos === pos)
+      return index === -1 ? undefined : index
     },
   }
 }

@@ -83,10 +83,13 @@ import type { FindState } from './find.js'
 import {
   currentAnchors,
   documentText as noteDocumentText,
+  indexDocumentText,
   notesPlugin,
   replaceText,
   setThreads,
 } from './note-decorations.js'
+import { installNoteCapture } from './note-capture.js'
+import type { NoteCaptureDeps } from './note-capture.js'
 import { calloutRemark, calloutSchema } from './callout.js'
 import { largeTableRemark, largeTableSchema } from './large-table.js'
 import { mathBlockSchema, mathRemark } from './math-block.js'
@@ -1908,6 +1911,29 @@ export class MilkdownEditor {
   replaceTextForTest(from: string, to: string): void {
     const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
     replaceText(view, from, to)
+  }
+
+  /** Selects the first unique occurrence of `quote`, for the Playwright harness. */
+  selectQuote(quote: string): boolean {
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const indexed = indexDocumentText(view.state.doc)
+      const offset = indexed.text.indexOf(quote)
+      if (offset === -1) return false
+      if (indexed.text.indexOf(quote, offset + 1) !== -1) return false
+      const from = indexed.posAt(offset)
+      const last = indexed.posAt(offset + quote.length - 1)
+      if (from === undefined || last === undefined || last < from) return false
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, last + 1)))
+      view.focus()
+      return true
+    })
+  }
+
+  /** Listens for ⌘⇧M and opens the note composer on the current selection. */
+  installNoteCapture(deps: NoteCaptureDeps): () => void {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    return installNoteCapture(view, deps)
   }
 
   /** Moves to the next or previous match, unfolding whatever hides it. */

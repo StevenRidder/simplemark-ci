@@ -1,0 +1,203 @@
+import type { EditorView } from '@milkdown/kit/prose/view'
+
+import type { NoteIdentity, ThreadStore } from '../../application/index.js'
+import { buildAnchor } from '../../domain/index.js'
+import type { Thread } from '../../domain/index.js'
+
+import { indexDocumentText } from './note-decorations.js'
+
+/**
+ * Capture a note on the current selection (ADR-0007 §5.1).
+ *
+ * ⌘⇧M with a selection builds an anchor, asks `ensureId`, and opens a focused
+ * composer. Return saves; Escape discards. With no selection the document is
+ * untouched and the shell says so. Nothing but a front-matter id is written
+ * to the `.md`, and only `ensureId` does that.
+ */
+
+export interface NoteCaptureDeps {
+  readonly store: ThreadStore
+  readonly identity: NoteIdentity
+  readonly handle: () => string | undefined
+  readonly degradedKey: (handle: string) => string
+  readonly onSaved: () => void
+  readonly onNeedSelection: () => void
+}
+
+const NEED_SELECTION = 'Select the text this note is about'
+
+export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): () => void {
+  let composer: HTMLElement | undefined
+  let draft: Thread | undefined
+  let busy = false
+
+  const closeComposer = (): void => {
+    composer?.remove()
+    composer = undefined
+  }
+
+  const discardDraft = async (): Promise<void> => {
+    const thread = draft
+    draft = undefined
+    closeComposer()
+    if (thread !== undefined) await deps.store.remove(thread.noteKey, thread.id)
+    deps.onSaved()
+  }
+
+  const saveDraft = async (body: string): Promise<void> => {
+    if (draft === undefined) return
+    const thread: Thread = { ...draft, body }
+    draft = undefined
+    closeComposer()
+    await deps.store.save(thread)
+    deps.onSaved()
+  }
+
+  const openComposer = (thread: Thread, from: number): void => {
+    closeComposer()
+    const host = view.dom.closest('.document-surface') ?? view.dom.parentElement ?? view.dom
+    const panel = document.createElement('div')
+    panel.className = 'sm-note-composer'
+    panel.setAttribute('role', 'dialog')
+    panel.setAttribute('aria-label', 'New note')
+
+    const quote = document.createElement('p')
+    quote.className = 'sm-note-composer-quote'
+    quote.textContent = thread.anchor?.quote ?? ''
+    panel.append(quote)
+
+    const textarea = document.createElement('textarea')
+    textarea.setAttribute('aria-label', 'Note body')
+    textarea.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        void discardDraft()
+        return
+      }
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault()
+        event.stopPropagation()
+        void saveDraft(textarea.value)
+      }
+    })
+    panel.append(textarea)
+
+    const coords = view.coordsAtPos(from)
+    const hostBox = host.getBoundingClientRect()
+    panel.style.top = `${Math.max(8, coords.bottom - hostBox.top + 8)}px`
+    panel.style.left = `${Math.max(8, coords.left - hostBox.left)}px`
+    host.append(panel)
+    composer = panel
+    textarea.focus()
+  }
+
+  const capture = async (): Promise<void> => {
+    if (busy || composer !== undefined) return
+    const { empty, from, to } = view.state.selection
+    if (empty || from === to) {
+      deps.onNeedSelection()
+      return
+    }
+
+    const $from = view.state.doc.resolve(from)
+    const clampedTo = Math.min(to, $from.end())
+    if (clampedTo <= from) {
+      deps.onNeedSelection()
+      return
+    }
+
+    const indexed = indexDocumentText(view.state.doc)
+    const start = indexed.offsetAt(from)
+    const last = indexed.offsetAt(clampedTo - 1)
+    if (start === undefined || last === undefined || last < start) {
+      deps.onNeedSelection()
+      return
+    }
+
+    busy = true
+    try {
+      const handle = deps.handle()
+      let noteKey = handle ?? 'browser'
+      let degraded: true | undefined
+      if (handle !== undefined) {
+        const ensured = await deps.identity.ensureId(handle)
+        if ('unwritable' in ensured) {
+          const proceed = await promptUnwritable(view)
+          if (!proceed) return
+          noteKey = deps.degradedKey(handle)
+          degraded = true
+        } else {
+          noteKey = ensured.id
+        }
+      }
+
+      const anchor = buildAnchor(indexed.text, start, last + 1, $from.index(0))
+      const thread: Thread = {
+        id: crypto.randomUUID(),
+        noteKey,
+        author: 'local',
+        createdAt: new Date().toISOString(),
+        body: '',
+        anchor,
+        state: 'open',
+        ...(degraded === true ? { degraded: true } : {}),
+      }
+      draft = thread
+      await deps.store.save(thread)
+      deps.onSaved()
+      openComposer(thread, from)
+    } finally {
+      busy = false
+    }
+  }
+
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (!(event.metaKey || event.ctrlKey) || !event.shiftKey) return
+    if (event.key.toLowerCase() !== 'm') return
+    event.preventDefault()
+    void capture()
+  }
+
+  const document = view.dom.ownerDocument
+  document.addEventListener('keydown', onKeyDown)
+
+  return () => {
+    document.removeEventListener('keydown', onKeyDown)
+    closeComposer()
+  }
+}
+
+export { NEED_SELECTION }
+
+function promptUnwritable(view: EditorView): Promise<boolean> {
+  return new Promise((resolve) => {
+    const host = view.dom.closest('.document-surface') ?? view.dom.parentElement ?? view.dom
+    const panel = document.createElement('div')
+    panel.className = 'sm-note-unwritable'
+    panel.setAttribute('role', 'dialog')
+    panel.setAttribute('aria-label', 'File is read-only')
+
+    const body = document.createElement('p')
+    body.textContent = "This file is read-only, so notes on it won't survive a rename."
+    panel.append(body)
+
+    const actions = document.createElement('div')
+    const finish = (proceed: boolean): void => {
+      panel.remove()
+      resolve(proceed)
+    }
+    const anyway = document.createElement('button')
+    anyway.type = 'button'
+    anyway.textContent = 'Note anyway'
+    anyway.addEventListener('click', () => finish(true))
+    const cancel = document.createElement('button')
+    cancel.type = 'button'
+    cancel.textContent = 'Cancel'
+    cancel.addEventListener('click', () => finish(false))
+    actions.append(anyway, cancel)
+    panel.append(actions)
+    host.append(panel)
+    anyway.focus()
+  })
+}

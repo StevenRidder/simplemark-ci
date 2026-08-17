@@ -63,6 +63,7 @@ mod macos_zoom;
 pub mod note_images;
 pub mod note_preview;
 pub mod note_summaries;
+mod notes;
 
 #[cfg(all(any(target_os = "macos", target_os = "ios"), target_arch = "aarch64"))]
 pub mod foundation_models;
@@ -2255,6 +2256,10 @@ pub fn run() {
             default_workspaces,
             read_note_at,
             read_note_data,
+            notes::read_note_threads,
+            notes::write_note_threads,
+            notes::read_note_id,
+            notes::ensure_note_id,
             open_document_link,
             inspect_workspace_note,
             list_workspace,

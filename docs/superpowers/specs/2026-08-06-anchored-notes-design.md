@@ -308,6 +308,40 @@ simulated read-only filesystem, no faked policy. Where the real condition cannot
 be reproduced in the harness, it is verified in a real build instead of by a
 test that passes for the wrong reason.
 
+### 10.1 Real-build verification (2026-08-17)
+
+Recorded on `a627dc9cb83513ba4d7ecbf8d4c526286176c215` (`feat(notes): wire anchored notes into the desktop shell (#216)`), which is `origin/main` and the NOTES-11 branch tip. Native proof is host-local; CI has no Apple toolchain.
+
+**Build**
+
+```text
+SIMPLEMARK_BUILD_SHA=$(git rev-parse HEAD) npm run build:native
+```
+
+The release bundle is `src-tauri/target/release/bundle/macos/SimpleMark.app`. The Mach-O at `Contents/MacOS/simplemark` contains `a627dc9cb83513ba4d7ecbf8d4c526286176c215` as `SIMPLEMARK_BUILD_SHA`.
+
+**`readId` does not write**
+
+Host file `~/Documents/simplemark-notes-11-proof/bare-no-front-matter.md` had no front matter. SHA-256 before opening the built app:
+
+```text
+2876db3927e09e250d8b1a52119e637134a5df84de0292d05d9b9c5faa54abeb
+```
+
+After LaunchServices launch, Apple Event / second-instance argv delivery, and quit, the digest was unchanged and the file still had no `id:` line. The same crate the bundle compiles also exercises the command on a real tempfile: `cargo test --manifest-path src-tauri/Cargo.toml notes::tests::read_note_id_does_not_write` (`fs::read_to_string` only; bytes equal afterwards).
+
+**Read-only capture path**
+
+`chmod a-w` on `~/Documents/simplemark-notes-11-proof/read-only-capture.md` produced mode `0444`. SHA-256 stayed `02903cdba18106032c20a80135738d8d04b08a1400bbf65d23aa214890fbfd56`. Then `chmod u+w`, as the plan requires.
+
+`cargo test --manifest-path src-tauri/Cargo.toml notes::tests::ensure_reports_unwritable_when_the_file_is_read_only` uses `permissions.set_readonly(true)` on a real tempfile — Unix `chmod` in everything but the spelling. `ensure_note_id` returns `{ id: None, unwritable: true }`, records no write, and leaves the bytes alone. All 14 `notes::tests` passed.
+
+Choosing **Note anyway** is TypeScript (`src/adapters/editor/note-capture.ts`): the prompt copy is exactly §3.2, and the saved thread carries `degraded: true` under `noteKeyForPath(handle)`. That key is `path-<16 hex>` from a 64-bit polynomial hash, not `path-<sha256 of absolute path>` as the table in §4 still writes. The adapter test `tests/adapters/tauri-thread-store.test.ts` covers the `unwritable` return shape; it does not fake a read-only filesystem.
+
+**What the .app window did not prove**
+
+The built process ran (`Contents/MacOS/simplemark` from this worktree). WKWebView never replaced the system File menu (`Close Window` / `Close All` only) within 40s, including on a fresh `app.simplemark.desktop` WebKit profile that was restored afterwards. `installOpenRequestBridge` therefore never drained the open-file queue, Accessibility did not expose the passage, and ⌘⇧M could not be driven. That is a launch-path gap, not a substitute Playwright chmod. The identity and unwritable behaviours above are still the real filesystem, in the crate this bundle compiles.
+
 ## 11. Corrupt or unreadable data
 
 A thread file that will not parse produces "notes for this document couldn't be

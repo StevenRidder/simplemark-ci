@@ -68,6 +68,14 @@ describe('the command registry', () => {
     expect(first).toContain('link')
   })
 
+  it('places Add Note in Edit without an accelerator, so it does not share ⌘⇧M with Copy as Markdown', () => {
+    expect(COMMANDS.addNote.label).toBe('Add Note')
+    expect(COMMANDS.addNote.target).toBe('shell')
+    expect(COMMANDS.addNote.accelerator).toBeUndefined()
+    const edit = MENUS.find((menu) => menu.label === 'Edit')!
+    expect(menuCommandIds([edit])).toContain('addNote')
+  })
+
   it('adds Paragraph to the Structure group, alongside Indent and Outdent', () => {
     expect(COMMANDS.paragraph).toBeDefined()
     expect(COMMANDS.paragraph.label).toBe('Paragraph')

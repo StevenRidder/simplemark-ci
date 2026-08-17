@@ -30,6 +30,34 @@ test('selecting then pressing the key opens a focused composer on that passage',
   await expect(composer).toContainText(MATCHED_QUOTE)
 })
 
+/**
+ * Dispatch `contextmenu` rather than a Playwright right-click: the synthetic
+ * click collapses the selection first, which a real browser does not do.
+ */
+test('selecting then choosing Add Note from the menu opens the same composer', async ({ page }) => {
+  await page.evaluate((quote) => window.simplemark!.notes.selectTextForTest(quote), MATCHED_QUOTE)
+  await page.locator('.milkdown .ProseMirror').evaluate((el) => {
+    const box = el.getBoundingClientRect()
+    el.dispatchEvent(
+      new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: Math.round(box.left + 12),
+        clientY: Math.round(box.top + 8),
+      }),
+    )
+  })
+
+  const menu = page.locator('.selection-context-menu')
+  await expect(menu).toBeVisible()
+  await menu.getByRole('menuitem', { name: 'Add Note', exact: true }).click()
+
+  const composer = page.locator('.sm-note-composer')
+  await expect(composer).toBeVisible()
+  await expect(composer.locator('textarea')).toBeFocused()
+  await expect(composer).toContainText(MATCHED_QUOTE)
+})
+
 test('Escape discards without creating a note', async ({ page }) => {
   await page.evaluate((quote) => window.simplemark!.notes.selectTextForTest(quote), MATCHED_QUOTE)
   await page.keyboard.press('Meta+Shift+M')

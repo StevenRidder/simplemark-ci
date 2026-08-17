@@ -2,6 +2,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { NodeView } from '@milkdown/kit/prose/view'
 
 import { planTableDeferral } from '../../domain/index.js'
+import { splitClosedFrontMatter } from '../../domain/index.js'
 import type { MarkdownTableSpan } from '../../domain/index.js'
 
 /** A private code-fence language used only inside the live editor document. */
@@ -23,6 +24,8 @@ export interface PreparedMarkdown {
   readonly deferredTables: ReadonlyMap<string, DeferredTable>
   /** Restores untouched deferred-table source before a session is updated. */
   restoreMarkdown(markdown: string): string
+  /** Replaces the hidden YAML prefix after ensureId writes it on disk. */
+  adoptFrontMatter(fullMarkdown: string): void
 }
 
 function markerFor(id: string): string {
@@ -55,6 +58,20 @@ function deferredTable(id: string, source: string, span: MarkdownTableSpan): Def
  * DocumentSession.
  */
 export function prepareMarkdownForEditor(markdown: string): PreparedMarkdown {
+  const split = splitClosedFrontMatter(markdown)
+  let matter = split.matter
+  const inner = prepareBodyForEditor(split.body)
+  return {
+    editorMarkdown: inner.editorMarkdown,
+    deferredTables: inner.deferredTables,
+    restoreMarkdown: (next) => matter + inner.restoreMarkdown(next),
+    adoptFrontMatter: (fullMarkdown) => {
+      matter = splitClosedFrontMatter(fullMarkdown).matter
+    },
+  }
+}
+
+function prepareBodyForEditor(markdown: string): Omit<PreparedMarkdown, 'adoptFrontMatter'> {
   const plan = planTableDeferral(markdown)
   if (plan.deferredTables.length === 0) {
     return {

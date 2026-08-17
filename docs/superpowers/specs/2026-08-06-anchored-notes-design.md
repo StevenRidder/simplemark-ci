@@ -1,9 +1,10 @@
 # Anchored notes — design
 
-- **Status:** Approved design, ready for planning. Its load-bearing decisions — the §9
-  decomposition, the §4 storage location, and the §5 anchor mechanism — are recorded in
-  [`ADR-0007`](../../decisions/0007-annotation-before-participation.md), which is binding where this
-  document is explanatory.
+- **Status:** Approved design, ready for planning. Load-bearing decisions: §9
+  decomposition and §5 anchors in
+  [`ADR-0007`](../../decisions/0007-annotation-before-participation.md); §4
+  storage in
+  [`ADR-0011`](../../decisions/0011-comments-travel-beside-the-document.md).
 - **Date:** 2026-08-06
 - **Scope:** Sub-projects A and B of the annotation decomposition (§9)
 - **Companion to:** [`COLLABORATION.md`](../../COLLABORATION.md), [`PRODUCT.md`](../../PRODUCT.md), [`DESIGN.md`](../../DESIGN.md)
@@ -32,9 +33,9 @@ Comment bodies, anchors and thread state never enter the document. This is the
 a sidecar — with its stated asymmetry: *losing the sidecar loses discussion,
 never content.*
 
-One exception, agreed explicitly: a note's **identity** goes in front matter
-(§3). One line, a normal Markdown convention, and already specified by
-`DESIGN.md` §343.
+One exception, agreed explicitly: a note's **identity** and a **link to its
+comments file** go in front matter (§3, ADR-0011). Comment bodies stay in the
+sidecar.
 
 ## 2. Architecture
 
@@ -88,7 +89,7 @@ author is displayed anywhere in this version.
 
 ### 2.3 Adapters
 
-- `tauri-thread-store.ts` — JSON in the app data directory (§4)
+- `tauri-thread-store.ts` — JSON in `.simplemark/` beside a writable document (§4)
 - `tauri-note-identity.ts` — front-matter read and write
 - `note-decorations.ts` — ProseMirror plugin, modelled on the existing
   `find.ts`, which already builds a `DecorationSet` from `Decoration.inline`
@@ -125,35 +126,36 @@ pattern `DESIGN.md` §4.4 rules out.
 
 ## 4. Where threads live
 
-One file per document, named for its `noteKey`:
+One file per document, named for its `noteKey`. Writable documents keep that
+file beside the `.md` so notes travel and a folder agent can follow the
+front-matter link (ADR-0011).
 
-| Document | File |
-|---|---|
-| has a front-matter id | `<app data>/SimpleMark/threads/<id>.json` |
-| degraded (§3.2) | `<app data>/SimpleMark/threads/path-<sha256 of absolute path>.json` |
+| Document | File | Link in the `.md` |
+|---|---|---|
+| has a front-matter id | `<parent>/.simplemark/<id>.json` | `comments: .simplemark/<id>.json` |
+| degraded (§3.2) | `<app data>/SimpleMark/threads/path-<sha256 of absolute path>.json` | none |
 
-Hashing the path keeps the filename safe and fixed-length. A degraded file is
-found again only at the same path — which is precisely the limitation the
-prompt in §3.2 warns about, made concrete.
+Opening never writes. The sidecar folder and the `comments:` line land on the
+first note, the same lazy rule as `ensureId`. A missing sidecar is read as
+empty; application data is the fallback until the next thread save.
+
+The composer, tint, and rail do not change. Comment bodies never enter the
+document.
+
+A degraded file is found again only at the same path — which is precisely the
+limitation the prompt in §3.2 warns about, made concrete.
 
 If a degraded document later becomes writable and acquires an id, its threads
-are migrated to the id-named file on next save and `degraded` is cleared.
-
-Never beside the document. A note opened from `~/Downloads` must not cause a
-hidden `.simplemark/` directory to appear in `~/Downloads`; the app is a guest
-in directories it does not own. For documents with an id, threads survive the
-note being renamed or moved anywhere.
-
-The cost, accepted: copying the `.md` elsewhere does not carry its notes.
-Exporting an annotated copy is out of scope (§8).
+are migrated to the sidecar on next save and `degraded` is cleared.
 
 ## 5. The anchor lifecycle
 
 ### 5.1 Capture
 
-Select the passage, press **⌘⇧M**. **There is no floating button to aim at** —
-a target that appears near the cursor is what makes commenting slow under time
-pressure, and speed is the entire point of the motivating case.
+Select the passage, press **⌘⇧M**, or choose **Add Note** from the right-click
+menu. **There is no floating button to aim at** — a target that appears near
+the cursor is what makes commenting slow under time pressure, and speed is the
+entire point of the motivating case.
 
 The selection tints immediately, so what the note is about is visible before a
 word is typed. The composer opens focused; Return saves, Escape discards.

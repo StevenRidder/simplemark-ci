@@ -1,8 +1,8 @@
-// Threads live beside the application, never beside the document.
+// Threads live beside the document in `.simplemark/`, keyed by the note id.
 //
-// A note opened from `~/Downloads` must not cause a hidden directory to
-// appear in `~/Downloads`. The app is a guest in folders it does not own.
-// The only Markdown this module may write is a front-matter `id` (ADR-0007).
+// The `.md` holds a front-matter `comments:` link to that file (ADR-0011).
+// Opening a document never writes. A degraded `path-` key stays in application
+// data so a read-only file does not grow a sidecar folder.
 
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -92,25 +92,77 @@ fn ensure_write_outcome(error: io::Error) -> Result<EnsureNoteId, String> {
         return Ok(EnsureNoteId {
             id: None,
             unwritable: true,
+            markdown: None,
         });
     }
     Err(error.to_string())
 }
 
 #[tauri::command]
-pub fn read_note_threads(note_key: String) -> Result<String, String> {
-    read_threads_file(&threads_file(&note_key)?)
+pub fn read_note_threads(
+    note_key: String,
+    document_handle: Option<String>,
+) -> Result<String, String> {
+    apply_read_note_threads(&note_key, document_handle.as_deref().map(Path::new))
 }
 
 #[tauri::command]
-pub fn write_note_threads(note_key: String, contents: String) -> Result<(), String> {
-    write_threads_file(&threads_file(&note_key)?, &contents)
+pub fn write_note_threads(
+    note_key: String,
+    contents: String,
+    document_handle: Option<String>,
+) -> Result<(), String> {
+    apply_write_note_threads(&note_key, &contents, document_handle.as_deref().map(Path::new))
+}
+
+fn sidecar_target(note_key: &str, document_handle: Option<&Path>) -> Result<Option<PathBuf>, String> {
+    validate_note_key(note_key)?;
+    if note_key.starts_with("path-") {
+        return Ok(None);
+    }
+    let Some(document) = document_handle else {
+        return Ok(None);
+    };
+    if !document.is_absolute() {
+        return Ok(None);
+    }
+    let parent = document
+        .parent()
+        .ok_or_else(|| "path has no parent directory".to_string())?;
+    Ok(Some(
+        parent.join(".simplemark").join(format!("{note_key}.json")),
+    ))
+}
+
+fn apply_read_note_threads(
+    note_key: &str,
+    document_handle: Option<&Path>,
+) -> Result<String, String> {
+    if let Some(sidecar) = sidecar_target(note_key, document_handle)? {
+        if sidecar.exists() {
+            return read_threads_file(&sidecar);
+        }
+    }
+    read_threads_file(&threads_file(note_key)?)
+}
+
+fn apply_write_note_threads(
+    note_key: &str,
+    contents: &str,
+    document_handle: Option<&Path>,
+) -> Result<(), String> {
+    if let Some(sidecar) = sidecar_target(note_key, document_handle)? {
+        return write_threads_file(&sidecar, contents);
+    }
+    write_threads_file(&threads_file(note_key)?, contents)
 }
 
 #[derive(Serialize)]
 pub struct EnsureNoteId {
     pub id: Option<String>,
     pub unwritable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub markdown: Option<String>,
 }
 
 /// The `id:` line from front matter, if there is one.
@@ -124,12 +176,25 @@ pub fn read_note_id(document_handle: String) -> Result<Option<String>, String> {
 }
 
 fn extract_id(text: &str) -> Option<String> {
+    extract_front_matter_field(text, "id")
+}
+
+fn extract_comments(text: &str) -> Option<String> {
+    extract_front_matter_field(text, "comments")
+}
+
+fn extract_front_matter_field(text: &str, key: &str) -> Option<String> {
     let rest = text.strip_prefix("---\n")?;
     let end = rest.find("\n---")?;
+    let prefix = format!("{key}:");
     rest[..end].lines().find_map(|line| {
-        let value = line.strip_prefix("id:")?.trim();
+        let value = line.strip_prefix(&prefix)?.trim();
         (!value.is_empty()).then(|| value.to_string())
     })
+}
+
+fn comments_href(id: &str) -> String {
+    format!(".simplemark/{id}.json")
 }
 
 #[tauri::command]
@@ -147,17 +212,32 @@ fn apply_ensure_note_id(
     text: &str,
     record: impl FnOnce(&[u8]) -> Result<(), String>,
 ) -> Result<EnsureNoteId, String> {
-    if let Some(existing) = extract_id(text) {
-        return Ok(EnsureNoteId {
-            id: Some(existing),
-            unwritable: false,
-        });
-    }
     if path_is_unwritable(path) {
         return Ok(EnsureNoteId {
-            id: None,
+            id: extract_id(text),
             unwritable: true,
+            markdown: None,
         });
+    }
+    if let Some(existing) = extract_id(text) {
+        if extract_comments(text).is_some() {
+            return Ok(EnsureNoteId {
+                id: Some(existing),
+                unwritable: false,
+                markdown: None,
+            });
+        }
+        let updated = insert_comments_link(text, &existing);
+        let bytes = updated.as_bytes();
+        record(bytes)?;
+        return match write_bytes_atomically(path, bytes) {
+            Ok(()) => Ok(EnsureNoteId {
+                id: Some(existing),
+                unwritable: false,
+                markdown: Some(updated),
+            }),
+            Err(error) => ensure_write_outcome(error),
+        };
     }
 
     let id = new_id();
@@ -169,6 +249,7 @@ fn apply_ensure_note_id(
         Ok(()) => Ok(EnsureNoteId {
             id: Some(id),
             unwritable: false,
+            markdown: Some(updated),
         }),
         Err(error) => ensure_write_outcome(error),
     }
@@ -190,12 +271,32 @@ fn new_id() -> String {
 /// A leading `---` is only a YAML fence when a later `\n---` closes it. A
 /// thematic break (`---\n\n# Title`) is document text, not an open block.
 fn insert_id(text: &str, id: &str) -> String {
+    let comments = comments_href(id);
     if let Some(rest) = text.strip_prefix("---\n") {
         if rest.contains("\n---") {
-            return format!("---\nid: {id}\n{rest}");
+            return format!("---\nid: {id}\ncomments: {comments}\n{rest}");
         }
     }
-    format!("---\nid: {id}\n---\n\n{text}")
+    format!("---\nid: {id}\ncomments: {comments}\n---\n\n{text}")
+}
+
+/// Adds `comments:` after the existing `id:` line. Does not invent an id.
+fn insert_comments_link(text: &str, id: &str) -> String {
+    if extract_comments(text).is_some() {
+        return text.to_string();
+    }
+    let comments = comments_href(id);
+    let needle = format!("id: {id}\n");
+    if let Some(at) = text.find(&needle) {
+        let end = at + needle.len();
+        return format!("{}comments: {comments}\n{}", &text[..end], &text[end..]);
+    }
+    if let Some(rest) = text.strip_prefix("---\n") {
+        if rest.contains("\n---") {
+            return format!("---\ncomments: {comments}\n{rest}");
+        }
+    }
+    format!("---\nid: {id}\ncomments: {comments}\n---\n\n{text}")
 }
 
 #[cfg(test)]
@@ -218,43 +319,61 @@ mod tests {
     #[test]
     fn inserting_keeps_existing_front_matter() {
         let out = insert_id("---\ntitle: x\n---\n\nbody", "abc");
-        assert!(out.starts_with("---\nid: abc\ntitle: x\n---"));
+        assert!(out.starts_with("---\nid: abc\ncomments: .simplemark/abc.json\ntitle: x\n---"));
         assert!(out.ends_with("body"));
     }
 
     #[test]
     fn inserting_creates_front_matter_when_absent() {
-        assert_eq!(insert_id("body", "abc"), "---\nid: abc\n---\n\nbody");
+        assert_eq!(
+            insert_id("body", "abc"),
+            "---\nid: abc\ncomments: .simplemark/abc.json\n---\n\nbody"
+        );
     }
 
     #[test]
     fn inserting_wraps_a_thematic_break_instead_of_injecting_under_it() {
         let out = insert_id("---\n\n# Title\n", "abc");
-        assert_eq!(out, "---\nid: abc\n---\n\n---\n\n# Title\n");
+        assert_eq!(
+            out,
+            "---\nid: abc\ncomments: .simplemark/abc.json\n---\n\n---\n\n# Title\n"
+        );
         assert_eq!(extract_id(&out), Some("abc".into()));
+    }
+
+    #[test]
+    fn comments_link_is_added_after_an_existing_id() {
+        let out = insert_comments_link("---\nid: abc\ntitle: x\n---\n\nbody", "abc");
+        assert_eq!(
+            out,
+            "---\nid: abc\ncomments: .simplemark/abc.json\ntitle: x\n---\n\nbody"
+        );
     }
 
     #[test]
     fn refuses_a_note_key_with_a_path_separator() {
         assert_eq!(
-            read_note_threads("foo/bar".into()),
+            read_note_threads("foo/bar".into(), None),
             Err("Invalid note key".into())
         );
         assert_eq!(
-            read_note_threads("foo\\bar".into()),
+            read_note_threads("foo\\bar".into(), None),
             Err("Invalid note key".into())
         );
         assert_eq!(
-            read_note_threads("..secret".into()),
+            read_note_threads("..secret".into(), None),
             Err("Invalid note key".into())
         );
     }
 
     #[test]
     fn refuses_an_empty_or_control_character_note_key() {
-        assert_eq!(read_note_threads("".into()), Err("Invalid note key".into()));
         assert_eq!(
-            read_note_threads("foo\nbar".into()),
+            read_note_threads("".into(), None),
+            Err("Invalid note key".into())
+        );
+        assert_eq!(
+            read_note_threads("foo\nbar".into(), None),
             Err("Invalid note key".into())
         );
     }
@@ -313,8 +432,15 @@ mod tests {
         assert!(!result.unwritable);
         let id = result.id.expect("issued id");
         let after = fs::read_to_string(&path).expect("re-read");
-        assert_eq!(after, format!("---\nid: {id}\n---\n\n# Title\n"));
-        assert_eq!(extract_id(&after), Some(id));
+        assert_eq!(
+            after,
+            format!("---\nid: {id}\ncomments: .simplemark/{id}.json\n---\n\n# Title\n")
+        );
+        assert_eq!(extract_id(&after), Some(id.clone()));
+        assert!(
+            after.contains(&format!("comments: .simplemark/{id}.json")),
+            "front matter must link the sidecar: {after}"
+        );
         assert_eq!(recorded.as_deref(), Some(after.as_bytes()));
     }
 
@@ -327,7 +453,10 @@ mod tests {
         let result = apply_ensure_note_id(&path, original, |_| Ok(())).expect("ensure id");
         let id = result.id.expect("issued id");
         let after = fs::read_to_string(&path).expect("re-read");
-        assert_eq!(after, format!("---\nid: {id}\n---\n\n---\n\n# Title\n"));
+        assert_eq!(
+            after,
+            format!("---\nid: {id}\ncomments: .simplemark/{id}.json\n---\n\n---\n\n# Title\n")
+        );
         assert_eq!(extract_id(&after), Some(id));
     }
 
@@ -353,6 +482,46 @@ mod tests {
     }
 
     #[test]
+    fn ensure_reports_unwritable_when_a_read_only_file_already_has_an_id() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("note.md");
+        let original = "---\nid: abc\n---\n\nbody\n";
+        fs::write(&path, original).expect("write fixture");
+        let mut permissions = fs::metadata(&path).expect("metadata").permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions).expect("chmod");
+        let result = apply_ensure_note_id(&path, original, |_| {
+            panic!("must not record a write that cannot land")
+        })
+        .expect("degraded note");
+        assert!(result.unwritable);
+        assert_eq!(fs::read_to_string(&path).expect("unchanged"), original);
+        let mut permissions = fs::metadata(&path).expect("metadata").permissions();
+        permissions.set_readonly(false);
+        fs::set_permissions(&path, permissions).expect("restore");
+    }
+
+    #[test]
+    fn ensure_reports_unwritable_when_a_read_only_file_already_has_comments() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("note.md");
+        let original = "---\nid: abc\ncomments: .simplemark/abc.json\n---\n\nbody\n";
+        fs::write(&path, original).expect("write fixture");
+        let mut permissions = fs::metadata(&path).expect("metadata").permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions).expect("chmod");
+        let result = apply_ensure_note_id(&path, original, |_| {
+            panic!("must not record a write that cannot land")
+        })
+        .expect("degraded note");
+        assert!(result.unwritable);
+        assert_eq!(fs::read_to_string(&path).expect("unchanged"), original);
+        let mut permissions = fs::metadata(&path).expect("metadata").permissions();
+        permissions.set_readonly(false);
+        fs::set_permissions(&path, permissions).expect("restore");
+    }
+
+    #[test]
     fn ensure_returns_err_when_the_parent_directory_is_missing() {
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("missing").join("note.md");
@@ -371,5 +540,65 @@ mod tests {
         assert_eq!(denied.id, None);
         let other = ensure_write_outcome(io::Error::new(io::ErrorKind::NotFound, "gone"));
         assert!(other.is_err());
+    }
+
+    #[test]
+    fn write_threads_beside_the_document() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("note.md");
+        fs::write(&path, "---\nid: abc\n---\n\nbody\n").expect("write fixture");
+        apply_write_note_threads("sidecartest-abc", "[{\"ok\":true}]", Some(&path)).expect("write");
+        let sidecar = dir.path().join(".simplemark").join("sidecartest-abc.json");
+        assert_eq!(
+            fs::read_to_string(&sidecar).expect("sidecar"),
+            "[{\"ok\":true}]"
+        );
+        assert_eq!(
+            apply_read_note_threads("sidecartest-abc", Some(&path)).expect("read"),
+            "[{\"ok\":true}]"
+        );
+        let leftovers: Vec<_> = fs::read_dir(dir.path().join(".simplemark"))
+            .expect("list sidecar dir")
+            .filter_map(|entry| {
+                let name = entry.ok()?.file_name();
+                let name = name.to_string_lossy();
+                name.contains("simplemark-tmp").then(|| name.into_owned())
+            })
+            .collect();
+        assert!(leftovers.is_empty(), "atomic write left debris: {leftovers:?}");
+    }
+
+    #[test]
+    fn reading_threads_does_not_create_the_sidecar_folder() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("note.md");
+        fs::write(&path, "---\nid: abc\n---\n\nbody\n").expect("write fixture");
+        assert_eq!(
+            apply_read_note_threads("sidecartest-read-empty", Some(&path)).expect("missing is empty"),
+            ""
+        );
+        assert!(
+            !dir.path().join(".simplemark").exists(),
+            "a read must not create .simplemark"
+        );
+    }
+
+    #[test]
+    fn degraded_path_keys_do_not_use_the_sidecar_folder() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("note.md");
+        assert_eq!(
+            sidecar_target("path-0123456789abcdef", Some(&path)).expect("valid key"),
+            None
+        );
+        assert!(!dir.path().join(".simplemark").exists());
+    }
+
+    #[test]
+    fn relative_document_handles_do_not_use_the_sidecar_folder() {
+        assert_eq!(
+            sidecar_target("abc", Some(Path::new("Not saved"))).expect("valid key"),
+            None
+        );
     }
 }

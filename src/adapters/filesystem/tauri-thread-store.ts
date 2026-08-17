@@ -14,17 +14,24 @@ export function noteKeyForPath(path: string): string {
 }
 
 /**
- * One JSON file per document, holding all of its threads.
+ * One JSON file per document.
  *
- * A file that will not parse raises rather than being replaced. Losing a note
- * because we failed to read it would be worse than the read failing — and a
- * store that repairs itself by truncating is a store that eats data.
+ * A writable file with a real path stores threads in `.simplemark/` beside it.
+ * Application data remains the fallback for a degraded path-key or a host
+ * with no document path. A file that will not parse raises rather than being
+ * replaced.
  */
 export class TauriThreadStore implements ThreadStore {
-  constructor(private readonly invoke: TauriNotesInvoke) {}
+  constructor(
+    private readonly invoke: TauriNotesInvoke,
+    private readonly documentHandle: () => string | undefined = () => undefined,
+  ) {}
 
   async list(noteKey: string): Promise<Thread[]> {
-    const raw = await this.invoke('read_note_threads', { noteKey })
+    const raw = await this.invoke('read_note_threads', {
+      noteKey,
+      documentHandle: this.documentHandle() ?? null,
+    })
     const text = typeof raw === 'string' ? raw.trim() : ''
     if (text === '') return []
     try {
@@ -56,6 +63,7 @@ export class TauriThreadStore implements ThreadStore {
     await this.invoke('write_note_threads', {
       noteKey,
       contents: JSON.stringify(threads, null, 2),
+      documentHandle: this.documentHandle() ?? null,
     })
   }
 }

@@ -338,17 +338,18 @@ Without this rule, multi-device and files-on-disk actively fight. With it, they 
 | Layer | Contains | Persisted as |
 |---|---|---|
 | **Canvas** | The polished Markdown document and rendered blocks | The `.md` file |
-| **Conversation** | Live chat and asynchronous notes anchored to a range, block, or diagram node; agent control events may be shown here but are issued separately | `<app data>/SimpleMark/threads/<noteKey>.json` |
+| **Conversation** | Live chat and asynchronous notes anchored to a range, block, or diagram node; agent control events may be shown here but are issued separately | `.simplemark/<id>.json` beside the `.md`, linked from front-matter `comments:` |
 | **Activity** | Who changed what, agent status, reversible transactions, snapshots | `<app data>/SimpleMark/activity/<noteKey>.jsonl` |
 
 Only the Canvas is portable Markdown. Conversation and Activity are sidecars — losing them loses history and discussion, never content. That asymmetry is deliberate: **the thing you own must survive the thing you don't need.**
 
-> **Amended by [`ADR-0007`](decisions/0007-annotation-before-participation.md).** Earlier drafts put
-> both sidecars in `.simplemark/` beside the document. Opening one file from a folder the app does
-> not own would have created a directory there, so they live in application data instead, keyed by
-> the note's front-matter `id` — or by a hash of its path when the document would not take one. The
-> app is a guest in folders it does not own. The accepted cost: copying the `.md` elsewhere does not
-> carry its threads.
+> **Amended by [`ADR-0011`](decisions/0011-comments-travel-beside-the-document.md).**
+> [`ADR-0007`](decisions/0007-annotation-before-participation.md) moved threads into
+> application data so a guest open from `~/Downloads` would not create a folder
+> there. Notes now need to travel with the document, so a writable file stores
+> threads in `.simplemark/` beside it and points at that file from front matter.
+> A degraded (read-only) note still uses application data. Comment bodies never
+> enter the Canvas.
 
 Conversation ships before any of §5. Its human half — anchor a note to a passage, list it, resolve
 it — needs no participant, no authority and no agent, and `ADR-0007` releases it from the

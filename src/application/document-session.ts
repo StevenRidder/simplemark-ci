@@ -1,4 +1,4 @@
-import { buildSourceMap, emitDocument } from '../domain/index.js'
+import { buildSourceMap, emitDocument, splitClosedFrontMatter } from '../domain/index.js'
 
 import { dirtyBlocks } from './dirty-blocks.js'
 import type {
@@ -143,6 +143,18 @@ export class DocumentSession {
     )
   }
 
+  /**
+   * Front matter written beside the editor (ensureId) becomes the save baseline.
+   *
+   * The living document does not author those lines. The next body save must
+   * keep them, including when the editor still holds the previous prefix.
+   */
+  adoptDiskWrite(bytes: string): void {
+    const matter = splitClosedFrontMatter(bytes).matter
+    this.#baseline = matter + splitClosedFrontMatter(this.#baseline).body
+    this.markdown = matter + splitClosedFrontMatter(this.markdown).body
+  }
+
   snapshot(): DocumentSnapshot {
     return { revision: this.#revision, markdown: this.markdown, dirty: this.#dirty }
   }
@@ -258,6 +270,15 @@ export class DocumentSession {
    * re-serialization only reformats it.
    */
   #preservingSerialization(): string {
+    const serialized = this.#serializeDirtyBlocks()
+    const matter = splitClosedFrontMatter(this.#baseline).matter
+    if (matter === '') return serialized
+    const next = splitClosedFrontMatter(serialized)
+    if (next.matter === matter) return serialized
+    return matter + next.body
+  }
+
+  #serializeDirtyBlocks(): string {
     if (this.boundaries === undefined) return this.markdown
 
     const baselineMap = buildSourceMap(this.#baseline, this.boundaries.starts(this.#baseline))

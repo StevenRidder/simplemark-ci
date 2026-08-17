@@ -25,6 +25,16 @@ describe('prepareMarkdownForEditor', () => {
     expect(prepared.restoreMarkdown(markdown)).toBe(markdown)
   })
 
+  it('keeps closed front matter out of the living document and restores it on save', () => {
+    const markdown = '---\nid: abc\ncomments: .simplemark/abc.json\n---\n\n# Title\n'
+    const prepared = prepareMarkdownForEditor(markdown)
+
+    expect(prepared.editorMarkdown).toBe('# Title\n')
+    expect(prepared.restoreMarkdown('# Title\n')).toBe(markdown)
+    prepared.adoptFrontMatter('---\nid: abc\ncomments: .simplemark/abc.json\nextra: 1\n---\n\n# Title\n')
+    expect(prepared.restoreMarkdown('# Title\n')).toContain('extra: 1')
+  })
+
   it('uses small marker fences but restores the exact original table source', () => {
     const source = table(1_000)
     const markdown = `# Generated report\n\nBefore the data.\n\n${source}\n\nAfter the data.\n`

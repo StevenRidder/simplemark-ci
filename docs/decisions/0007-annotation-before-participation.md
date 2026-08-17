@@ -1,6 +1,9 @@
 # ADR-0007: Annotation is decomposed, and its human half ships first
 
-- **Status:** Accepted
+- **Status:** Accepted. The storage location ("Threads live in application data")
+  is superseded by [`ADR-0011`](0011-comments-travel-beside-the-document.md).
+  The A→B→C0→C→D decomposition, the two-anchor rule, and the conditional rail
+  remain in force.
 - **Date:** 2026-08-07
 - **Decision owners:** SimpleMark maintainers
 - **Supersedes:** the single-step "optional local agent participation" shape in
@@ -65,6 +68,11 @@ This is the same distinction `MCP-SERVER.md` §10.2 draws for opening a note: th
 human's attention, and it governs what may act inside that attention rather than what may exist.
 
 ### Threads live in application data, never beside the document
+
+> **Superseded by [`ADR-0011`](0011-comments-travel-beside-the-document.md).** Writable
+> documents now store threads in `.simplemark/` beside the file and link them from
+> front matter. The table below is the ADR-0007 decision as accepted; do not treat
+> it as current storage.
 
 Superseding [`COLLABORATION.md`](../COLLABORATION.md) §4's `.simplemark/threads/<noteId>.json`:
 

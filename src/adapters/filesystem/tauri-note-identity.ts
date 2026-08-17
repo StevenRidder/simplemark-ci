@@ -20,11 +20,15 @@ export class TauriNoteIdentity implements NoteIdentity {
     return typeof id === 'string' && id !== '' ? id : undefined
   }
 
-  async ensureId(documentHandle: string): Promise<{ id: string } | { unwritable: true }> {
+  async ensureId(documentHandle: string): Promise<{ id: string; markdown?: string } | { unwritable: true }> {
     const result = (await this.invoke('ensure_note_id', { documentHandle })) as {
       id?: string
       unwritable?: boolean
+      markdown?: string
     }
-    return typeof result.id === 'string' ? { id: result.id } : { unwritable: true }
+    if (typeof result.id !== 'string') return { unwritable: true }
+    return typeof result.markdown === 'string'
+      ? { id: result.id, markdown: result.markdown }
+      : { id: result.id }
   }
 }

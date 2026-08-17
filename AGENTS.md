@@ -15,6 +15,7 @@ this file says how to change it.
    in-app agent participation.
    **ADR-0006** requires source-specific adapters to converge on one authoritative accepted-change
    stream while keeping provenance and platform capabilities honest.
+   **ADR-0011** stores anchored comments beside a writable document and links them from front matter.
 4. [`docs/POC.md`](docs/POC.md) — the next executable target and its ten-step acceptance test.
 5. [`docs/superpowers/plans/`](docs/superpowers/plans/) — executable implementation plans.
 
@@ -78,8 +79,9 @@ Further invariants:
 - **Annotation is decomposed (ADR-0007).** Agent participation is A→B→C0→C→D, not one step. A and B
   — a person's own anchored notes, and resolving them — introduce no participant and ship ahead of
   the `POC.md` reader trial. C0 (provider, model, key) is an unresolved design problem that gates
-  everything with an agent in it. Threads live in application data, never beside the document, and
-  nothing but a front-matter `id` is ever written to a `.md` on their behalf. Note anchors are text;
+  everything with an agent in it. Threads for a writable document live in `.simplemark/` beside
+  the file, linked from front-matter `comments:` ([ADR-0011](docs/decisions/0011-comments-travel-beside-the-document.md));
+  comment bodies are never written into the `.md`. Note anchors are text;
   participant anchors stay opaque and authority-issued — do not merge the two.
 
 - **Fidelity (D7).** Untouched blocks re-emit their original bytes; only dirty blocks

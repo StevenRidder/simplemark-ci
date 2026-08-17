@@ -18,10 +18,15 @@ const thread = (id: string): Thread => ({
 })
 
 describe('TauriThreadStore', () => {
-  it('returns nothing for a document with no thread file', async () => {
-    const invoke = vi.fn().mockResolvedValue('')
-    expect(await new TauriThreadStore(invoke).list('n1')).toEqual([])
-  })
+    it('passes the open document path so threads can live beside it', async () => {
+      const invoke = vi.fn().mockResolvedValue('')
+      const store = new TauriThreadStore(invoke, () => '/tmp/notes/one.md')
+      await store.list('n1')
+      expect(invoke).toHaveBeenCalledWith('read_note_threads', {
+        noteKey: 'n1',
+        documentHandle: '/tmp/notes/one.md',
+      })
+    })
 
   it('round-trips a thread through the file contents', async () => {
     let stored = ''
@@ -122,7 +127,14 @@ describe('TauriNoteIdentity', () => {
   })
 
   it('returns the stamped id when ensure writes', async () => {
-    const invoke = vi.fn().mockResolvedValue({ id: 'abc', unwritable: false })
-    expect(await new TauriNoteIdentity(invoke).ensureId('/tmp/note.md')).toEqual({ id: 'abc' })
+    const invoke = vi.fn().mockResolvedValue({
+      id: 'abc',
+      unwritable: false,
+      markdown: '---\nid: abc\ncomments: .simplemark/abc.json\n---\n\nbody\n',
+    })
+    expect(await new TauriNoteIdentity(invoke).ensureId('/tmp/note.md')).toEqual({
+      id: 'abc',
+      markdown: '---\nid: abc\ncomments: .simplemark/abc.json\n---\n\nbody\n',
+    })
   })
 })

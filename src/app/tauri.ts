@@ -1210,7 +1210,10 @@ async function mount(
       assets: new BrowserAssetReferencePort(pickDocumentAsset, window),
       links: new TauriDocumentLinkPort(invoke),
       images: new TauriImageStore((command, args) => invoke(command, args)),
-      threads: new TauriThreadStore((command, args) => invoke(command, args)),
+      threads: new TauriThreadStore(
+        (command, args) => invoke(command, args),
+        () => options.filePath,
+      ),
       identity: new TauriNoteIdentity((command, args) => invoke(command, args)),
       clipboard: new BrowserClipboardPort(),
       diagramFix: new OpenAiCompatibleDiagramFixPort(chatCompletionTransport, () => loadAiSettings(window.localStorage)),

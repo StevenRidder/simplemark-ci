@@ -63,12 +63,24 @@ describe('the ordinary copy path is untouched', () => {
     )
   })
 
+  it('captures the live selection on every macOS right-click, even when the Copy As shape did not change', () => {
+    const chrome = readFileSync('src/app/ui/window-chrome.ts', 'utf8')
+    expect(chrome).toContain('options.onNativeSelection?.(element)')
+    expect(chrome).toMatch(
+      /if \(isMacOS && event\.button === 2\) \{[\s\S]*?captureNativeSelection\(event\.target\)[\s\S]*?updateNativeContext\(event\.target\)/,
+    )
+    expect(chrome).toMatch(
+      /if \(isMacOS && options\.onNativeContextMenu !== undefined\) \{[\s\S]*?captureNativeSelection\(event\.target\)[\s\S]*?updateNativeContext\(event\.target\)[\s\S]*?return/,
+    )
+  })
+
   it('augments the unattached native menu after Copy without clearing it', () => {
     const native = readFileSync('src-tauri/src/macos_context_menu.rs', 'utf8')
     expect(native).toContain('NSMenuDidBeginTrackingNotification')
     expect(native).toContain('WKMenuItemIdentifierCopy')
     expect(native).toContain('sel!(copy:)')
-    expect(native).toContain('menu.insertItem_atIndex(&parent, copy_index as isize + 1)')
+    expect(native).toContain('menu.insertItem_atIndex(&add_note, copy_index as isize + 1)')
+    expect(native).toContain('menu.insertItem_atIndex(&parent, copy_index as isize + 2)')
     expect(native).not.toContain('removeAllItems')
   })
 

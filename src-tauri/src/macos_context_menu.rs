@@ -1,8 +1,9 @@
-//! Adds SimpleMark exports to WKWebView's own macOS context menu.
+//! Adds SimpleMark commands to WKWebView's own macOS context menu.
 //!
 //! WebKit owns this menu and keeps supplying Look Up, spelling, substitutions,
 //! services, and future macOS additions. We observe that finished native menu
-//! and insert one submenu; we never rebuild or replace the system surface.
+//! and insert Add Note plus one Copy As submenu; we never rebuild or replace
+//! the system surface.
 
 use std::sync::{Mutex, OnceLock};
 
@@ -20,6 +21,8 @@ use tauri::{AppHandle, Emitter};
 
 const COMMAND_EVENT: &str = "native-context-menu-command";
 const COPY_AS_TITLE: &str = "Copy As";
+const ADD_NOTE_TITLE: &str = "Add Note";
+const ADD_NOTE_COMMAND: &str = "addNote";
 
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 static SELECTION_SHAPE: OnceLock<Mutex<NativeContextMenuShape>> = OnceLock::new();
@@ -137,10 +140,10 @@ fn augment_context_menu(menu: &NSMenu, mtm: MainThreadMarker) {
     }
 
     let items = menu.itemArray();
-    if items
-        .iter()
-        .any(|item| item.title().to_string() == COPY_AS_TITLE)
-    {
+    if items.iter().any(|item| {
+        let title = item.title().to_string();
+        title == COPY_AS_TITLE || title == ADD_NOTE_TITLE
+    }) {
         return;
     }
     let Some(copy_index) = items.iter().position(|item| is_webkit_copy_item(&item)) else {
@@ -152,13 +155,15 @@ fn augment_context_menu(menu: &NSMenu, mtm: MainThreadMarker) {
         .lock()
         .map(|shape| *shape)
         .unwrap_or_default();
+    let add_note = CopyAsItem::new(mtm, ADD_NOTE_TITLE, ADD_NOTE_COMMAND);
+    menu.insertItem_atIndex(&add_note, copy_index as isize + 1);
     let submenu = build_copy_as_menu(mtm, shape);
     let title = NSString::from_str(COPY_AS_TITLE);
     let key = NSString::new();
     let parent =
         unsafe { NSMenuItem::initWithTitle_action_keyEquivalent(mtm.alloc(), &title, None, &key) };
     parent.setSubmenu(Some(&submenu));
-    menu.insertItem_atIndex(&parent, copy_index as isize + 1);
+    menu.insertItem_atIndex(&parent, copy_index as isize + 2);
 }
 
 fn is_webkit_copy_item(item: &NSMenuItem) -> bool {
@@ -220,5 +225,10 @@ mod tests {
                 in_code: false,
             }
         );
+    }
+
+    #[test]
+    fn add_note_command_matches_the_typescript_id() {
+        assert_eq!(ADD_NOTE_COMMAND, "addNote");
     }
 }

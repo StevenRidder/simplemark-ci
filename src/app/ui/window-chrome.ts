@@ -115,6 +115,11 @@ export interface WindowChromeOptions {
    */
   readonly onClipboardExport?: ((command: string) => void) | undefined
   /**
+   * Opens the anchored-note composer on the current selection. Absent where
+   * notes are not wired, which hides the item rather than offering a no-op.
+   */
+  readonly onAddNote?: (() => void) | undefined
+  /**
    * What the caret is sitting in, so the menu offers table and code items only
    * where they apply — absent beats present-and-refusing.
    */
@@ -124,6 +129,11 @@ export interface WindowChromeOptions {
     shape: { readonly inTable: boolean; readonly inCode: boolean },
     target: Node | null,
   ) => void
+  /**
+   * Captures the live editor selection on a macOS right-click. Shape IPC may
+   * skip when the hover block did not change; selection capture must not.
+   */
+  readonly onNativeSelection?: (target: Node | null) => void
   /** Whether the quiet, single-row editing strip is shown. This is shell state. */
   readonly stylesBarVisible: boolean
   /** Persists the shell-only styles-bar preference in the composition root. */
@@ -2974,6 +2984,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     selectionMenu.replaceChildren()
     // Plain Copy first, and unchanged: the browser performs its own copy.
     selectionMenu.append(menuRow('Copy', () => document.execCommand('copy')))
+    if (options.onAddNote !== undefined) {
+      selectionMenu.append(menuRow('Add Note', () => options.onAddNote?.()))
+    }
     const rule = document.createElement('hr')
     selectionMenu.append(rule)
     for (const [label, id] of [
@@ -3004,6 +3017,14 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   let lastNativeContext = ''
   let lastNativeContextBlock: Element | null = null
+  const captureNativeSelection = (target?: EventTarget | null): void => {
+    const element = target instanceof Element
+      ? target
+      : target instanceof Node
+        ? target.parentElement
+        : null
+    options.onNativeSelection?.(element)
+  }
   const updateNativeContext = (target?: EventTarget | null): void => {
     const element = target instanceof Element
       ? target
@@ -3027,13 +3048,19 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   // Pointerdown is the final refresh for a stationary mouse. The earlier hover
   // update is what avoids racing AppKit's synchronous context-menu opening.
+  // Selection capture is separate: the usual right-click is in the same block
+  // the pointer already hovered, and that skip must not keep a stale range.
   page.addEventListener('pointerdown', (event) => {
-    if (isMacOS && event.button === 2) updateNativeContext(event.target)
+    if (isMacOS && event.button === 2) {
+      captureNativeSelection(event.target)
+      updateNativeContext(event.target)
+    }
   }, true)
 
   page.addEventListener('contextmenu', (event) => {
     if (options.onClipboardExport === undefined) return
     if (isMacOS && options.onNativeContextMenu !== undefined) {
+      captureNativeSelection(event.target)
       updateNativeContext(event.target)
       return
     }

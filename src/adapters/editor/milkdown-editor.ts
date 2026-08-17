@@ -89,7 +89,7 @@ import {
   setThreads,
 } from './note-decorations.js'
 import { installNoteCapture, anchorFromView } from './note-capture.js'
-import type { NoteCaptureDeps } from './note-capture.js'
+import type { NoteCapture, NoteCaptureDeps } from './note-capture.js'
 import { calloutRemark, calloutSchema } from './callout.js'
 import { largeTableRemark, largeTableSchema } from './large-table.js'
 import { mathBlockSchema, mathRemark } from './math-block.js'
@@ -104,6 +104,7 @@ import {
   isDeferredTableNode,
   prepareMarkdownForEditor,
 } from './deferred-tables.js'
+import type { PreparedMarkdown } from './deferred-tables.js'
 
 /**
  * The candidate editor: Milkdown on ProseMirror and remark.
@@ -273,8 +274,14 @@ export class MilkdownEditor {
      * controller finds the one it wants by matching `blockPos()` against the
      * current selection. */
     private readonly diagramViews: ReadonlySet<DiagramNodeView>,
+    private readonly preparedMarkdown: PreparedMarkdown,
   ) {
     this.#renderLanguages = new Set(renderer.languages)
+  }
+
+  /** Hidden YAML written by ensureId must round-trip on the next serialize. */
+  adoptFrontMatter(fullMarkdown: string): void {
+    this.preparedMarkdown.adoptFrontMatter(fullMarkdown)
   }
 
   /** §4 of the chip-chrome spec: the one behavior surface under chips, menu
@@ -608,7 +615,13 @@ export class MilkdownEditor {
     // the first time anything flushed it.
     lastEmitted = preparedMarkdown.restoreMarkdown(editor.action(getMarkdown()))
 
-    const instance = new MilkdownEditor(editor, options.renderer, emitMarkdown, diagramViews)
+    const instance = new MilkdownEditor(
+      editor,
+      options.renderer,
+      emitMarkdown,
+      diagramViews,
+      preparedMarkdown,
+    )
     notice = instance.installHiddenDiagramNotice(options.mount, options.initialMarkdown, options.diagramFix)
     instance.installLinkOpening(options.mount, options.onOpenLink)
     instance.installTaskToggling()
@@ -1936,8 +1949,32 @@ export class MilkdownEditor {
     return anchorFromView(view)
   }
 
+  /**
+   * Positions of a non-empty selection, captured before macOS replaces it with
+   * the word under the right-click while the native menu is open.
+   */
+  selectionRange(): { readonly from: number; readonly to: number } | undefined {
+    return this.editor.action((ctx) => {
+      const { empty, from, to } = ctx.get(editorViewCtx).state.selection
+      if (empty || from === to) return undefined
+      return { from, to }
+    })
+  }
+
+  /** Restores a range captured by `selectionRange` so capture() sees it. */
+  restoreSelection(range: { readonly from: number; readonly to: number }): boolean {
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const size = view.state.doc.content.size
+      if (range.from < 0 || range.to > size || range.from >= range.to) return false
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, range.from, range.to)))
+      view.focus()
+      return true
+    })
+  }
+
   /** Listens for ⌘⇧M and opens the note composer on the current selection. */
-  installNoteCapture(deps: NoteCaptureDeps): () => void {
+  installNoteCapture(deps: NoteCaptureDeps): NoteCapture {
     const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
     return installNoteCapture(view, deps)
   }
@@ -1976,7 +2013,7 @@ export class MilkdownEditor {
    * its own serialiser would prove nothing about the real one.
    */
   serialize(): string {
-    return this.editor.action(getMarkdown())
+    return this.preparedMarkdown.restoreMarkdown(this.editor.action(getMarkdown()))
   }
 
   /**

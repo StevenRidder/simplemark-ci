@@ -9,10 +9,11 @@ import { indexDocumentText } from './note-decorations.js'
 /**
  * Capture a note on the current selection (ADR-0007 §5.1).
  *
- * ⌘⇧M with a selection builds an anchor, asks `ensureId`, and opens a focused
- * composer. Return saves; Escape discards. With no selection the document is
- * untouched and the shell says so. Nothing but a front-matter id is written
- * to the `.md`, and only `ensureId` does that.
+ * ⌘⇧M or Add Note on the context menu, with a selection, builds an anchor,
+ * asks `ensureId`, and opens a focused composer. Return saves; Escape
+ * discards. With no selection the document is untouched and the shell says
+ * so. Front matter may hold `id` and a `comments:` link to the sidecar. Only
+ * `ensureId` writes those lines. Comment bodies stay out of the `.md`.
  */
 
 export interface NoteCaptureDeps {
@@ -22,6 +23,8 @@ export interface NoteCaptureDeps {
   readonly degradedKey: (handle: string) => string
   readonly onSaved: () => void
   readonly onNeedSelection: () => void
+  /** Front matter written by ensureId, so the next save keeps the comments link. */
+  readonly onIdentityWritten?: (markdown: string) => void
 }
 
 const NEED_SELECTION = 'Select the text this note is about'
@@ -42,7 +45,12 @@ export function anchorFromView(view: EditorView): Anchor | undefined {
   return buildAnchor(indexed.text, start, last + 1, $from.index(0))
 }
 
-export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): () => void {
+export interface NoteCapture {
+  readonly destroy: () => void
+  readonly capture: () => Promise<void>
+}
+
+export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): NoteCapture {
   let composer: HTMLElement | undefined
   let draft: Thread | undefined
   let busy = false
@@ -148,6 +156,7 @@ export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): () 
           degraded = true
         } else {
           noteKey = ensured.id
+          if (ensured.markdown !== undefined) deps.onIdentityWritten?.(ensured.markdown)
         }
       }
 
@@ -180,9 +189,12 @@ export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): () 
   const document = view.dom.ownerDocument
   document.addEventListener('keydown', onKeyDown)
 
-  return () => {
-    document.removeEventListener('keydown', onKeyDown)
-    closeComposer()
+  return {
+    destroy: () => {
+      document.removeEventListener('keydown', onKeyDown)
+      closeComposer()
+    },
+    capture,
   }
 }
 

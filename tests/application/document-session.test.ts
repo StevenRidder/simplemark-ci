@@ -303,4 +303,27 @@ describe('DocumentSession', () => {
     expect(saved).toEqual([])
     expect(session.snapshot().dirty).toBe(true)
   })
+
+  test('adopting an on-disk comments link keeps it through the next body save', async () => {
+    const opened = '---\nid: abc\n---\n\nAlpha.\n\nBravo.\n'
+    const onDisk = '---\nid: abc\ncomments: .simplemark/abc.json\n---\n\nAlpha.\n\nBravo.\n'
+    const { port, saved } = stubPort(opened)
+    const session = await DocumentSession.open(port)
+    session.adoptDiskWrite(onDisk)
+    expect(session.snapshot()).toEqual({
+      revision: 0,
+      markdown: onDisk,
+      dirty: false,
+    })
+
+    session.apply({
+      actorId: 'human',
+      name: 'Edit',
+      expectedRevision: 0,
+      markdown: '---\nid: abc\n---\n\nAlpha changed.\n\nBravo.\n',
+    })
+    await expect(session.save()).resolves.toEqual({ ok: true, revision: 1 })
+    expect(saved[0]).toContain('comments: .simplemark/abc.json')
+    expect(saved[0]).toContain('Alpha changed.')
+  })
 })

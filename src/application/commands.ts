@@ -89,6 +89,7 @@ export type DocumentCommandId =
   // Shell
   // Portable clipboard exports (EDITOR-10). Shell-targeted: the selection is
   // the editor's, but the format conversion and the platform clipboard are not.
+  | 'addNote'
   | 'copyAsMarkdown'
   | 'copyAsPlainText'
   | 'copyAsRichText'
@@ -273,6 +274,10 @@ export const COMMANDS: Readonly<Record<DocumentCommandId, CommandDefinition>> = 
   undo: { id: 'undo', label: 'Undo', target: 'editor', accelerator: 'CmdOrCtrl+Z' },
   redo: { id: 'redo', label: 'Redo', target: 'editor', accelerator: 'CmdOrCtrl+Shift+Z' },
 
+  // Context-menu and Edit-menu capture (NOTES-15). No accelerator: ⌘⇧M is
+  // already on copyAsMarkdown in this registry, and note-capture.ts owns that
+  // chord via a document keydown listener.
+  addNote: { id: 'addNote', label: 'Add Note', target: 'shell' },
   copyAsMarkdown: { id: 'copyAsMarkdown', label: 'Copy as Markdown', target: 'shell', accelerator: 'CmdOrCtrl+Shift+M' },
   copyAsPlainText: { id: 'copyAsPlainText', label: 'Copy as Plain Text', target: 'shell' },
   copyAsRichText: { id: 'copyAsRichText', label: 'Copy as Rich Text', target: 'shell' },
@@ -510,6 +515,7 @@ export const MENUS: readonly MenuSpec[] = [
       // change. Copy never mutates the file.
       ['copyAsMarkdown', 'copyAsPlainText', 'copyAsRichText', 'copyAsHtml'],
       ['copyCode', 'copyTableAsMarkdown', 'copyTableAsHtml', 'copyTableAsCsv'],
+      ['addNote'],
       ['pasteAsPlainText'],
       ['find'],
     ],

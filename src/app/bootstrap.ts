@@ -297,6 +297,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   let editor: MilkdownEditor | undefined
   let paintNotes = (): void => {}
   let nativeContextSelection: ReturnType<MilkdownEditor['contextSelection']> | undefined
+  let nativeNoteRange: ReturnType<MilkdownEditor['selectionRange']> = undefined
+  let captureNote = async (): Promise<void> => {}
   let chrome: WindowChrome
   /**
    * Routes a registry id to whoever executes it (application/commands.ts).
@@ -398,6 +400,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       case 'copyTableAsHtml':
       case 'copyTableAsCsv':
         void copySelection(id)
+        return
+      case 'addNote':
+        void captureNote()
         return
       case 'pasteAsPlainText':
         void pasteAsPlainText()
@@ -786,6 +791,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     onClipboardExport: ports.clipboard === undefined
       ? undefined
       : (command) => runCommand(command as DocumentCommandId),
+    onAddNote: () => {
+      void captureNote()
+    },
     // The same pure predicates the exports use, so the menu can never offer an
     // item that the command would then refuse.
     getSelectionShape: () => {
@@ -798,6 +806,10 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     ...(options.onNativeContextMenu === undefined
       ? {}
       : {
+          onNativeSelection: (target: Node | null) => {
+            nativeContextSelection = editor?.contextSelection(target)
+            nativeNoteRange = editor?.selectionRange()
+          },
           onNativeContextMenu: (
             shape: { readonly inTable: boolean; readonly inCode: boolean },
             target: Node | null,
@@ -1015,9 +1027,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   }
   paintNotes()
 
-  const uninstallCapture =
+  const noteCapture =
     editor === undefined
-      ? () => {}
+      ? { destroy: () => {}, capture: async () => {} }
       : editor.installNoteCapture({
           store,
           identity,
@@ -1025,7 +1037,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
           degradedKey: noteKeyForPath,
           onSaved: () => paintNotes(),
           onNeedSelection: () => chrome.setStatus('error', NEED_SELECTION),
+          onIdentityWritten: (markdown) => {
+            session.adoptDiskWrite(markdown)
+            editor.adoptFrontMatter(markdown)
+          },
         })
+  captureNote = noteCapture.capture
 
   const onNotesEscape = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape') return
@@ -1212,6 +1229,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     applyNoteSummary: (handle, summary) => chrome.applyNoteSummary(handle, summary),
     applyNotePreview: (handle, preview) => chrome.applyNotePreview(handle, preview),
     runNativeContextCommand: (command) => {
+      if (command === 'addNote') {
+        if (nativeNoteRange !== undefined) editor?.restoreSelection(nativeNoteRange)
+        void captureNote()
+        return
+      }
       void copySelection(command, nativeContextSelection)
     },
     stylesBarVisible: () => chrome.stylesBarVisible(),
@@ -1224,7 +1246,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     async destroy() {
       clearTimeout(saveTimer)
       await persistDerivedAnchors()
-      uninstallCapture()
+      noteCapture.destroy()
       chrome.element.ownerDocument.removeEventListener('keydown', onNotesEscape)
       chrome.editorHost.removeEventListener('mouseup', onEditorSelectionSettled)
       chrome.editorHost.removeEventListener('keyup', onEditorSelectionSettled)

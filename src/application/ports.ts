@@ -409,5 +409,7 @@ export interface ThreadStore {
  */
 export interface NoteIdentity {
   readId(documentHandle: string): Promise<string | undefined>
-  ensureId(documentHandle: string): Promise<{ id: string } | { unwritable: true }>
+  ensureId(documentHandle: string): Promise<
+    { id: string; markdown?: string } | { unwritable: true }
+  >
 }

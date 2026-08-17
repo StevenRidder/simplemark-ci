@@ -3,6 +3,7 @@ import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 
 import { matchAnchor } from '../../domain/index.js'
 import type { Thread } from '../../domain/index.js'
@@ -24,9 +25,48 @@ interface NotesState {
 
 export const notesKey = new PluginKey<NotesState>('simplemark-notes')
 
-/** Plain text of the document, with the offsets ProseMirror uses. */
+/**
+ * Document text in the same shape `matchAnchor` consumes, plus a map from a
+ * character offset to a ProseMirror position.
+ *
+ * `textBetween(..., '\n', '\n')` plus `offset + 1` only works inside the first
+ * block. Later blocks insert positions that the string never counts.
+ */
+function indexDocumentText(doc: ProseNode): {
+  readonly text: string
+  posAt(offset: number): number | undefined
+} {
+  const chars: Array<{ ch: string; pos: number | undefined }> = []
+  let separated = true
+
+  doc.nodesBetween(0, doc.content.size, (node, pos) => {
+    if (node.isText && node.text !== undefined) {
+      for (let i = 0; i < node.text.length; i += 1) {
+        chars.push({ ch: node.text[i]!, pos: pos + i })
+      }
+      separated = false
+      return
+    }
+    if (node.isLeaf) {
+      chars.push({ ch: '\n', pos: undefined })
+      separated = false
+      return
+    }
+    if (!separated && node.isBlock) {
+      chars.push({ ch: '\n', pos: undefined })
+      separated = true
+    }
+  })
+
+  return {
+    text: chars.map((entry) => entry.ch).join(''),
+    posAt: (offset) => chars[offset]?.pos,
+  }
+}
+
+/** Plain text the matcher and the rail share — the same offsets as the tints. */
 export function documentText(state: EditorState): string {
-  return state.doc.textBetween(0, state.doc.content.size, '\n', '\n')
+  return indexDocumentText(state.doc).text
 }
 
 /**
@@ -37,12 +77,12 @@ export function documentText(state: EditorState): string {
  * remapped position would survive as a highlight over the wrong words.
  */
 function decorate(state: EditorState, threads: readonly Thread[]): DecorationSet {
-  const text = documentText(state)
+  const indexed = indexDocumentText(state.doc)
   const byOffset = new Map<number, { to: number; ids: string[] }>()
 
   for (const thread of threads) {
     if (thread.state !== 'open' || thread.anchor === undefined) continue
-    const offset = matchAnchor(thread.anchor, text)
+    const offset = matchAnchor(thread.anchor, indexed.text)
     if (offset === undefined) continue
 
     const existing = byOffset.get(offset)
@@ -53,19 +93,21 @@ function decorate(state: EditorState, threads: readonly Thread[]): DecorationSet
     }
   }
 
-  return DecorationSet.create(
-    state.doc,
-    [...byOffset.entries()].map(([from, { to, ids }]) =>
-      // +1 converts a text offset into a ProseMirror position inside the
-      // first block. textBetween counts block separators as one character,
-      // which matches the single leading position of the doc node.
-      Decoration.inline(from + 1, to + 1, {
+  const decorations: Decoration[] = []
+  for (const [fromOffset, { to: toOffset, ids }] of byOffset) {
+    const from = indexed.posAt(fromOffset)
+    const last = indexed.posAt(toOffset - 1)
+    if (from === undefined || last === undefined || last < from) continue
+    decorations.push(
+      Decoration.inline(from, last + 1, {
         class: ids.length > 1 ? 'sm-note-anchor sm-note-anchor-stacked' : 'sm-note-anchor',
         'data-count': String(ids.length),
         'data-threads': ids.join(' '),
       }),
-    ),
-  )
+    )
+  }
+
+  return DecorationSet.create(state.doc, decorations)
 }
 
 export function setThreads(view: EditorView, threads: readonly Thread[]): void {

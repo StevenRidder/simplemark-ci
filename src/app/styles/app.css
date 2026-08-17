@@ -3968,14 +3968,14 @@ section.editor::-webkit-scrollbar {
  * passage: two overlapping tints blend into a third colour that means
  * nothing and gives a click no obvious target.
  */
-.sm-note-anchor {
+.milkdown .ProseMirror .sm-note-anchor {
   background: var(--note-tint, #f6e7bd88);
   border-bottom: 2px solid var(--note-line, #e3ce93);
   border-radius: 2px;
   cursor: pointer;
 }
 
-.sm-note-anchor-stacked {
+.milkdown .ProseMirror .sm-note-anchor-stacked {
   border-bottom-style: double;
   border-bottom-width: 3px;
 }

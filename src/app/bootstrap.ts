@@ -94,6 +94,8 @@ export interface AppComposition {
    */
   readonly notes: {
     setThreadsForTest(threads: readonly Thread[]): void
+    /** Optional NOTES-8 hook. Called after the editor receives the threads. */
+    onThreadsForTest?: (threads: readonly Thread[]) => void
   }
   /** Tears down the editor and presentation observers before remounting. */
   destroy(): Promise<void>
@@ -907,10 +909,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       },
     }, text)
   }
-  const notes = {
-    setThreadsForTest: (threads: readonly Thread[]): void => {
+  const notes: AppComposition['notes'] = {
+    setThreadsForTest: (threads) => {
       noteThreads = threads
       paintNotes()
+      const hook = notes.onThreadsForTest
+      if (typeof hook === 'function') hook(threads)
     },
   }
 

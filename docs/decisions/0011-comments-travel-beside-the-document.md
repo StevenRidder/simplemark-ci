@@ -91,3 +91,24 @@ is already hidden from the default surface.
 
 Rejected as a special case. A real path is enough. Sample documents and
 unwritable files already take the application-data fallback.
+
+## Amendment 2026-08-18 — iOS
+
+Anchored notes ship on iOS as the same feature (spec
+`docs/superpowers/specs/2026-08-18-anchored-notes-on-ios-design.md`):
+
+- **Trigger.** Add Note is on the styles bar (the keyboard accessory) and in
+  the in-webview selection menu; ⌘⇧M works with a hardware keyboard.
+- **Where comments live.** "Beside the document" is the intent and the
+  front-matter `comments:` link always names `.simplemark/<id>.json`. When this
+  device cannot write that folder — iOS grants a Files-opened document a scope
+  on the file, not its folder — threads are stored in application data for
+  this device and the note is *degraded* in exactly ADR-0007's sense. Reads
+  prefer a sidecar that exists. Only permission answers trigger the fallback.
+- **Freshness.** The mobile watcher hashes the threads file as well as the
+  `.md`; a change that is not ours repaints the rail.
+- **Not yet.** Directory-scope acquisition and `NSFileCoordinator` writes; the
+  desktop watcher does not yet watch the sidecar.
+- **Touch targets.** `.sm-note-rail-actions button`, `.sm-note-stack button`,
+  `.styles-note` belong in the iPhone touch-target sweep
+  (`docs/superpowers/plans/2026-08-11-ios-touch-targets.md`, when it lands).

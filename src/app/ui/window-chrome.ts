@@ -68,9 +68,12 @@ export interface StylesBarPosition {
   readonly y: number
 }
 
+/** iOS shares macOS's titlebar-less window arrangement but has no AppKit context menu. */
+export type ChromeMode = 'web' | 'macos' | 'ios'
+
 export interface WindowChromeOptions {
   /** macOS supplies the app menu and window furniture; web supplies neither. */
-  readonly chromeMode: 'web' | 'macos'
+  readonly chromeMode: ChromeMode
   readonly fileName: string
   readonly filePath: string
   readonly onCommand: (command: EditorCommand) => void
@@ -121,9 +124,22 @@ export interface WindowChromeOptions {
   readonly onAddNote?: (() => void) | undefined
   /**
    * What the caret is sitting in, so the menu offers table and code items only
-   * where they apply — absent beats present-and-refusing.
+   * where they apply — absent beats present-and-refusing. `hasSelection`
+   * additionally gates the styles bar's Add Note button, which needs a
+   * non-empty selection rather than a caret position.
    */
-  readonly getSelectionShape?: () => { readonly inTable: boolean; readonly inCode: boolean }
+  readonly getSelectionShape?: () => {
+    readonly inTable: boolean
+    readonly inCode: boolean
+    readonly hasSelection: boolean
+  }
+  /**
+   * The one signal the styles bar's Add Note button needs, on its own: a
+   * cheap boolean, not `getSelectionShape`'s Markdown serialization (which
+   * would otherwise run on every selection change — every keystroke, since
+   * typing moves the selection). Menus keep using `getSelectionShape`.
+   */
+  readonly hasSelection?: () => boolean
   /** Updates the native menu bridge without replacing WebKit's context menu. */
   readonly onNativeContextMenu?: (
     shape: { readonly inTable: boolean; readonly inCode: boolean },
@@ -332,6 +348,19 @@ export interface WindowChrome {
   isPinned(id: string): boolean
   /** Reconciles shell catalog state without replacing the live editor view. */
   reconcileWorkspace(workspace: WorkspaceOptions): void
+  /**
+   * Repaints the Add Note button (and anything else listening for
+   * `simplemark-selection-changed`) against the current selection.
+   *
+   * The caller — `bootstrap.ts`, from the editor's `onSelectionChange` — owns
+   * *when* the selection is trustworthy. ProseMirror's DOMObserver folds a
+   * DOM `selectionchange` (a touch handle drag, for one) into `view.state` on
+   * a deferred flush, so painting from the browser's own `selectionchange`
+   * event races that flush and reads a stale, empty PM selection. Painting
+   * from the plugin `update` that fires once PM state has already caught up
+   * removes the race instead of narrowing it.
+   */
+  stylesBarSelectionChanged(): void
   /** Releases observers owned by this detached presentation tree. */
   dispose(): void
 }
@@ -811,6 +840,24 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
       command('Link', 'link', 'styles-control styles-overflow-menu-item'),
       command('Tables', 'table', 'styles-control styles-overflow-menu-item'),
     )
+    if (options.onAddNote !== undefined) {
+      const overflowNote = document.createElement('button')
+      overflowNote.type = 'button'
+      // `.styles-overflow-menu-item` alone is a narrow-viewport-only stand-in
+      // for a main-bar control the CSS width-hides there (see `.styles-asset`
+      // / `overflowFile` below). The main-bar Add Note button is never
+      // width-hidden, so this duplicate is meant to stay reachable at every
+      // width instead — `.styles-note-overflow` (app.css) raises its
+      // specificity past the narrow-only rule to keep it always visible.
+      overflowNote.className = 'styles-control styles-overflow-menu-item styles-note-overflow'
+      overflowNote.textContent = 'Add Note'
+      overflowNote.addEventListener('mousedown', (event) => event.preventDefault())
+      overflowNote.addEventListener('click', () => {
+        closePanels()
+        options.onAddNote?.()
+      })
+      panel.append(overflowNote)
+    }
     const overflowFile = document.createElement('button')
     overflowFile.type = 'button'
     overflowFile.className = 'styles-control styles-overflow-menu-item'
@@ -853,6 +900,45 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
     asset.addEventListener('click', () => options.onInsertAsset?.())
   }
 
+  // Add Note. On a phone the styles bar is the keyboard accessory, and this is
+  // the only touch route to the composer; on the desktop it is a third route
+  // beside ⌘⇧M and the context menu. Absent when notes are not wired.
+  const noteGlyph = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v10H9l-5 4z"/><path d="M12 8v4M10 10h4"/></svg>'
+  const addNote = document.createElement('button')
+  addNote.type = 'button'
+  addNote.className = 'styles-control styles-note'
+  addNote.innerHTML = noteGlyph
+  addNote.setAttribute('aria-label', 'Add Note')
+  addNote.addEventListener('mousedown', (event) => event.preventDefault())
+  addNote.addEventListener('click', () => {
+    closePanels()
+    options.onAddNote?.()
+  })
+  // A disabled button never dispatches mousedown at all — not even to
+  // ancestors — so `addNote`'s own listener above is silent while the
+  // selection is empty. Without it the tap's default action runs unopposed
+  // and blurs the editor, which on iOS also dismisses the keyboard (and this
+  // bar with it). `pointerdown` is not suppressed by `disabled`, so a
+  // wrapper that preventDefaults there catches the tap in both states;
+  // `display: contents` (app.css) keeps it out of the flex row so it costs
+  // no layout space. A `div`, like the other `.styles-menu-group` wrappers
+  // in this bar, so it matches the same `:scope > div > button` geometry
+  // query tests/ui/styles-bar.spec.ts already uses for those. Verified in
+  // headless Chromium and WebKit: a `disabled` child's pointerdown reaches
+  // this wrapper and preventDefault on it keeps focus on whatever was
+  // focused before the tap.
+  const addNoteWrap = document.createElement('div')
+  addNoteWrap.className = 'styles-note-wrap'
+  addNoteWrap.addEventListener('pointerdown', (event) => event.preventDefault())
+  addNoteWrap.append(addNote)
+  const paintAddNote = (): void => {
+    const selected = options.hasSelection?.() ?? false
+    addNote.disabled = !selected
+    addNote.title = selected ? 'Add Note' : 'Add Note — select the passage first'
+  }
+  paintAddNote()
+  bar.addEventListener('simplemark-selection-changed', paintAddNote)
+
   // Exact product order: the visual hierarchy stays stable even while narrow
   // windows move the low-frequency end of the row into More.
   bar.append(
@@ -865,6 +951,7 @@ function createStylesBar(options: WindowChromeOptions): HTMLElement {
     highlight,
     command('Link', 'link', 'styles-control styles-bar-overflow styles-link', linkGlyph),
     command('Tables', 'table', 'styles-control styles-bar-overflow styles-table', tableGlyph),
+    ...(options.onAddNote === undefined ? [] : [addNoteWrap]),
     asset,
     more,
   )
@@ -1084,7 +1171,11 @@ function documentTitle(name: string): string {
 }
 
 export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
-  const isMacOS = options.chromeMode === 'macos'
+  // Two capabilities, not one platform. iOS shares the macOS titlebar and
+  // sidebar arrangement below, but has no AppKit context menu, so it keeps
+  // the in-webview selection menu that carries Add Note.
+  const hasNativeTitlebar = options.chromeMode !== 'web'
+  const hasNativeContextMenu = options.chromeMode === 'macos'
   let uiPreferences = options.uiPreferences
   const rememberUi = (patch: Partial<UiPreferences>): void => {
     uiPreferences = { ...uiPreferences, ...patch }
@@ -1100,7 +1191,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // ---- title bar ----
   const titlebar = document.createElement('header')
   titlebar.className = 'titlebar'
-  titlebar.classList.toggle('native-editor-head', isMacOS)
+  titlebar.classList.toggle('native-editor-head', hasNativeTitlebar)
 
   const left = document.createElement('div')
   left.className = 'left'
@@ -1530,9 +1621,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   right.append(status)
 
   const workWithAi = document.createElement('button')
-  workWithAi.className = isMacOS ? 'tool work-with-ai' : 'join'
+  workWithAi.className = hasNativeTitlebar ? 'tool work-with-ai' : 'join'
   workWithAi.type = 'button'
-  workWithAi.textContent = isMacOS ? '✦' : 'Work with AI'
+  workWithAi.textContent = hasNativeTitlebar ? '✦' : 'Work with AI'
   workWithAi.setAttribute('aria-label', 'Work with AI')
   workWithAi.disabled = true
   workWithAi.title = 'Work with AI — not in this build; the live-agent deliverable delivers it'
@@ -1555,7 +1646,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
   )
   infoButton.addEventListener('click', () => infoPanel.toggle('statistics'))
-  if (isMacOS) right.append(infoButton)
+  if (hasNativeTitlebar) right.append(infoButton)
 
   // A deliberately hidden palette still has one quiet recovery control at the
   // bottom of the page. Keeping it out of the titlebar preserves that bar's
@@ -1682,7 +1773,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // chrome runs on iOS where that corner is free and going back is the only way
   // out of an open note. CSS keeps it hidden until a viewport too narrow to
   // show both panes asks for it.
-  if (isMacOS) titlebar.append(backToList, historyNavigation, filename, right)
+  if (hasNativeTitlebar) titlebar.append(backToList, historyNavigation, filename, right)
   else {
     left.insertBefore(historyNavigation, documentListButton.nextSibling)
     titlebar.append(left, filename, right)
@@ -2013,7 +2104,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       settings.classList.toggle('active', open)
     })
     if (
-      isMacOS
+      hasNativeTitlebar
       && options.appIcon !== undefined
       && options.appIconChoices !== undefined
       && options.onAppIconChange !== undefined
@@ -2030,7 +2121,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       }))
     }
     libraryFooter.append(updateBar, sync, settings)
-    if (isMacOS) {
+    if (hasNativeTitlebar) {
       popover.classList.add('sidebar-settings-popover')
       folders.append(workspaceHeader, libraryRows, libraryFooter, popover, folderContextMenu)
     } else {
@@ -2918,7 +3009,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       applyWorkspaceMode(getWorkspaceMode() === 'editor' ? 'all' : 'editor')
     })
     workspaceBody.append(folders, noteList, documentSurface)
-    if (isMacOS) {
+    if (hasNativeTitlebar) {
       documentSurface.prepend(titlebar)
       windowEl.append(workspaceBody)
     } else {
@@ -2961,12 +3052,15 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   const selectionShapeForTarget = (
     target?: EventTarget | null,
-  ): { readonly inTable: boolean; readonly inCode: boolean } => {
+  ): { readonly inTable: boolean; readonly inCode: boolean; readonly hasSelection: boolean } => {
     const element = target instanceof Element
       ? target
       : target instanceof Node
         ? target.parentElement
         : null
+    // Whether there is a selection at all is a property of the editor, not of
+    // the hovered block, so it comes from the same source in both branches.
+    const hasSelection = options.getSelectionShape?.().hasSelection ?? false
     // A context menu belongs to the block under the pointer. The editor
     // selection may still describe the previously focused table or code block
     // for a render tick, so using `target || selection` leaks stale commands
@@ -2975,9 +3069,10 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       return {
         inTable: element.closest('table') !== null,
         inCode: element.closest('pre') !== null,
+        hasSelection,
       }
     }
-    return options.getSelectionShape?.() ?? { inTable: false, inCode: false }
+    return options.getSelectionShape?.() ?? { inTable: false, inCode: false, hasSelection: false }
   }
 
   const buildSelectionMenu = (target?: EventTarget | null): void => {
@@ -3043,7 +3138,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // Hover arrives well before WebKit constructs its menu. Keep only shape
   // transitions, so ordinary pointer movement does not become an IPC stream.
   page.addEventListener('pointermove', (event) => {
-    if (isMacOS) updateNativeContext(event.target)
+    if (hasNativeContextMenu) updateNativeContext(event.target)
   }, true)
 
   // Pointerdown is the final refresh for a stationary mouse. The earlier hover
@@ -3051,7 +3146,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // Selection capture is separate: the usual right-click is in the same block
   // the pointer already hovered, and that skip must not keep a stale range.
   page.addEventListener('pointerdown', (event) => {
-    if (isMacOS && event.button === 2) {
+    if (hasNativeContextMenu && event.button === 2) {
       captureNativeSelection(event.target)
       updateNativeContext(event.target)
     }
@@ -3059,7 +3154,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   page.addEventListener('contextmenu', (event) => {
     if (options.onClipboardExport === undefined) return
-    if (isMacOS && options.onNativeContextMenu !== undefined) {
+    if (hasNativeContextMenu && options.onNativeContextMenu !== undefined) {
       captureNativeSelection(event.target)
       updateNativeContext(event.target)
       return
@@ -3168,6 +3263,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     togglePinned: (id) => toggleWorkspacePin(id),
     isPinned: (id) => workspacePinState(id),
     reconcileWorkspace: (workspace) => reconcileWorkspace(workspace),
+    stylesBarSelectionChanged: () => stylesBar.dispatchEvent(new Event('simplemark-selection-changed')),
     dispose() {
       clearTimeout(deferredStatusTimer)
       deferredStatusTimer = undefined

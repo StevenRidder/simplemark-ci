@@ -35,6 +35,7 @@ import type { SaveState } from './ui/window-chrome.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import type { WorkspaceMode } from './ui/window-chrome.js'
 import type { StylesBarPosition } from './ui/window-chrome.js'
+import type { ChromeMode } from './ui/window-chrome.js'
 import {
   DEFAULT_PREFERENCES,
   nextScale,
@@ -109,6 +110,8 @@ export interface AppComposition {
     replaceTextForTest(from: string, to: string): void
     /** Fresh anchors from each live decoration (NOTES-9). */
     currentAnchorsForTest(): Record<string, Anchor>
+    /** Re-lists threads from the store (another device wrote them) and repaints. */
+    reload(): Promise<void>
   }
   /** Tears down the editor and presentation observers before remounting. */
   destroy(): Promise<void>
@@ -227,7 +230,7 @@ export interface ComposeOptions {
   /** Shared navigation supplied by the platform composition root. */
   readonly workspace?: WorkspaceOptions
   /** Which platform owns the application chrome around the shared workspace. */
-  readonly chromeMode?: 'web' | 'macos'
+  readonly chromeMode?: ChromeMode
   /** Native application icon capability; omitted by browser composition. */
   readonly appIcon?: AppIconId
   readonly appIconChoices?: readonly AppIconChoice[]
@@ -290,7 +293,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   let preferences = loadPreferences(storage)
   let uiPreferences: UiPreferences = loadUiPreferences(storage)
   let workspaceMode = singlePaneWorkspaceMode(options.workspace) ?? loadWorkspaceMode(storage)
-  let stylesBarVisible = loadStylesBarVisible(storage, stylesBarKey, options.stylesBarDefault ?? true)
+  // A phone has no View menu to reach the styles bar from, so iOS always
+  // starts with it visible when nothing is stored yet; the persisted
+  // preference still wins once the reader has toggled it themselves.
+  const stylesBarDefault = options.chromeMode === 'ios' ? true : (options.stylesBarDefault ?? true)
+  let stylesBarVisible = loadStylesBarVisible(storage, stylesBarKey, stylesBarDefault)
   let stylesBarPosition = loadStylesBarPosition(storage, stylesBarPositionKey)
   applyPreferences(preferences)
 
@@ -801,8 +808,13 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       return {
         inTable: markdownTableToCsv(markdown) !== null,
         inCode: codeFenceContent(markdown) !== null,
+        hasSelection: editor?.selectionRange() !== undefined,
       }
     },
+    // Cheap enough to run on every selection change (every keystroke, since
+    // typing moves the selection) — unlike `getSelectionShape`, which
+    // serializes the selection to Markdown and is reserved for menus.
+    hasSelection: () => editor?.selectionRange() !== undefined,
     ...(options.onNativeContextMenu === undefined
       ? {}
       : {
@@ -833,7 +845,17 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     renderer: ports.diagrams,
     ...(ports.clipboard === undefined ? {} : { clipboard: ports.clipboard }),
     ...(ports.diagramFix === undefined ? {} : { diagramFix: ports.diagramFix }),
-    ...(options.onSelectionChange === undefined ? {} : { onSelectionChange: options.onSelectionChange }),
+    // Always wired, not just when a caller (Tauri's native-menu repaint)
+    // supplies one: the styles bar's Add Note button needs this same signal
+    // on every platform, browser tests included. This fires from the
+    // ProseMirror plugin `update` in milkdown-editor.ts, after `view.state`
+    // already has the new selection — including one that arrived through the
+    // DOM (a touch handle drag), which is why it replaces reading the
+    // browser's own `selectionchange` event in window-chrome.ts.
+    onSelectionChange: () => {
+      chrome.stylesBarSelectionChanged()
+      options.onSelectionChange?.()
+    },
     ...(options.copyImage === undefined ? {} : { copyImage: options.copyImage }),
     ...(options.saveImage === undefined ? {} : { saveImage: options.saveImage }),
     onCopyDeferredTable: async (source) => {
@@ -889,6 +911,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       }
     },
   })
+
+  // First paint of Add Note against whatever the editor mounted with — a
+  // reopened note can already carry a selection, and `onSelectionChange`
+  // only fires on a later change, not on mount.
+  chrome.stylesBarSelectionChanged()
 
   chrome.refreshStatistics()
   if (uiPreferences.infoTab !== null) chrome.openInfoTab(uiPreferences.infoTab)
@@ -1039,6 +1066,17 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       editor?.replaceTextForTest(from, to)
     },
     currentAnchorsForTest: () => editor?.currentNoteAnchors() ?? {},
+    reload: async () => {
+      try {
+        noteThreads = await persist.list(await noteKeyForOpenDocument())
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        chrome.setStatus('error', `Notes for this document could not be read — ${message}`)
+        return
+      }
+      closeNoteStack()
+      paintNotes()
+    },
   }
   paintNotes()
   if (notesLoadError !== undefined) {

@@ -59,7 +59,7 @@ describe('the ordinary copy path is untouched', () => {
   it('returns to WebKit before the browser fallback cancels contextmenu', () => {
     const chrome = readFileSync('src/app/ui/window-chrome.ts', 'utf8')
     expect(chrome).toMatch(
-      /if \(isMacOS && options\.onNativeContextMenu !== undefined\) \{[\s\S]*?return\s*\}\s*event\.preventDefault\(\)/,
+      /if \(hasNativeContextMenu && options\.onNativeContextMenu !== undefined\) \{[\s\S]*?return\s*\}\s*event\.preventDefault\(\)/,
     )
   })
 
@@ -67,10 +67,10 @@ describe('the ordinary copy path is untouched', () => {
     const chrome = readFileSync('src/app/ui/window-chrome.ts', 'utf8')
     expect(chrome).toContain('options.onNativeSelection?.(element)')
     expect(chrome).toMatch(
-      /if \(isMacOS && event\.button === 2\) \{[\s\S]*?captureNativeSelection\(event\.target\)[\s\S]*?updateNativeContext\(event\.target\)/,
+      /if \(hasNativeContextMenu && event\.button === 2\) \{[\s\S]*?captureNativeSelection\(event\.target\)[\s\S]*?updateNativeContext\(event\.target\)/,
     )
     expect(chrome).toMatch(
-      /if \(isMacOS && options\.onNativeContextMenu !== undefined\) \{[\s\S]*?captureNativeSelection\(event\.target\)[\s\S]*?updateNativeContext\(event\.target\)[\s\S]*?return/,
+      /if \(hasNativeContextMenu && options\.onNativeContextMenu !== undefined\) \{[\s\S]*?captureNativeSelection\(event\.target\)[\s\S]*?updateNativeContext\(event\.target\)[\s\S]*?return/,
     )
   })
 

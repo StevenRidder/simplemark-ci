@@ -41,6 +41,7 @@ import type { UpdateStatus } from './update-status.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
+import type { ChromeMode } from './ui/window-chrome.js'
 import { SupersedingOperationQueue } from './superseding-operation-queue.js'
 import { createPageZoomController } from './page-zoom.js'
 import type { PageZoomController } from './page-zoom.js'
@@ -88,7 +89,17 @@ import './styles/print.css'
  * and being told when something else changes that file.
  */
 
+// Read once in start(), before anything else composes the chrome around it.
+let hostChromeMode: 'macos' | 'ios' = 'macos'
+
 export async function start(root: HTMLElement): Promise<AppComposition> {
+  try {
+    const platform = await invoke<string>('host_platform')
+    hostChromeMode = platform === 'ios' ? 'ios' : 'macos'
+  } catch {
+    // A binary built before this command is a desktop binary.
+    hostChromeMode = 'macos'
+  }
   const nativeWindow = getCurrentWindow()
   const savedGeometry = loadWindowGeometry(window.localStorage)
   if (savedGeometry !== null) {
@@ -329,13 +340,21 @@ async function startNative(
   const watch = async (port: TauriFilePort, handle: string): Promise<void> => {
     stopWatching?.()
     await port.watch(handle)
-    stopWatching = await listen<string>('note-changed-externally', (event) => {
+    const stopChanged = await listen<string>('note-changed-externally', (event) => {
       if (event.payload !== handle) return
       current.setStatus(
         'error',
         `Changed on disk by another program — ${event.payload.split('/').pop() ?? 'this note'}`,
       )
     })
+    const stopThreads = await listen<string>('note-threads-changed-externally', (event) => {
+      if (event.payload !== handle) return
+      void current.notes.reload()
+    })
+    stopWatching = () => {
+      stopChanged()
+      stopThreads()
+    }
   }
 
   const watchFolder = async (handle: string): Promise<void> => {
@@ -1235,7 +1254,7 @@ async function mount(
     filePath: options.filePath,
     pageZoom: options.pageZoom,
     workspace: options.workspace,
-    chromeMode: 'macos',
+    chromeMode: hostChromeMode,
     appIcon,
     appIconChoices: APP_ICON_CHOICES,
     onAppIconChange: (icon) => invoke('set_app_icon', { icon }),

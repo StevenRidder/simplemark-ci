@@ -112,10 +112,14 @@ export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): Not
     })
     panel.append(textarea)
 
-    const coords = view.coordsAtPos(from)
-    const hostBox = host.getBoundingClientRect()
-    panel.style.top = `${Math.max(8, coords.bottom - hostBox.top + 8)}px`
-    panel.style.left = `${Math.max(8, coords.left - hostBox.left)}px`
+    const keyboardOpen = host.closest('.window')?.classList.contains('keyboard-open') === true
+    panel.dataset['placement'] = keyboardOpen ? 'keyboard' : 'caret'
+    if (!keyboardOpen) {
+      const coords = view.coordsAtPos(from)
+      const hostBox = host.getBoundingClientRect()
+      panel.style.top = `${Math.max(8, coords.bottom - hostBox.top + 8)}px`
+      panel.style.left = `${Math.max(8, coords.left - hostBox.left)}px`
+    }
     host.append(panel)
     composer = panel
     textarea.focus()

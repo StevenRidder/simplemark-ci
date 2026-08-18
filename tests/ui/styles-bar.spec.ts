@@ -45,7 +45,7 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
       ? item.getAttribute('aria-label')
       : item.querySelector('button')?.getAttribute('aria-label')),
   )).resolves.toEqual([
-    'Move formatting palette', 'Headers', 'Todo', 'Lists', 'Bold', 'Italic', 'Highlight', 'Link', 'Tables', 'Insert image or link file', 'More', 'Text formatting',
+    'Move formatting palette', 'Headers', 'Todo', 'Lists', 'Bold', 'Italic', 'Highlight', 'Link', 'Tables', 'Add Note', 'Insert image or link file', 'More', 'Text formatting',
   ])
 
   const geometry = await bar.evaluate((element) => {
@@ -66,10 +66,10 @@ test('the styles bar is quiet, ordered, and its commands edit ordinary Markdown'
     position: 'absolute',
     bottom: '18px',
     radius: '11px',
-    size: [436, 33],
+    size: [469, 33],
     buttonSizes: [
       [17, 29], [39, 29], [31, 29], [39, 29], [31, 29], [31, 29],
-      [39, 29], [31, 29], [31, 29], [31, 29], [31, 29], [31, 29],
+      [39, 29], [31, 29], [31, 29], [31, 29], [31, 29], [31, 29], [31, 29],
     ],
   })
 

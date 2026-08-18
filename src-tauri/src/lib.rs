@@ -159,6 +159,21 @@ fn native_capabilities() -> Vec<String> {
     capabilities
 }
 
+/// Which shell this binary is: the TypeScript chrome adapts to it once, at start.
+///
+/// Answered from `cfg!` rather than a user-agent string, because an iPad
+/// asking for desktop-class pages reports itself as a Mac.
+#[tauri::command]
+fn host_platform() -> &'static str {
+    if cfg!(target_os = "ios") {
+        "ios"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "other"
+    }
+}
+
 /// One message in an OpenAI-compatible chat-completion request.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ChatMessage {
@@ -628,7 +643,7 @@ async fn open_workspace_folder(app: AppHandle) -> Result<Option<WorkspaceCatalog
 /// iCloud keeps a file as a placeholder until something asks for its bytes, and
 /// the asking is what blocks. On a phone every note is cloud-backed, so a
 /// synchronous read is a UI freeze for as long as the provider takes.
-async fn off_the_ui_thread<T, F>(work: F) -> Result<T, String>
+pub(crate) async fn off_the_ui_thread<T, F>(work: F) -> Result<T, String>
 where
     F: FnOnce() -> Result<T, String> + Send + 'static,
     T: Send + 'static,
@@ -2017,6 +2032,15 @@ fn watch_note(
         // you just opened for somebody else's edit.
         let mut seen = fs::read(&path).ok().map(|bytes| content_hash(&bytes));
 
+        // Resolved here, and re-resolved below until a threads file is seen,
+        // so a document that gains a sidecar mid-session is watched without
+        // being reopened.
+        let mut threads_path = notes::threads_file_for_document(&path).ok();
+        let mut seen_threads = threads_path
+            .as_ref()
+            .and_then(|threads| fs::read(threads).ok())
+            .map(|bytes| content_hash(&bytes));
+
         loop {
             std::thread::sleep(MOBILE_WATCH_INTERVAL);
             if watcher_was_stopped(&stop_receiver) {
@@ -2026,29 +2050,56 @@ fn watch_note(
             // iCloud materialises lazily, so a file can exist as a placeholder
             // before its bytes arrive. A failed read is that state, not a
             // deletion, and waiting is the honest response.
-            let Ok(current) = fs::read(&path) else {
-                continue;
-            };
-            let hash = content_hash(&current);
-            if seen == Some(hash) {
-                continue;
-            }
-            seen = Some(hash);
+            if let Ok(current) = fs::read(&path) {
+                let hash = content_hash(&current);
+                if seen != Some(hash) {
+                    seen = Some(hash);
 
-            let ours = ledger
-                .0
-                .lock()
-                .map(|ledger| ledger.get(&path).copied() == Some(hash))
-                .unwrap_or(false);
-            if ours {
-                continue;
-            }
+                    let ours = ledger
+                        .0
+                        .lock()
+                        .map(|ledger| ledger.get(&path).copied() == Some(hash))
+                        .unwrap_or(false);
+                    if !ours {
+                        if let Some(summaries) = app.try_state::<note_summaries::SummaryState>() {
+                            note_summaries::note_changed_externally(&summaries, &handle);
+                        }
 
-            if let Some(summaries) = app.try_state::<note_summaries::SummaryState>() {
-                note_summaries::note_changed_externally(&summaries, &handle);
+                        let _ = app.emit("note-changed-externally", handle.clone());
+                    }
+                }
             }
 
-            let _ = app.emit("note-changed-externally", handle.clone());
+            // Cheap re-resolve, once per tick, until a threads file is seen —
+            // otherwise a document with no sidecar at watch start stays
+            // unwatched for the rest of the session.
+            if seen_threads.is_none() {
+                if let Ok(resolved) = notes::threads_file_for_document(&path) {
+                    threads_path = Some(resolved);
+                }
+            }
+
+            // Independent of the `.md` check above: text and notes are
+            // written separately, so one being unreadable this tick must not
+            // suppress the other. Same placeholder reasoning as above too: a
+            // failed read waits rather than counting as a change.
+            if let Some(threads) = threads_path.as_ref() {
+                if let Ok(current) = fs::read(threads) {
+                    let hash = content_hash(&current);
+                    if seen_threads != Some(hash) {
+                        seen_threads = Some(hash);
+
+                        let ours = ledger
+                            .0
+                            .lock()
+                            .map(|ledger| ledger.get(threads).copied() == Some(hash))
+                            .unwrap_or(false);
+                        if !ours {
+                            let _ = app.emit("note-threads-changed-externally", handle.clone());
+                        }
+                    }
+                }
+            }
         }
     });
 
@@ -2295,6 +2346,7 @@ pub fn run() {
             app_icons::get_app_icon,
             app_icons::set_app_icon,
             build_provenance,
+            host_platform,
             ai_chat_completion,
             ai_list_models,
             enable_page_magnification,

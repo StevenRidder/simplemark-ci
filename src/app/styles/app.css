@@ -232,7 +232,10 @@ button[disabled] {
   align-items: center;
   justify-content: flex-start;
   gap: 2px;
-  width: 436px;
+  /* Authored to fit its children exactly, drag handle through the trailing
+     "Aa" format trigger: 436px for 12 children, +33px (Add Note's 31px
+     button plus one more 2px gap) once Add Note became the 13th. */
+  width: 469px;
   padding: 1px 5px;
   border: 1px solid var(--line);
   border-radius: 11px;
@@ -347,6 +350,23 @@ button[disabled] {
 .styles-control svg circle {
   fill: currentColor;
   stroke: none;
+}
+
+/* Out of the flex row's box model (no width/height of its own) so the pill's
+   authored width still fits exactly around `.styles-note` itself; it exists
+   only to catch `pointerdown` on the button while `disabled` (see
+   `createStylesBar` in window-chrome.ts). */
+.styles-note-wrap {
+  display: contents;
+}
+
+.styles-note svg {
+  display: block;
+}
+
+.styles-note:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .styles-letter {
@@ -593,6 +613,17 @@ button[disabled] {
 
 .styles-overflow-menu-item {
   display: none !important;
+}
+
+/*
+ * Add Note's own main-bar button is never width-hidden (it is the phone's
+ * only route to the composer), unlike the other `.styles-overflow-menu-item`
+ * duplicates, which stand in for a sibling the CSS hides at a narrow width.
+ * This More-menu copy is a second, always-available route instead, so its
+ * extra class outweighs the rule above regardless of viewport.
+ */
+.styles-overflow-menu-item.styles-note-overflow {
+  display: block !important;
 }
 
 .styles-bar-menu-toggle {
@@ -3787,6 +3818,17 @@ section.editor::-webkit-scrollbar {
     display: block;
   }
 
+  /* The bar sits at `bottom: keyboard-inset + 8px` and is 33px tall (asserted
+     in tests/ui/styles-bar.spec.ts), so its top edge is keyboard-inset + 41px
+     above the keyboard. Anything else anchored to the keyboard while the bar
+     is showing — the note sheets, the composer — needs to clear that edge
+     plus a little breathing room, or it paints underneath the bar. This is
+     only set while the bar can actually be showing, so it costs nothing when
+     the keyboard (and therefore the bar) is closed. */
+  .window.keyboard-open {
+    --styles-bar-clearance: 49px;
+  }
+
   /*
    * The row must not scroll, and it does not need to.
    *
@@ -4133,6 +4175,61 @@ section.editor::-webkit-scrollbar {
   font: 11px var(--sans);
   padding: 4px 8px;
   cursor: pointer;
+}
+
+/* Phone: notes are bottom sheets above the keyboard, and every action is a
+   44pt target. The keyboard inset comes from the same visualViewport tracking
+   the styles bar uses. */
+@media (max-width: 620px) {
+  .sm-note-rail,
+  .sm-note-stack {
+    position: fixed;
+    /* Full-bleed sheet: `inset` pins all four edges (top:auto so it hugs the
+       bottom, left/right:0 so it spans the viewport), and `width: auto` lets
+       the fixed-position box stretch to fill the left/right gap rather than
+       shrink to its content — an explicit `right: auto` here would cancel
+       that and let the sheet collapse to content width instead. */
+    inset: auto 0 calc(var(--keyboard-inset, 0px) + var(--styles-bar-clearance, 0px)) 0;
+    width: auto;
+    max-height: 40vh;
+    border-radius: 14px 14px 0 0;
+    border-bottom: 0;
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  /* renderNoteStack sets inline top/left when it opens from a tint click
+     (positioning the desktop popover next to the tap) — inline styles beat
+     the sheet above, so the stack would otherwise float near the tap point
+     instead of docking to the bottom. Scoped to .sm-note-stack only: the
+     rail never receives inline positioning. Restating the edges with
+     !important (rather than just cancelling top/left back to "auto") is
+     required — an !important "auto" would out-rank the sheet rule's own
+     non-important left/right too, collapsing the stack back to its content
+     width. */
+  .sm-note-stack {
+    top: auto !important;
+    right: 0 !important;
+    bottom: calc(var(--keyboard-inset, 0px) + var(--styles-bar-clearance, 0px)) !important;
+    left: 0 !important;
+  }
+
+  .sm-note-rail-actions button,
+  .sm-note-stack button,
+  .sm-note-unwritable button {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+
+  .sm-note-composer[data-placement="keyboard"],
+  .sm-note-unwritable {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: calc(var(--keyboard-inset, 0px) + 8px + var(--styles-bar-clearance, 0px));
+    width: auto;
+  }
 }
 
 /* ---- paste-exhaust cards (RENDERERS.md, the exhaust tier) ---- */

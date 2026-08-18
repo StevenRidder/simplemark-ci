@@ -999,6 +999,10 @@ section.editor {
      or paragraph remains directly manipulable instead of sitting under the
      palette. */
   scroll-padding-bottom: 76px;
+  /* Off-screen charts grow on first paint. DiagramNodeView holds the reader
+     still by moving scrollTop itself; Chromium's own scroll anchoring would
+     move it a second time, and WebKit has none — so it is off everywhere. */
+  overflow-anchor: none;
   /* The persistent document indicator beside this scroller supplies a stable,
      proportional length/position cue even when macOS hides overlay bars. */
   scrollbar-width: none;

@@ -232,8 +232,9 @@ export class DiagramNodeView implements NodeView {
   #visible = false
   /** Self-contained SVG still frame, used while the chart is off-screen. */
   #snapshotSrc: string | undefined
-  /** Last drawn box, so a still frame or placeholder keeps the same height. */
+  /** Last drawn box, so a still frame or placeholder keeps the same size. */
   #frameHeight = 0
+  #frameWidth = 0
   /** Language + source + scheme of the last successful live paint. */
   #paintedSignature: string | undefined
   #visibility: IntersectionObserver | undefined
@@ -433,17 +434,27 @@ export class DiagramNodeView implements NodeView {
     this.#resize.observe(this.#render)
 
     if (isDiagramLanguage(this.language()) && typeof IntersectionObserver === 'function') {
-      this.#visibility = new IntersectionObserver(
-        (entries) => {
-          const visible = entries.some((entry) => entry.isIntersecting)
-          if (visible === this.#visible) return
-          this.#visible = visible
-          this.#applySurface()
-        },
-        { rootMargin: '400px 0px', threshold: 0 },
-      )
-      this.#visibility.observe(this.dom)
       this.#setSurface('placeholder')
+      // The note scrolls inside `section.editor`, not the window. An observer
+      // rooted at the window is clipped by that scroller, so a `rootMargin`
+      // never reaches past its edge and a chart paints only once it is
+      // actually inside the visible box — growing from nothing right at the
+      // edge the reader is looking at. Root at the scroller so the margin
+      // pre-paints a screen ahead. ProseMirror constructs the view before the
+      // DOM is attached, so the ancestor is looked up on the next frame.
+      requestAnimationFrame(() => {
+        if (this.#destroyed) return
+        this.#visibility = new IntersectionObserver(
+          (entries) => {
+            const visible = entries.some((entry) => entry.isIntersecting)
+            if (visible === this.#visible) return
+            this.#visible = visible
+            this.#applySurface()
+          },
+          { root: this.#scroller(), rootMargin: '400px 0px', threshold: 0 },
+        )
+        this.#visibility.observe(this.dom)
+      })
     } else {
       this.#visible = true
       void this.#paint()
@@ -1213,10 +1224,12 @@ export class DiagramNodeView implements NodeView {
     if (token !== this.#renderToken) return result
 
     if (result.ok) {
+      const before = this.dom.getBoundingClientRect()
       this.#render.innerHTML = result.markup
       this.#error.hidden = true
       this.#render.style.removeProperty('min-height')
       this.#fitDiagram()
+      this.#holdReaderStill(before)
       this.#paintedSignature = this.#signature()
       this.#captureSnapshot()
       this.#setSurface('live')
@@ -1326,6 +1339,26 @@ export class DiagramNodeView implements NodeView {
     this.#snapshotSrc = undefined
   }
 
+  /** The scroll container the note lives in, when attached. */
+  #scroller(): HTMLElement | null {
+    return this.dom.closest<HTMLElement>('section.editor')
+  }
+
+  /**
+   * A first paint can grow this block from an empty placeholder to its full
+   * height. When the block sits above what the reader is looking at, that
+   * growth would push their line down the screen; move the scroll offset by
+   * the same amount so the text under their eyes stays where it was.
+   */
+  #holdReaderStill(before: DOMRect): void {
+    const scroller = this.#scroller()
+    if (scroller === null) return
+    const delta = this.dom.getBoundingClientRect().height - before.height
+    if (delta === 0) return
+    if (before.top >= scroller.getBoundingClientRect().top) return
+    scroller.scrollTop += delta
+  }
+
   #reserveFrame(): void {
     if (this.#frameHeight > 0) this.#render.style.minHeight = `${this.#frameHeight}px`
   }
@@ -1337,6 +1370,7 @@ export class DiagramNodeView implements NodeView {
     this.#snapshotSrc = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(figure.svgText)}`
     const box = svg.getBoundingClientRect()
     this.#frameHeight = box.height > 0 ? box.height : figure.height
+    this.#frameWidth = box.width > 0 ? box.width : figure.width
   }
 
   #showPlaceholder(): void {
@@ -1352,8 +1386,17 @@ export class DiagramNodeView implements NodeView {
     image.alt = ''
     image.setAttribute('aria-hidden', 'true')
     image.src = this.#snapshotSrc
+    // The still frame stands in for the drawing, so it takes the drawing's
+    // fitted box — not the column width. A frame taller than the drawing it
+    // replaces would grow the block on swap and push the reader's line down.
+    if (this.#frameWidth > 0 && this.#frameHeight > 0) {
+      image.style.width = `${this.#frameWidth}px`
+      image.style.height = `${this.#frameHeight}px`
+    }
+    const before = this.dom.getBoundingClientRect()
     this.#render.replaceChildren(image)
     this.#reserveFrame()
+    this.#holdReaderStill(before)
   }
 
   /**

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { CONTEXT_LENGTH, buildAnchor, matchAnchor } from '../../src/domain/index.js'
+import { CONTEXT_LENGTH, buildAnchor, locateAnchor, matchAnchor } from '../../src/domain/index.js'
 
 /**
  * The orphan rule, tested as arithmetic.
@@ -81,5 +81,33 @@ describe('matchAnchor', () => {
 
     expect(anchor.quote).toBe('')
     expect(matchAnchor(anchor, 'unchanged')).toBeUndefined()
+  })
+})
+
+/**
+ * Instruction targeting needs to ask a different question for a missing
+ * passage than for an ambiguous one. `matchAnchor` still returns undefined
+ * for both; `locateAnchor` names the reason.
+ */
+describe('locateAnchor', () => {
+  test('names a unique quote as found', () => {
+    const anchor = buildAnchor('the Starlink business grew', 4, 12, 0)
+
+    expect(locateAnchor(anchor, 'the Starlink business grew')).toEqual({
+      kind: 'found',
+      offset: 4,
+    })
+  })
+
+  test('names a vanished quote as missing, not ambiguous', () => {
+    const anchor = buildAnchor('the Starlink business', 4, 12, 0)
+
+    expect(locateAnchor(anchor, 'operating losses narrowed')).toEqual({ kind: 'missing' })
+  })
+
+  test('names a tied repeat as ambiguous, not missing', () => {
+    const anchor = buildAnchor('x TARGET y', 2, 8, 0)
+
+    expect(locateAnchor(anchor, 'x TARGET y ... x TARGET y')).toEqual({ kind: 'ambiguous' })
   })
 })

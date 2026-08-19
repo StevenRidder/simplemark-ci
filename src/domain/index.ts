@@ -69,7 +69,7 @@ export {
   markdownTableToHtml,
   markdownToPlainText,
 } from './clipboard/formats.js'
-export { CONTEXT_LENGTH, buildAnchor, matchAnchor } from './notes/anchor.js'
-export type { Anchor } from './notes/anchor.js'
+export { CONTEXT_LENGTH, buildAnchor, locateAnchor, matchAnchor } from './notes/anchor.js'
+export type { Anchor, AnchorLocation } from './notes/anchor.js'
 export { detachThread, resolveThread } from './notes/thread.js'
 export type { Thread } from './notes/thread.js'

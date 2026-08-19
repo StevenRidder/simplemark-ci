@@ -43,6 +43,8 @@ export type {
 } from './ports.js'
 export { isAiConfigured } from './ports.js'
 export { DocumentSession } from './document-session.js'
+export { resolveInstructionTarget } from './instruction-target.js'
+export type { InstructionTarget, InstructionTargetInput } from './instruction-target.js'
 export { dirtyBlocks } from './dirty-blocks.js'
 export type {
   DocumentSnapshot,

@@ -64,6 +64,34 @@ function contextScore(anchor: Anchor, text: string, offset: number): number {
 }
 
 /**
+ * Why a quote could not be identified, or where it was found.
+ *
+ * Instruction targeting asks a different question for a missing passage than
+ * for an ambiguous one. `matchAnchor` still collapses both to `undefined`.
+ */
+export type AnchorLocation =
+  | { readonly kind: 'found'; readonly offset: number }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'ambiguous' }
+
+export function locateAnchor(anchor: Anchor, text: string): AnchorLocation {
+  const candidates = occurrences(anchor.quote, text)
+  if (candidates.length === 0) return { kind: 'missing' }
+  if (candidates.length === 1) {
+    const offset = candidates[0]
+    return offset === undefined ? { kind: 'missing' } : { kind: 'found', offset }
+  }
+
+  const scored = candidates.map((offset) => ({ offset, score: contextScore(anchor, text, offset) }))
+  const best = Math.max(...scored.map((entry) => entry.score))
+  const winners = scored.filter((entry) => entry.score === best)
+
+  // A tie means the document genuinely cannot say which one was meant.
+  const winner = winners.length === 1 ? winners[0] : undefined
+  return winner === undefined ? { kind: 'ambiguous' } : { kind: 'found', offset: winner.offset }
+}
+
+/**
  * The start offset of the anchored passage, or `undefined` if it cannot be
  * identified beyond doubt.
  *
@@ -72,14 +100,6 @@ function contextScore(anchor: Anchor, text: string, offset: number): number {
  * note on the wrong sentence is worse than a note that admits it is lost.
  */
 export function matchAnchor(anchor: Anchor, text: string): number | undefined {
-  const candidates = occurrences(anchor.quote, text)
-  if (candidates.length === 0) return undefined
-  if (candidates.length === 1) return candidates[0]
-
-  const scored = candidates.map((offset) => ({ offset, score: contextScore(anchor, text, offset) }))
-  const best = Math.max(...scored.map((entry) => entry.score))
-  const winners = scored.filter((entry) => entry.score === best)
-
-  // A tie means the document genuinely cannot say which one was meant.
-  return winners.length === 1 ? winners[0]?.offset : undefined
+  const located = locateAnchor(anchor, text)
+  return located.kind === 'found' ? located.offset : undefined
 }

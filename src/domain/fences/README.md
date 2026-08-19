@@ -2,10 +2,10 @@
 
 Run generations and `mayApply` — what makes Stop and Redirect binding.
 
-This is prepared safety machinery for optional direct agent participation, not
-part of the renderer-first POC or its UI (ADR-0005).
+`mayApply(run, claimedGeneration)` is true only when the claimed generation
+equals the run's current one, the claim is a non-negative integer, and the
+run is not terminal. Pause is not terminal: it freezes the runner between
+units without bumping the generation.
 
-Ported in concept from Switchboard's `execution_liveness.py`: the generation
-is owned by the app, never the agent, and malformed, future, stopped, and stale
-generations all fail closed (SWITCHBOARD-KERNEL.md §2). Filled only if the
-later agent-participation gate passes.
+The generation is owned by the authority, never by the agent. Ported in
+concept from Switchboard's `execution_liveness.py` (SWITCHBOARD-KERNEL.md §2).

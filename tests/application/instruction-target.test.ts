@@ -77,4 +77,14 @@ describe('resolveInstructionTarget', () => {
       }),
     ).toEqual({ kind: 'append' })
   })
+
+  test('a paste that contains quotes matches the whole paste, not the inner span', () => {
+    const quoted = 'He said "go now" and left'
+    expect(
+      resolveInstructionTarget({
+        document: quoted,
+        instruction: `  ${quoted}  `,
+      }),
+    ).toEqual({ kind: 'passage', offset: 0, quote: quoted })
+  })
 })

@@ -413,3 +413,54 @@ export interface NoteIdentity {
     { id: string; markdown?: string } | { unwritable: true }
   >
 }
+
+/**
+ * Credentials for the in-document agent (AGENT-8). Same three fields as
+ * diagram-repair settings, stored separately — repairing a diagram and
+ * rewriting a paragraph reasonably want different models.
+ */
+export interface AgentConnection {
+  readonly apiKey: string
+  readonly baseUrl: string
+  readonly model: string
+}
+
+export function isAgentConfigured(settings: AgentConnection): boolean {
+  return settings.apiKey !== '' && settings.baseUrl !== '' && settings.model !== ''
+}
+
+export type AgentMayOpenNotes = 'ask' | 'allow' | 'deny'
+
+export interface AgentToolSpec {
+  readonly name: string
+  readonly description: string
+}
+
+export interface AgentMessage {
+  readonly role: 'user' | 'assistant' | 'tool'
+  readonly content: string
+  readonly toolCallId?: string
+}
+
+export interface AgentProviderInput {
+  readonly scope: string
+  readonly instruction: string
+  readonly noteMarkdown: string
+  readonly messages: readonly AgentMessage[]
+  readonly tools: readonly AgentToolSpec[]
+}
+
+export type AgentProviderTurn =
+  | { readonly kind: 'text'; readonly text: string }
+  | {
+      readonly kind: 'tool'
+      readonly id: string
+      readonly name: string
+      readonly args: unknown
+    }
+  | { readonly kind: 'unsupported'; readonly message: string }
+  | { readonly kind: 'error'; readonly message: string }
+
+export interface AgentProviderPort {
+  complete(input: AgentProviderInput): Promise<AgentProviderTurn>
+}

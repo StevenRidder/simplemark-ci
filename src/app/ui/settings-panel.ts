@@ -1,5 +1,10 @@
 import type { ModelListTransport } from '../../adapters/ai/openai-compatible-diagram-fix.js'
 import { listModels } from '../../adapters/ai/openai-compatible-diagram-fix.js'
+import {
+  loadAgentConnection,
+  normaliseAgentConnection,
+  saveAgentConnection,
+} from '../agent-settings.js'
 import { loadAiSettings, normaliseAiSettings, saveAiSettings } from '../ai-settings.js'
 
 export interface SettingsPanel {
@@ -142,6 +147,16 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     if (modelSelect.value !== '') modelField.input.value = modelSelect.value
   })
 
+  const agentTitle = document.createElement('h3')
+  agentTitle.textContent = 'Document agent'
+  const agentHint = document.createElement('p')
+  agentHint.className = 'settings-hint'
+  agentHint.textContent =
+    'Used when an agent edits the open note. Stored separately from diagram fix, locally on this device.'
+  const agentKeyField = field('API key', 'password', 'sk-…')
+  const agentUrlField = field('Base URL', 'text', 'https://api.openai.com/v1')
+  const agentModelField = field('Model', 'text', 'e.g. gpt-4o')
+
   const actions = document.createElement('div')
   actions.className = 'settings-actions'
   const save = document.createElement('button')
@@ -156,6 +171,14 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
       model: modelField.input.value,
     })
     saveAiSettings(options.storage, next)
+    saveAgentConnection(
+      options.storage,
+      normaliseAgentConnection({
+        apiKey: agentKeyField.input.value,
+        baseUrl: agentUrlField.input.value,
+        model: agentModelField.input.value,
+      }),
+    )
     closePanel()
   })
   actions.append(save)
@@ -169,6 +192,11 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     loadModelsRow,
     modelSelect,
     modelError,
+    agentTitle,
+    agentHint,
+    agentKeyField.row,
+    agentUrlField.row,
+    agentModelField.row,
     actions,
   )
   panel.append(header, body)
@@ -187,6 +215,10 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     apiKeyField.input.value = current.apiKey
     baseUrlField.input.value = current.baseUrl
     modelField.input.value = current.model
+    const agent = loadAgentConnection(options.storage)
+    agentKeyField.input.value = agent.apiKey
+    agentUrlField.input.value = agent.baseUrl
+    agentModelField.input.value = agent.model
     modelSelect.hidden = true
     modelSelect.replaceChildren()
     modelError.hidden = true

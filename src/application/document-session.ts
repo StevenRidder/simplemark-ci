@@ -7,6 +7,7 @@ import type {
   StepApplicationResult,
   StepBatch,
   StepDocumentPort,
+  StepDocumentRange,
 } from './ports.js'
 
 /**
@@ -292,6 +293,30 @@ export class DocumentSession {
       rebased,
       steps: cloneStepBatch(acceptedSteps),
     }
+  }
+
+  /**
+   * Convert Markdown to steps at a resolved range, then accept them.
+   *
+   * The range is the authority's, not the caller's. Tools pass Markdown plus
+   * a scope token; this is the one place that turns that into steps.
+   */
+  applyMarkdown(transaction: {
+    readonly actorId: string
+    readonly name: string
+    readonly baseVersion: number
+    readonly markdown: string
+    readonly range?: StepDocumentRange
+  }): StepTransactionApplyResult {
+    if (this.steps === undefined) return { ok: false, reason: 'capability_denied' }
+    const converted = this.steps.markdownToSteps(this.markdown, transaction.markdown, transaction.range)
+    if (!converted.ok) return { ok: false, reason: converted.kind }
+    return this.applySteps({
+      actorId: transaction.actorId,
+      name: transaction.name,
+      baseVersion: transaction.baseVersion,
+      steps: converted.steps,
+    })
   }
 
   /**

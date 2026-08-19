@@ -39,6 +39,9 @@ export function resolveInstructionTarget(input: InstructionTargetInput): Instruc
 }
 
 function pointedText(instruction: string, document: string): string | undefined {
+  const pasted = instruction.trim()
+  if (pasted !== '' && document.includes(pasted)) return pasted
+
   const quoted = QUOTED.exec(instruction)
   const inner = quoted?.[1] ?? quoted?.[2]
   if (inner !== undefined) {
@@ -46,6 +49,5 @@ function pointedText(instruction: string, document: string): string | undefined 
     return quote === '' ? undefined : quote
   }
 
-  const pasted = instruction.trim()
-  return pasted !== '' && document.includes(pasted) ? pasted : undefined
+  return undefined
 }

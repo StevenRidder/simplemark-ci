@@ -40,9 +40,18 @@ export type {
   StepDocumentPort,
   NoteIdentity,
   ThreadStore,
+  AgentConnection,
+  AgentMayOpenNotes,
+  AgentToolSpec,
+  AgentMessage,
+  AgentProviderInput,
+  AgentProviderTurn,
+  AgentProviderPort,
 } from './ports.js'
-export { isAiConfigured } from './ports.js'
+export { isAiConfigured, isAgentConfigured } from './ports.js'
 export { DocumentSession } from './document-session.js'
+export { runAgentLoop } from './agent-loop.js'
+export type { AgentLoopInput, AgentLoopResult, AgentRunControl } from './agent-loop.js'
 export { resolveInstructionTarget } from './instruction-target.js'
 export type { InstructionTarget, InstructionTargetInput } from './instruction-target.js'
 export { dirtyBlocks } from './dirty-blocks.js'

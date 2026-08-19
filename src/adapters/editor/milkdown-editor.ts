@@ -41,6 +41,7 @@ import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { toggleMark } from '@milkdown/kit/prose/commands'
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorState } from '@milkdown/kit/prose/state'
+import { Step } from '@milkdown/kit/prose/transform'
 import {
   addRowAfter,
   CellSelection,
@@ -60,6 +61,8 @@ import type {
   DiagramFixPort,
   DiagramRenderer,
   NoteImageStore,
+  StepBatch,
+  StepJson,
 } from '../../application/index.js'
 import { looksLikeMermaid, looksLikeSvg, withFenceMetaKey } from '../../domain/index.js'
 import type { Anchor, Thread } from '../../domain/index.js'
@@ -119,9 +122,14 @@ import type { PreparedMarkdown } from './deferred-tables.js'
  *
  * The adapter owns ProseMirror translation and nothing else. It never writes a
  * file, never renders a diagram itself, and never mutates the document behind
- * the application's back: every change leaves through `onMarkdownChanged`, and
- * the composition root is what turns that into a DocumentSession transaction.
+ * the application's back: every change leaves through `onMarkdownChanged` with
+ * the transaction's steps, and the composition root is what records them on
+ * DocumentSession. Remote batches dispatch as one marked transaction so that
+ * emit path does not echo them back as local typing.
  */
+
+/** Marks a dispatched batch that the session already accepted. */
+export const REMOTE_STEPS_META = 'simplemark-remote'
 
 export type EditorCommandName =
   | 'heading1'
@@ -186,8 +194,8 @@ export interface MilkdownEditorOptions {
   readonly clipboard?: ClipboardPort
   /** Backs the diagram-error box's Fix it button. Absent hides that button. */
   readonly diagramFix?: DiagramFixPort
-  /** Called after every user edit, with the serialised document. */
-  readonly onMarkdownChanged: (markdown: string) => void
+  /** Called after every local edit, with the serialised document and its steps. */
+  readonly onMarkdownChanged: (markdown: string, steps: StepBatch) => void
   /** Opens a rendered link through the shell's explicit platform boundary. */
   readonly onOpenLink?: (href: string) => Promise<void>
   /** Copies a virtualised table through the shell's clipboard boundary. */
@@ -275,8 +283,45 @@ export class MilkdownEditor {
      * current selection. */
     private readonly diagramViews: ReadonlySet<DiagramNodeView>,
     private readonly preparedMarkdown: PreparedMarkdown,
+    private readonly readEmittedSteps: () => StepBatch,
+    private readonly absorbRemoteMarkdown: (markdown: string) => void,
   ) {
     this.#renderLanguages = new Set(renderer.languages)
+  }
+
+  /** The last local batch handed to the application, in the editor's own JSON. */
+  emittedSteps(): StepBatch {
+    return this.readEmittedSteps()
+  }
+
+  /**
+   * Applies an already-accepted batch to the live view as one transaction.
+   *
+   * Returns `false` without dispatching when any step cannot apply, so the
+   * caller can re-render from the session instead of throwing.
+   */
+  applyRemoteSteps(steps: StepBatch): boolean {
+    if (steps.length === 0) return true
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      try {
+        let transaction = view.state.tr
+        for (const json of steps) {
+          const step = Step.fromJSON(view.state.schema, json)
+          if (transaction.maybeStep(step).failed !== null) return false
+        }
+        transaction.setMeta('addToHistory', false)
+        transaction.setMeta(REMOTE_STEPS_META, true)
+        view.dispatch(transaction)
+        const markdown = this.preparedMarkdown.restoreMarkdown(
+          ctx.get(serializerCtx)(view.state.doc),
+        )
+        this.absorbRemoteMarkdown(markdown)
+        return true
+      } catch {
+        return false
+      }
+    })
   }
 
   /** Hidden YAML written by ensureId must round-trip on the next serialize. */
@@ -482,20 +527,35 @@ export class MilkdownEditor {
     /**
      * The last Markdown the application has been told about.
      *
-     * Every change leaves through `emitMarkdown`, whether it arrives on
+     * Every local change leaves through `emitMarkdown`, whether it arrives on
      * Milkdown's debounced listener or on a flush, and each emission is
      * measured against this. So a flush that beats the timer does not get
      * counted twice when the timer finally fires, and the document never
      * looks dirty again for an edit that was already delivered.
+     *
+     * Remote batches update this without calling `onMarkdownChanged`, so the
+     * delayed listener cannot echo them back as a second local transaction.
      */
     let lastEmitted: string | undefined
+    const pendingLocalSteps: StepJson[] = []
+    let lastEmittedSteps: StepBatch = []
     let notice: HiddenDiagramNotice | undefined
     const emitMarkdown = (editorMarkdown: string): void => {
       const markdown = preparedMarkdown.restoreMarkdown(editorMarkdown)
-      if (markdown === lastEmitted) return
+      if (markdown === lastEmitted) {
+        // Keep pending steps. A same-bytes serialize (a NodeView or a flush)
+        // can run between ProseMirror collecting a type and Milkdown's
+        // delayed markdownUpdated. Clearing here dropped those steps, so the
+        // later emit saw a new document and an empty batch and never told
+        // the session.
+        return
+      }
+      const steps = pendingLocalSteps.splice(0)
       lastEmitted = markdown
       notice?.refresh(markdown)
-      options.onMarkdownChanged(markdown)
+      if (steps.length === 0) return
+      lastEmittedSteps = steps
+      options.onMarkdownChanged(markdown, steps)
     }
 
     const editor = await Editor.make()
@@ -552,6 +612,25 @@ export class MilkdownEditor {
       .use($prose(() => pageTrimOfferPlugin(options.images)))
       .use(clipboard)
       .use(listener)
+      .use($prose(() => new Plugin({
+        key: new PluginKey('simplemark-local-steps'),
+        state: {
+          init: () => null,
+          apply: (transaction) => {
+            // The parse that builds the mounted document is a change, but it
+            // is not a human keystroke. Collecting those steps, then keeping
+            // them across a same-bytes serialize, lets a later NodeView flush
+            // emit the mount as an edit and wipe a DOM selection.
+            if (lastEmitted === undefined) return null
+            if (transaction.getMeta(REMOTE_STEPS_META) === true) return null
+            if (!transaction.docChanged) return null
+            for (const step of transaction.steps) {
+              pendingLocalSteps.push(step.toJSON() as StepJson)
+            }
+            return null
+          },
+        },
+      })))
       // Final review Finding 1: the native menubar's Format → Diagram ids
       // only ever repainted from inside a menu action's own `activate` — a
       // bare selection change (a click, an arrow key, Escape) never touched
@@ -614,6 +693,7 @@ export class MilkdownEditor {
     // against the string on disk would make an untouched document look edited
     // the first time anything flushed it.
     lastEmitted = preparedMarkdown.restoreMarkdown(editor.action(getMarkdown()))
+    pendingLocalSteps.length = 0
 
     const instance = new MilkdownEditor(
       editor,
@@ -621,6 +701,11 @@ export class MilkdownEditor {
       emitMarkdown,
       diagramViews,
       preparedMarkdown,
+      () => lastEmittedSteps,
+      (markdown) => {
+        lastEmitted = markdown
+        pendingLocalSteps.length = 0
+      },
     )
     notice = instance.installHiddenDiagramNotice(options.mount, options.initialMarkdown, options.diagramFix)
     instance.installLinkOpening(options.mount, options.onOpenLink)

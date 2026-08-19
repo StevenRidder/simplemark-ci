@@ -60,6 +60,15 @@ export interface StepTransaction {
   readonly steps: StepBatch
 }
 
+export interface EditorStepTransaction extends StepTransaction {
+  /**
+   * Markdown the live editor already serialised. Stored as-is when the batch
+   * is fresh so the session does not replace Milkdown bytes with the headless
+   * port serialiser.
+   */
+  readonly markdown: string
+}
+
 export type StepTransactionError =
   | 'capability_denied'
   | 'invalid_version'
@@ -193,6 +202,52 @@ export class DocumentSession {
       name: transaction.name,
     })
     return { ok: true, revision: this.#revision }
+  }
+
+  /**
+   * Record a live editor batch without re-applying it through the step port.
+   *
+   * The editor already applied these steps to the visible document. Running
+   * them again through the headless serialiser would rewrite list indent,
+   * table pipes, and trailing spaces, and every later agent rebase would
+   * still see a barrier. A stale emit still goes through `applySteps`.
+   */
+  acceptEditorSteps(transaction: EditorStepTransaction): StepTransactionApplyResult {
+    if (this.steps === undefined) return { ok: false, reason: 'capability_denied' }
+    if (
+      !Number.isInteger(transaction.baseVersion)
+      || transaction.baseVersion < 0
+      || transaction.baseVersion > this.#revision
+    ) {
+      return { ok: false, reason: 'invalid_version' }
+    }
+
+    if (transaction.baseVersion !== this.#revision) {
+      return this.applySteps(transaction)
+    }
+
+    const acceptedSteps = cloneStepBatch(transaction.steps)
+    // Do not invert through the headless port. That re-parses the live
+    // document, including restored deferred tables, on every keystroke.
+    // Human undo is the editor history; session revert of a live type
+    // without an inverse reports rebase_failed.
+    this.markdown = transaction.markdown
+    this.#revision += 1
+    this.#dirty = true
+    this.#documents.push(this.markdown)
+    this.#changes.push({
+      kind: 'steps',
+      actorId: transaction.actorId,
+      name: transaction.name,
+      steps: acceptedSteps,
+      inverse: null,
+    })
+    return {
+      ok: true,
+      revision: this.#revision,
+      rebased: false,
+      steps: cloneStepBatch(acceptedSteps),
+    }
   }
 
   /**

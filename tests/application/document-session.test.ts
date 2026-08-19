@@ -139,6 +139,73 @@ describe('DocumentSession', () => {
     })
   })
 
+  test('records live editor markdown with its steps instead of the port serialiser', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+
+    const result = session.acceptEditorSteps({
+      actorId: 'human',
+      name: 'Type',
+      baseVersion: 0,
+      steps: [{ append: 'from-port' }],
+      markdown: 'base from editor',
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      revision: 1,
+      rebased: false,
+      steps: [{ append: 'from-port' }],
+    })
+    expect(session.snapshot()).toEqual({
+      revision: 1,
+      markdown: 'base from editor',
+      dirty: true,
+    })
+    expect(steps.rebases).toEqual([])
+  })
+
+  test('lets a later stale batch rebase over accepted editor steps', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+
+    session.acceptEditorSteps({
+      actorId: 'human',
+      name: 'Type',
+      baseVersion: 0,
+      steps: [{ append: 'from-port' }],
+      markdown: 'base from editor',
+    })
+
+    const stale = session.applySteps({
+      actorId: 'agent',
+      name: 'Append A',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+
+    expect(stale).toEqual({
+      ok: true,
+      revision: 2,
+      rebased: true,
+      steps: [{ append: 'A' }],
+    })
+    expect(session.snapshot()).toEqual({
+      revision: 2,
+      markdown: 'basefrom-portA',
+      dirty: true,
+    })
+    expect(steps.rebases).toEqual([
+      {
+        baseMarkdown: 'base',
+        localSteps: [{ append: 'A' }],
+        committedBatches: [[{ append: 'from-port' }]],
+      },
+    ])
+  })
+
   test('commits a fresh structural batch without rebasing', async () => {
     const { port: files } = stubPort('base')
     const steps = stepPort()

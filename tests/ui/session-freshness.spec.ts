@@ -40,6 +40,29 @@ test('a flush hands the last keystroke over immediately', async ({ page }) => {
   expect(await sessionMarkdown(page)).toContain('Typed a moment ago.')
 })
 
+test('an idle demo does not emit mount steps as a human edit', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  const before = await page.evaluate(() => {
+    const snapshot = window.simplemark!.session.snapshot()
+    return { revision: snapshot.revision, dirty: snapshot.dirty, markdown: snapshot.markdown }
+  })
+  // Milkdown's markdownUpdated debounce is 200ms; NodeViews can flush later.
+  await page.evaluate(
+    () => new Promise<void>((resolve) => {
+      window.setTimeout(() => resolve(), 500)
+    }),
+  )
+  await page.evaluate(() => window.simplemark!.flushPendingChanges())
+  const after = await page.evaluate(() => {
+    const snapshot = window.simplemark!.session.snapshot()
+    return { revision: snapshot.revision, dirty: snapshot.dirty, markdown: snapshot.markdown }
+  })
+  expect(after.dirty).toBe(false)
+  expect(after.revision).toBe(before.revision)
+  expect(after.markdown).toBe(before.markdown)
+})
+
 test('a flush of an untouched document reports no edit', async ({ page }) => {
   await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)

@@ -50,7 +50,17 @@ test('the More menu carries Add Note too', async ({ page }) => {
  * is what actually exercises that path.
  */
 test('Add Note enables from a DOM-originated selection, not just a PM one', async ({ page }) => {
-  await page.locator('.milkdown .ProseMirror').click()
+  const editor = page.locator('.milkdown .ProseMirror')
+  const addNote = page.locator('.styles-bar .styles-note')
+  await editor.click()
+  // Click places a collapsed caret. ProseMirror folds that through DOMObserver
+  // on a later animation frame. Setting the range before that flush lands lets
+  // the click overwrite it, and Add Note stays disabled for the whole 15s wait.
+  await page.evaluate(
+    () => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    }),
+  )
   await page.evaluate((quote) => {
     const walker = document.createTreeWalker(document.querySelector('.milkdown .ProseMirror')!, NodeFilter.SHOW_TEXT)
     let node: Node | null
@@ -63,12 +73,13 @@ test('Add Note enables from a DOM-originated selection, not just a PM one', asyn
         const selection = getSelection()!
         selection.removeAllRanges()
         selection.addRange(range)
+        document.dispatchEvent(new Event('selectionchange'))
         return
       }
     }
     throw new Error('quote not found')
   }, 'This document is the demo')
-  await expect(page.locator('.styles-bar .styles-note')).toBeEnabled()
+  await expect(addNote).toBeEnabled()
 })
 
 /**

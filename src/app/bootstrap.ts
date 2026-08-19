@@ -21,6 +21,7 @@ import type { Anchor, Thread } from '../domain/index.js'
 import { DocumentSession } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import type { DiagramController } from '../adapters/editor/milkdown-editor.js'
+import { createStepDocumentPort } from '../adapters/editor/step-document-port.js'
 import { createWindowChrome } from './ui/window-chrome.js'
 import { createFindBar } from './ui/find-bar.js'
 import { renderNoteRail, renderNoteStack } from './ui/note-rail.js'
@@ -29,7 +30,7 @@ import { LocalThreadStore } from '../adapters/filesystem/local-thread-store.js'
 import { noteKeyForPath } from '../adapters/filesystem/tauri-thread-store.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import { COMMANDS } from '../application/index.js'
-import type { BlockBoundaryPort, DocumentCommandId } from '../application/index.js'
+import type { BlockBoundaryPort, DocumentCommandId, StepDocumentPort } from '../application/index.js'
 import type { WindowChrome } from './ui/window-chrome.js'
 import type { SaveState } from './ui/window-chrome.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
@@ -88,6 +89,8 @@ export interface AppComposition {
   readonly element: HTMLElement
   readonly session: DocumentSession
   readonly editor: MilkdownEditor
+  /** The editor-owned port that decodes, applies, and rebases opaque steps. */
+  readonly steps: StepDocumentPort
   /**
    * §4 of the chip-chrome spec: the diagram verb surface, delegating to the
    * editor. Every verb answers `false` (or `null` for `kind()`) before the
@@ -282,7 +285,8 @@ const DIAGRAM_ZOOM_COMMAND_IDS: ReadonlySet<DocumentCommandId> = new Set([
 
 export async function composeApp(options: ComposeOptions): Promise<AppComposition> {
   const { ports } = options
-  const session = await DocumentSession.open(ports.file, ports.blockBoundaries)
+  const stepAdapter = await createStepDocumentPort()
+  const session = await DocumentSession.open(ports.file, ports.blockBoundaries, stepAdapter.port)
 
   // Reader preferences are app state, never document content (D6). They are
   // applied to the document root so one multiplier and one palette drive the
@@ -885,12 +889,13 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         read: (href: string) => ports.images!.read(session.documentHandle(), href),
       },
     }),
-    onMarkdownChanged: (markdown) => {
+    onMarkdownChanged: (markdown, steps) => {
       const before = session.snapshot()
-      const result = session.apply({
+      const result = session.acceptEditorSteps({
         actorId: 'human',
         name: 'Edit',
-        expectedRevision: before.revision,
+        baseVersion: before.revision,
+        steps,
         markdown,
       })
 
@@ -1298,6 +1303,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     reconcileWorkspace: (workspace) => chrome.reconcileWorkspace(workspace),
     session,
     editor,
+    steps: stepAdapter.port,
     notes,
     async destroy() {
       clearTimeout(saveTimer)
@@ -1309,6 +1315,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       chrome.element.ownerDocument.removeEventListener('click', onDocumentClick)
       chrome.dispose()
       await editor.destroy()
+      await stepAdapter.destroy()
     },
     save,
     flushPendingChanges: () => editor?.flushPendingChanges(),

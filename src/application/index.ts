@@ -51,6 +51,7 @@ export type {
   DocumentTransaction,
   ApplyResult,
   StepTransaction,
+  EditorStepTransaction,
   StepTransactionError,
   StepTransactionApplyResult,
   SaveResult,

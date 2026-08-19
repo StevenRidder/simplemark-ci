@@ -392,6 +392,11 @@ describe('DocumentSession', () => {
 
     expect(reverted).toEqual({ ok: true, revision: 3 })
     expect(session.snapshot()).toEqual({ revision: 3, markdown: 'baseB', dirty: true })
+    expect(steps.rebases).toEqual([{
+      baseMarkdown: 'baseA',
+      localSteps: [{ deleteToken: 'A' }],
+      committedBatches: [[{ append: 'B' }]],
+    }])
   })
 
   test('refuses an unrebasable revert and leaves the document untouched', async () => {

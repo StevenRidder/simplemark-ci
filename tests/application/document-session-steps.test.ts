@@ -140,6 +140,33 @@ describe('DocumentSession with the real step adapter', () => {
     expect(session.snapshot().revision).toBe(3)
   })
 
+  test('reverting an older agent write maps the inverse over a later prefix insert', async () => {
+    const markdown = 'first paragraph\n\nsecond paragraph'
+    const session = await DocumentSession.open(filePort(markdown), undefined, adapter.port)
+    const agent = markdownSteps(markdown, 'FIRST paragraph', { from: 0, to: 17 })
+    const first = session.applySteps({
+      actorId: 'agent',
+      name: 'Edit first paragraph',
+      baseVersion: 0,
+      steps: agent,
+    })
+    expect(first).toMatchObject({ ok: true, revision: 1 })
+    if (!first.ok) throw new Error('Expected the agent write to commit')
+    const afterAgent = session.snapshot().markdown
+    const prefix = markdownSteps(afterAgent, 'INTRO', { from: 0, to: 0 })
+    expect(session.applySteps({
+      actorId: 'human',
+      name: 'Insert prefix',
+      baseVersion: first.revision,
+      steps: prefix,
+    })).toMatchObject({ ok: true, revision: 2 })
+
+    expect(session.revert(String(first.revision))).toEqual({ ok: true, revision: 3 })
+    expect(session.snapshot().markdown).toContain('INTRO')
+    expect(session.snapshot().markdown).toContain('first paragraph')
+    expect(session.snapshot().markdown).not.toContain('FIRST paragraph')
+  })
+
   test('refuses revert when a later deletion destroyed the inverted target', async () => {
     const markdown = 'remove target\n\nkeep this paragraph'
     const session = await DocumentSession.open(filePort(markdown), undefined, adapter.port)

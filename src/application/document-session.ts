@@ -242,8 +242,10 @@ export class DocumentSession {
   /**
    * Undo one named step transaction by applying its inverse over later commits.
    *
-   * This never restores a saved snapshot: later edits stay unless the inverse
-   * cannot rebase, in which case the document is left untouched.
+   * `transactionId` is the revision of that accepted change, as a decimal string
+   * (`String(applySteps(...).revision)`). This never restores a saved snapshot:
+   * later edits stay unless the inverse cannot rebase, in which case the
+   * document is left untouched.
    */
   revert(transactionId: string): RevertResult {
     if (this.steps === undefined) return { ok: false, reason: 'capability_denied' }

@@ -31,6 +31,8 @@ function stubPort(initial: string, options: { failSave?: string } = {}) {
 
 interface TestStep {
   readonly append?: string
+  readonly deleteToken?: string
+  readonly uninvertible?: boolean
   readonly error?: 'invalid_step' | 'invalid_schema' | 'rebase_failed'
 }
 
@@ -45,6 +47,12 @@ function stepPort() {
     let next = markdown
     for (const step of steps as readonly TestStep[]) {
       if (step.error !== undefined) return { ok: false, kind: step.error }
+      if (typeof step.deleteToken === 'string') {
+        const at = next.lastIndexOf(step.deleteToken)
+        if (at < 0) return { ok: false, kind: 'rebase_failed' }
+        next = next.slice(0, at) + next.slice(at + step.deleteToken.length)
+        continue
+      }
       if (typeof step.append !== 'string') return { ok: false, kind: 'invalid_step' }
       next += step.append
     }
@@ -63,7 +71,22 @@ function stepPort() {
       }
       return apply(current, localSteps)
     },
-    invertSteps: () => null,
+    invertSteps(_markdown, steps) {
+      const inverse: TestStep[] = []
+      for (const step of steps as readonly TestStep[]) {
+        if (step.uninvertible === true) return null
+        if (typeof step.append === 'string') {
+          inverse.unshift({ deleteToken: step.append })
+          continue
+        }
+        if (typeof step.deleteToken === 'string') {
+          inverse.unshift({ append: step.deleteToken })
+          continue
+        }
+        return null
+      }
+      return inverse as unknown as StepBatch
+    },
     markdownToSteps: () => ({ ok: false, kind: 'invalid_step' }),
   }
 
@@ -325,5 +348,146 @@ describe('DocumentSession', () => {
     await expect(session.save()).resolves.toEqual({ ok: true, revision: 1 })
     expect(saved[0]).toContain('comments: .simplemark/abc.json')
     expect(saved[0]).toContain('Alpha changed.')
+  })
+
+  test('reverting the most recent agent transaction restores the document', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+    const applied = session.applySteps({
+      actorId: 'agent',
+      name: 'Append A',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+    expect(applied).toMatchObject({ ok: true, revision: 1 })
+    if (!applied.ok) throw new Error('Expected the agent write to commit')
+
+    const reverted = session.revert(String(applied.revision))
+
+    expect(reverted).toEqual({ ok: true, revision: 2 })
+    expect(session.snapshot()).toEqual({ revision: 2, markdown: 'base', dirty: true })
+  })
+
+  test('reverting an older agent transaction keeps later edits', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+    const first = session.applySteps({
+      actorId: 'agent',
+      name: 'Append A',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+    session.applySteps({
+      actorId: 'human',
+      name: 'Append B',
+      baseVersion: 1,
+      steps: [{ append: 'B' }],
+    })
+    expect(first).toMatchObject({ ok: true, revision: 1 })
+    if (!first.ok) throw new Error('Expected the first write to commit')
+
+    const reverted = session.revert(String(first.revision))
+
+    expect(reverted).toEqual({ ok: true, revision: 3 })
+    expect(session.snapshot()).toEqual({ revision: 3, markdown: 'baseB', dirty: true })
+  })
+
+  test('refuses an unrebasable revert and leaves the document untouched', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+    const first = session.applySteps({
+      actorId: 'agent',
+      name: 'Append A',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+    session.applySteps({
+      actorId: 'human',
+      name: 'Remove A',
+      baseVersion: 1,
+      steps: [{ deleteToken: 'A' }],
+    })
+    expect(first).toMatchObject({ ok: true, revision: 1 })
+    if (!first.ok) throw new Error('Expected the first write to commit')
+    const before = session.snapshot()
+
+    const refused = session.revert(String(first.revision))
+
+    expect(refused).toEqual({ ok: false, reason: 'rebase_failed' })
+    expect(session.snapshot()).toEqual(before)
+  })
+
+  test('refuses revert when a barrier sits between the transaction and now', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+    const first = session.applySteps({
+      actorId: 'agent',
+      name: 'Append A',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+    session.apply({
+      actorId: 'external',
+      name: 'External file import',
+      expectedRevision: 1,
+      markdown: 'replaced',
+    })
+    expect(first).toMatchObject({ ok: true, revision: 1 })
+    if (!first.ok) throw new Error('Expected the first write to commit')
+    const before = session.snapshot()
+
+    const refused = session.revert(String(first.revision))
+
+    expect(refused).toEqual({ ok: false, reason: 'rebase_failed' })
+    expect(session.snapshot()).toEqual(before)
+  })
+
+  test('an unknown transaction id fails as a value rather than throwing', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+    session.applySteps({
+      actorId: 'agent',
+      name: 'Append A',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+    const before = session.snapshot()
+
+    expect(() => session.revert('no-such-id')).not.toThrow()
+    expect(session.revert('no-such-id')).toEqual({ ok: false, reason: 'unknown-id' })
+    expect(session.snapshot()).toEqual(before)
+  })
+
+  test('revert without a step port is refused as a missing capability', async () => {
+    const { port: files } = stubPort('base')
+    const session = await DocumentSession.open(files)
+
+    expect(session.revert('1')).toEqual({ ok: false, reason: 'capability_denied' })
+    expect(session.snapshot()).toEqual({ revision: 0, markdown: 'base', dirty: false })
+  })
+
+  test('a transaction with no inverse cannot be reverted and changes nothing', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+    const applied = session.applySteps({
+      actorId: 'agent',
+      name: 'Opaque write',
+      baseVersion: 0,
+      steps: [{ append: 'A', uninvertible: true }],
+    })
+    expect(applied).toMatchObject({ ok: true, revision: 1 })
+    if (!applied.ok) throw new Error('Expected the opaque write to commit')
+    const before = session.snapshot()
+
+    const refused = session.revert(String(applied.revision))
+
+    expect(refused).toEqual({ ok: false, reason: 'rebase_failed' })
+    expect(session.snapshot()).toEqual(before)
   })
 })

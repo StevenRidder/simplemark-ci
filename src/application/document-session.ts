@@ -81,6 +81,13 @@ export type SaveResult =
   | { readonly ok: true; readonly revision: number }
   | { readonly ok: false; readonly reason: string }
 
+export type RevertResult =
+  | { readonly ok: true; readonly revision: number }
+  | {
+      readonly ok: false
+      readonly reason: 'capability_denied' | 'unknown-id' | 'rebase_failed'
+    }
+
 function cloneStepBatch(batch: StepBatch): StepBatch {
   return structuredClone(batch)
 }
@@ -91,6 +98,8 @@ type AcceptedChange =
       readonly actorId: string
       readonly name: string
       readonly steps: StepBatch
+      /** Inverse against the document immediately before this change. Null when invert failed. */
+      readonly inverse: StepBatch | null
     }
   | {
       readonly kind: 'barrier'
@@ -220,23 +229,47 @@ export class DocumentSession {
 
     if (!result.ok) return { ok: false, reason: result.kind }
 
-    this.markdown = result.markdown
-    this.#revision += 1
-    this.#dirty = true
     const acceptedSteps = cloneStepBatch(result.steps)
-    this.#documents.push(this.markdown)
-    this.#changes.push({
-      kind: 'steps',
-      actorId: transaction.actorId,
-      name: transaction.name,
-      steps: acceptedSteps,
-    })
+    this.#acceptSteps(transaction.actorId, transaction.name, acceptedSteps, result.markdown)
     return {
       ok: true,
       revision: this.#revision,
       rebased,
       steps: cloneStepBatch(acceptedSteps),
     }
+  }
+
+  /**
+   * Undo one named step transaction by applying its inverse over later commits.
+   *
+   * This never restores a saved snapshot: later edits stay unless the inverse
+   * cannot rebase, in which case the document is left untouched.
+   */
+  revert(transactionId: string): RevertResult {
+    if (this.steps === undefined) return { ok: false, reason: 'capability_denied' }
+
+    const changeIndex = this.#changeIndexFor(transactionId)
+    if (changeIndex === undefined) return { ok: false, reason: 'unknown-id' }
+
+    const change = this.#changes[changeIndex]
+    if (change === undefined || change.kind !== 'steps' || change.inverse === null) {
+      return { ok: false, reason: 'rebase_failed' }
+    }
+
+    const later = this.#laterStepBatches(changeIndex)
+    if (later === null) return { ok: false, reason: 'rebase_failed' }
+
+    const afterMarkdown = this.#documents[changeIndex + 1]
+    if (afterMarkdown === undefined) return { ok: false, reason: 'unknown-id' }
+
+    const inverse = cloneStepBatch(change.inverse)
+    const result = later.length === 0
+      ? this.steps.applySteps(this.markdown, inverse)
+      : this.steps.rebaseSteps(afterMarkdown, inverse, later)
+    if (!result.ok) return { ok: false, reason: 'rebase_failed' }
+
+    this.#acceptSteps('activity', `Revert ${change.name}`, cloneStepBatch(result.steps), result.markdown)
+    return { ok: true, revision: this.#revision }
   }
 
   async save(force = false): Promise<SaveResult> {
@@ -289,5 +322,45 @@ export class DocumentSession {
     if (dirty === null) return this.markdown
 
     return emitDocument(baselineMap, dirty)
+  }
+
+  #acceptSteps(
+    actorId: string,
+    name: string,
+    acceptedSteps: StepBatch,
+    nextMarkdown: string,
+  ): void {
+    const inverse = this.steps === undefined
+      ? null
+      : this.steps.invertSteps(this.markdown, acceptedSteps)
+    this.markdown = nextMarkdown
+    this.#revision += 1
+    this.#dirty = true
+    this.#documents.push(this.markdown)
+    this.#changes.push({
+      kind: 'steps',
+      actorId,
+      name,
+      steps: cloneStepBatch(acceptedSteps),
+      inverse: inverse === null ? null : cloneStepBatch(inverse),
+    })
+  }
+
+  #changeIndexFor(transactionId: string): number | undefined {
+    if (!/^[1-9]\d*$/.test(transactionId)) return undefined
+    const revision = Number(transactionId)
+    if (String(revision) !== transactionId) return undefined
+    const index = revision - 1
+    if (index < 0 || index >= this.#changes.length) return undefined
+    return index
+  }
+
+  #laterStepBatches(afterIndex: number): StepBatch[] | null {
+    const batches: StepBatch[] = []
+    for (const change of this.#changes.slice(afterIndex + 1)) {
+      if (change.kind === 'barrier') return null
+      batches.push(change.steps)
+    }
+    return batches
   }
 }

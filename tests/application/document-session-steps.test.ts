@@ -89,4 +89,82 @@ describe('DocumentSession with the real step adapter', () => {
     })).toEqual({ ok: false, reason: 'rebase_failed' })
     expect(session.snapshot()).toEqual(accepted)
   })
+
+  test('reverting the most recent agent transaction restores the document', async () => {
+    const markdown = 'first paragraph\n\nsecond paragraph'
+    const session = await DocumentSession.open(filePort(markdown), undefined, adapter.port)
+    const baseline = adapter.port.applySteps(markdown, [])
+    if (!baseline.ok) throw new Error('Expected an empty baseline apply to succeed')
+    const replacement = markdownSteps(markdown, 'FIRST paragraph', { from: 0, to: 17 })
+
+    const applied = session.applySteps({
+      actorId: 'agent',
+      name: 'Edit first paragraph',
+      baseVersion: 0,
+      steps: replacement,
+    })
+    expect(applied).toMatchObject({ ok: true, revision: 1 })
+    if (!applied.ok) throw new Error('Expected the agent write to commit')
+
+    expect(session.revert(String(applied.revision))).toEqual({ ok: true, revision: 2 })
+    expect(session.snapshot()).toEqual({
+      revision: 2,
+      markdown: baseline.markdown,
+      dirty: true,
+    })
+  })
+
+  test('reverting an older agent transaction keeps a later non-overlapping edit', async () => {
+    const markdown = 'first paragraph\n\nsecond paragraph'
+    const session = await DocumentSession.open(filePort(markdown), undefined, adapter.port)
+    const agent = markdownSteps(markdown, 'FIRST paragraph', { from: 0, to: 17 })
+    const later = markdownSteps(markdown, 'SECOND paragraph', { from: 17, to: 35 })
+
+    const first = session.applySteps({
+      actorId: 'agent',
+      name: 'Edit first paragraph',
+      baseVersion: 0,
+      steps: agent,
+    })
+    expect(session.applySteps({
+      actorId: 'human',
+      name: 'Edit second paragraph',
+      baseVersion: 0,
+      steps: later,
+    })).toMatchObject({ ok: true, revision: 2, rebased: true })
+    expect(first).toMatchObject({ ok: true, revision: 1 })
+    if (!first.ok) throw new Error('Expected the agent write to commit')
+
+    expect(session.revert(String(first.revision))).toEqual({ ok: true, revision: 3 })
+    expect(session.snapshot().markdown).toBe('first paragraph\n\nSECOND paragraph\n')
+    expect(session.snapshot().revision).toBe(3)
+  })
+
+  test('refuses revert when a later deletion destroyed the inverted target', async () => {
+    const markdown = 'remove target\n\nkeep this paragraph'
+    const session = await DocumentSession.open(filePort(markdown), undefined, adapter.port)
+    const agent = markdownSteps(markdown, 'TARGET', { from: 8, to: 14 })
+
+    const first = session.applySteps({
+      actorId: 'agent',
+      name: 'Rename target',
+      baseVersion: 0,
+      steps: agent,
+    })
+    expect(first).toMatchObject({ ok: true, revision: 1 })
+    if (!first.ok) throw new Error('Expected the agent write to commit')
+    const afterAgent = session.snapshot().markdown
+    const paraEnd = afterAgent.indexOf('\n')
+    const laterDeletion = markdownSteps(afterAgent, '', { from: 0, to: paraEnd + 1 })
+    expect(session.applySteps({
+      actorId: 'human',
+      name: 'Delete target',
+      baseVersion: first.revision,
+      steps: laterDeletion,
+    })).toMatchObject({ ok: true })
+    const before = session.snapshot()
+
+    expect(session.revert(String(first.revision))).toEqual({ ok: false, reason: 'rebase_failed' })
+    expect(session.snapshot()).toEqual(before)
+  })
 })

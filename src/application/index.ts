@@ -54,6 +54,7 @@ export type {
   StepTransactionError,
   StepTransactionApplyResult,
   SaveResult,
+  RevertResult,
 } from './document-session.js'
 export { COMMANDS, MENUS, menuCommandIds } from './commands.js'
 export type {

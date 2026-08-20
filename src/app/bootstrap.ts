@@ -829,14 +829,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     // Only a person opens the conversation (ADR-0012). A shell with no agent
     // capability gets no control, rather than a control that does nothing.
     ...(options.agentProvider === undefined ? {} : {
-      onToggleAgent: () => {
-        agentPanel.toggle()
-        chrome.setAgentOpen(agentPanel.isOpen())
-      },
-      onToggleActivity: () => {
-        activityTimeline.toggle()
-        chrome.setActivityOpen(activityTimeline.isOpen())
-      },
+      // One side slot, one occupant. Both panels pin to the same corner at the
+      // same width, so two open at once put one of them on top of the other's
+      // close button — a box with no visible way out.
+      onToggleAgent: () => toggleAgentPanel(),
+      onToggleActivity: () => toggleActivityPanel(),
     }),
     fileName: session.name,
     filePath: options.filePath,
@@ -1029,6 +1026,46 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     }
   })
 
+  /**
+   * The one implementation of each side-panel toggle.
+   *
+   * There were two — the titlebar's and the composition's own surface — and the
+   * mutual-exclusion rule was added to only one of them, so the same action
+   * behaved differently depending on which path reached it. A rule that lives in
+   * one of two copies is a rule that is already broken.
+   */
+  const toggleAgentPanel = (): void => {
+    if (!agentPanel.isOpen()) activityTimeline.close()
+    agentPanel.toggle()
+    chrome.setAgentOpen(agentPanel.isOpen())
+  }
+  const toggleActivityPanel = (): void => {
+    if (!activityTimeline.isOpen()) agentPanel.close()
+    activityTimeline.toggle()
+    chrome.setActivityOpen(activityTimeline.isOpen())
+  }
+
+  /**
+   * Escape closes the open side surface.
+   *
+   * A close button is a target you have to find and hit; Escape is the way out
+   * of a panel that people already try first. Registered on the chrome rather
+   * than the document so it cannot fight the editor's own key handling, and it
+   * closes one surface per press, nearest-first.
+   */
+  const onSidePanelEscape = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape') return
+    if (activityTimeline.isOpen()) {
+      activityTimeline.close()
+      event.stopPropagation()
+      return
+    }
+    if (agentPanel.isOpen()) {
+      agentPanel.close()
+      event.stopPropagation()
+    }
+  }
+
   const noteRailHost = document.createElement('div')
   noteRailHost.className = 'sm-note-rail-host'
   const noteStackHost = document.createElement('div')
@@ -1057,6 +1094,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   documentSurface?.prepend(agentStatus.host)
 
   const agentPanel = createAgentPanel({
+    onClosed: () => chrome.setAgentOpen(false),
     conversation,
     renderMarkdown: (markdown) => stepAdapter.renderMarkdown(markdown),
     onSend: (mode, markdown) => agentController.send(mode, markdown),
@@ -1070,6 +1108,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   // rounded bottom. `.document-surface` is the positioned ancestor that also
   // scopes it to the surface it belongs beside.
   documentSurface?.append(agentPanel.host)
+  chrome.element.addEventListener('keydown', onSidePanelEscape)
 
   /**
    * Where each accepted agent change landed, by transaction id.
@@ -1081,6 +1120,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const agentChangePositions = new Map<string, number>()
 
   const activityTimeline = createActivityTimeline({
+    onClosed: () => chrome.setActivityOpen(false),
     history: () => session.history(),
     humanActor: 'human',
     positionOf: (id) => agentChangePositions.get(id),
@@ -1253,8 +1293,18 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         waitingReattachId = id
         paintNotes()
       },
-      askAgent: (id) => void askAgentForThread(id),
-      sendTurn: (id, mode, body) => void sendThreadTurn(id, mode, body),
+      // `.catch` rather than bare `void`: an unhandled rejection here is a
+      // button that does nothing and says nothing.
+      askAgent: (id) => {
+        askAgentForThread(id).catch((error: unknown) => {
+          chrome.setStatus('error', `Ask agent failed — ${String(error)}`)
+        })
+      },
+      sendTurn: (id, mode, body) => {
+        sendThreadTurn(id, mode, body).catch((error: unknown) => {
+          chrome.setStatus('error', `Could not send — ${String(error)}`)
+        })
+      },
     }, text, waitingReattachId, {
       renderMarkdown: (markdown) => stepAdapter.renderMarkdown(markdown),
       ...(agentBusyThreadId === undefined ? {} : { busyThreadId: agentBusyThreadId }),
@@ -1272,26 +1322,53 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
    */
   async function askAgentForThread(id: string): Promise<void> {
     const thread = noteThreads.find((candidate) => candidate.id === id)
-    if (thread === undefined || thread.anchor === undefined) return
+    if (thread === undefined) return
+    // Every refusal below says so in the thread. Pressing Ask agent and getting
+    // silence is the worst outcome available: there is no way to tell a refusal
+    // from a hang, and nothing on screen to act on.
+    if (thread.anchor === undefined) {
+      await recordThreadReply(id, 'agent', 'This note is not on a passage, so there is nothing to act on.')
+      return
+    }
     const instruction = thread.body.trim()
-    if (instruction === '') return
+    if (instruction === '') {
+      await recordThreadReply(id, 'agent', 'This note is empty. Write what you want changed, then ask again.')
+      return
+    }
 
     const text = editor?.noteDocumentText() ?? session.snapshot().markdown
     const offset = matchAnchor(thread.anchor, text)
     if (offset === undefined) {
       // An orphan has no passage to scope to, and guessing one is exactly what
-      // the anchor rules forbid. The rail already says the note is adrift.
-      await recordThreadReply(thread.id, 'agent', 'This note is no longer on a passage, so there is nothing to scope to.')
+      // the anchor rules forbid.
+      await recordThreadReply(id, 'agent', 'This note is no longer on a passage, so there is nothing to scope to.')
       return
     }
     const range = editor?.documentRangeAt(offset, thread.anchor.quote.length)
-    if (range === undefined) return
+    if (range === undefined) {
+      await recordThreadReply(
+        id,
+        'agent',
+        'The passage this note is on could not be located in the open document.',
+      )
+      return
+    }
 
     agentBusyThreadId = thread.id
     paintNotes()
-    const answer = await agentController.runForPassage(instruction, range)
-    agentBusyThreadId = undefined
-    await recordThreadReply(thread.id, 'agent', answer)
+    try {
+      const answer = await agentController.runForPassage(instruction, range)
+      await recordThreadReply(id, 'agent', answer)
+    } catch (error) {
+      // An unguarded rejection here is invisible: the busy line clears and
+      // nothing explains why, which is the failure mode this whole branch was
+      // opened to remove.
+      const message = error instanceof Error ? error.message : String(error)
+      await recordThreadReply(id, 'agent', `Could not run — ${message}`)
+    } finally {
+      agentBusyThreadId = undefined
+      paintNotes()
+    }
   }
 
   /** A turn typed into the passage conversation. `redirect` also fences. */
@@ -1303,17 +1380,24 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     await recordThreadReply(id, 'local', body, mode)
     if (mode === 'note') return
     const thread = noteThreads.find((candidate) => candidate.id === id)
-    if (thread === undefined || thread.anchor === undefined) return
+    if (thread === undefined) return
     const text = editor?.noteDocumentText() ?? session.snapshot().markdown
-    const offset = matchAnchor(thread.anchor, text)
-    const range = offset === undefined
+    const offset = thread.anchor === undefined ? undefined : matchAnchor(thread.anchor, text)
+    const range = offset === undefined || thread.anchor === undefined
       ? undefined
       : editor?.documentRangeAt(offset, thread.anchor.quote.length)
     agentBusyThreadId = id
     paintNotes()
-    const answer = await agentController.redirectForPassage(body, range)
-    agentBusyThreadId = undefined
-    await recordThreadReply(id, 'agent', answer)
+    try {
+      const answer = await agentController.redirectForPassage(body, range)
+      await recordThreadReply(id, 'agent', answer)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      await recordThreadReply(id, 'agent', `Could not run — ${message}`)
+    } finally {
+      agentBusyThreadId = undefined
+      paintNotes()
+    }
   }
 
   async function recordThreadReply(
@@ -1593,10 +1677,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     steps: stepAdapter.port,
     notes,
     agent: {
-      toggle: () => {
-        agentPanel.toggle()
-        chrome.setAgentOpen(agentPanel.isOpen())
-      },
+      toggle: () => toggleAgentPanel(),
       isPanelOpen: () => agentPanel.isOpen(),
       send: (mode: ComposerMode, markdown: string) => agentController.send(mode, markdown),
       pause: () => agentController.pause(),
@@ -1604,10 +1685,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       stop: () => agentController.stop(),
       isRunning: () => agentController.isRunning(),
       isFollowing: () => agentStatus.isFollowing(),
-      toggleActivity: () => {
-        activityTimeline.toggle()
-        chrome.setActivityOpen(activityTimeline.isOpen())
-      },
+      toggleActivity: () => toggleActivityPanel(),
       isActivityOpen: () => activityTimeline.isOpen(),
       setProviderForTest: (provider) => {
         agentProvider = provider === undefined ? undefined : () => provider
@@ -1618,6 +1696,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     },
     async destroy() {
       clearTimeout(saveTimer)
+      chrome.element.removeEventListener('keydown', onSidePanelEscape)
       stopRevertMirror()
       agentController.dispose()
       await persistDerivedAnchors()

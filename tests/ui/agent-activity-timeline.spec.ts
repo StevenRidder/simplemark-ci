@@ -199,3 +199,54 @@ test('the agent’s scope is visible while it works, and gone when it stops', as
   // A finished run holds nothing, so nothing claims it does.
   await expect(page.locator('.sm-agent-scope')).toHaveCount(0)
 })
+
+test('Escape closes the open side panel, and only one is ever open', async ({ page }) => {
+  await noteOnPassage(page, 'Tighten this.')
+
+  // Both pin to the same corner at the same width, so two at once would put one
+  // on top of the other's close button — a box with no visible way out.
+  await page.evaluate(() => window.simplemark!.agent.toggle())
+  await expect(page.locator('.sm-agent-panel')).toHaveCount(1)
+  await page.evaluate(() => window.simplemark!.agent.toggleActivity())
+  await expect(page.locator('.sm-activity')).toHaveCount(1)
+  await expect(page.locator('.sm-agent-panel')).toHaveCount(0)
+
+  // Escape is the way out that needs no aiming.
+  await page.locator('.milkdown .ProseMirror').press('Escape')
+  await expect(page.locator('.sm-activity')).toHaveCount(0)
+
+  await page.evaluate(() => window.simplemark!.agent.toggle())
+  await expect(page.locator('.sm-agent-panel')).toHaveCount(1)
+  await page.locator('.milkdown .ProseMirror').press('Escape')
+  await expect(page.locator('.sm-agent-panel')).toHaveCount(0)
+  expect(await page.evaluate(() => window.simplemark!.agent.isPanelOpen())).toBe(false)
+})
+
+test('Ask agent says why when it will not run', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await expect(page.locator(editor)).toBeVisible()
+  await page.getByRole('button', { name: 'New note' }).click()
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await page.keyboard.type(PASSAGE)
+  await page.evaluate(() => window.simplemark!.flushPendingChanges())
+
+  // An empty note body: nothing to instruct with. Pressing Ask agent used to
+  // return in silence, which is indistinguishable from a hang.
+  await page.evaluate((quote) => window.simplemark!.notes.setThreadsForTest([
+    {
+      id: 'empty',
+      noteKey: 'n',
+      author: 'local',
+      createdAt: 'x',
+      body: '   ',
+      anchor: { quote, prefix: '', suffix: '', blockIndex: 1 },
+      state: 'open',
+    },
+  ]), PASSAGE)
+
+  await page.locator('.sm-note-rail [data-thread="empty"] [data-action="ask-agent"]').click()
+  await expect(page.locator('.sm-note-rail [data-thread="empty"] .sm-note-rail-body[data-author="agent"]'))
+    .toContainText('This note is empty')
+})

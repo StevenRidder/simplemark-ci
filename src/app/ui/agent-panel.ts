@@ -34,6 +34,8 @@ export interface AgentQuestion {
 }
 
 export interface AgentPanelOptions {
+  /** Told whenever the panel closes itself, so a toggle can stay truthful. */
+  readonly onClosed?: () => void
   readonly conversation: AgentConversation
   /** The document's own Markdown pipeline (`StepDocumentAdapter.renderMarkdown`). */
   readonly renderMarkdown: (markdown: string) => DocumentFragment
@@ -381,6 +383,7 @@ export function createAgentPanel(options: AgentPanelOptions): AgentPanel {
     editorFocused = false
     // Absent, not hidden: nothing named `sm-agent-panel` survives a close.
     host.replaceChildren()
+    options.onClosed?.()
   }
 
   return {

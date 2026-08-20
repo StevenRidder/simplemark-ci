@@ -39,6 +39,8 @@ export interface ActivityTimeline {
 }
 
 export interface ActivityTimelineOptions extends ActivityTimelineActions {
+  /** Told whenever the timeline closes itself, so a toggle can stay truthful. */
+  readonly onClosed?: () => void
   /** The accepted-change log, newest last. */
   readonly history: () => readonly AcceptedChangeRecord[]
   /** Which actor is this person, so their own edits read as theirs. */
@@ -195,6 +197,7 @@ export function createActivityTimeline(options: ActivityTimelineOptions): Activi
     open = false
     // Absent, not hidden: `DESIGN.md` §9 forbids a resident activity rail.
     host.replaceChildren()
+    options.onClosed?.()
   }
 
   return {

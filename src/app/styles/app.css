@@ -5724,3 +5724,35 @@ section.editor::-webkit-scrollbar {
     padding-top: 52px;
   }
 }
+
+/* The wedge banner (BUG-13): loud, top of the window, with the recovery. */
+.sm-wedge-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #8a2f20;
+  color: #fff;
+  font-size: 13px;
+}
+
+.sm-wedge-banner button {
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 7px;
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sm-wedge-banner [data-action='wedge-restart'] {
+  background: rgba(255, 255, 255, 0.14);
+  font-weight: 600;
+}
+
+.sm-wedge-banner [data-action='wedge-dismiss'] {
+  margin-left: auto;
+  border: 0;
+  font-size: 15px;
+}

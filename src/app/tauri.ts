@@ -1353,6 +1353,9 @@ async function mount(
     agentProvider: () =>
       isAgentConfigured(loadAgentConnection(window.localStorage)) ? agentPort : undefined,
     onOpenSettings: () => options.settingsPanel.open(),
+    // The wedge banner's Restart. A full relaunch, because the wedge lives in
+    // the WebContent process and reload does not reliably leave it.
+    onRelaunch: () => void invoke('relaunch_app'),
     agentEdits: options.agentEdits,
     // Phase 1 hands over the documented install rather than performing it
     // (docs/UPDATE-NOTIFICATION.md §6). One-click needs a signing key, a

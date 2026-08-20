@@ -52,6 +52,8 @@ use tauri_plugin_dialog::DialogExt;
 #[cfg_attr(mobile, allow(dead_code))]
 mod app_icons;
 #[cfg(target_os = "macos")]
+#[cfg(target_os = "macos")]
+mod macos_ax_guard;
 mod macos_context_menu;
 #[cfg(target_os = "macos")]
 mod macos_note_navigation;
@@ -327,6 +329,14 @@ async fn ai_responses(
         return Err(format!("{url} returned {status}: {text}"));
     }
     Ok(text)
+}
+
+/// The wedge banner's Restart (BUG-13). A full relaunch, because the wedge
+/// lives in the WebContent process and an in-place reload does not reliably
+/// leave that process behind.
+#[tauri::command]
+fn relaunch_app(app: tauri::AppHandle) {
+    app.restart();
 }
 
 fn models_url(base_url: &str) -> String {
@@ -2433,6 +2443,7 @@ pub fn run() {
             ai_chat_completion,
             ai_chat_completion_json,
             ai_responses,
+            relaunch_app,
             ai_list_models,
             enable_page_magnification,
             set_page_magnification,
@@ -2451,6 +2462,13 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     macos_context_menu::install(app.handle())
         .expect("SimpleMark failed to install the native context menu bridge");
+
+    // Losing the guard costs exactly the guard: the app still runs, and says
+    // why the defense is absent, rather than dying over it.
+    #[cfg(target_os = "macos")]
+    if let Err(error) = macos_ax_guard::install() {
+        eprintln!("SimpleMark could not install the accessibility guard: {error}");
+    }
 
     #[cfg(target_os = "macos")]
     macos_note_navigation::install(app.handle());

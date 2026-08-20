@@ -34,6 +34,7 @@ import { AgentConversation } from './agent-conversation.js'
 import type { ComposerMode } from './agent-conversation.js'
 import { createAgentController } from './agent-controller.js'
 import { createAgentEditTally } from './agent-edit-overlay.js'
+import { createWedgeDetector } from './wedge-detector.js'
 import type { AgentEditTally } from './agent-edit-overlay.js'
 import { NEED_SELECTION } from '../adapters/editor/note-capture.js'
 import { LocalThreadStore } from '../adapters/filesystem/local-thread-store.js'
@@ -164,6 +165,8 @@ export interface AppComposition {
     setProviderForTest(provider: AgentProviderPort | undefined): void
     /** Agent changes counted against each note this session. */
     editsForTest(): Readonly<Record<string, number>>
+    /** Shows the wedge banner without starving anything (BUG-13 spec). */
+    triggerWedgeBannerForTest(): void
   }
   /** Tears down the editor and presentation observers before remounting. */
   destroy(): Promise<void>
@@ -309,6 +312,11 @@ export interface ComposeOptions {
   readonly agentProvider?: () => AgentProviderPort | undefined
   /** Opens the platform's Settings surface from the panel's own prompt. */
   readonly onOpenSettings?: () => void
+  /**
+   * Relaunches the app, for the wedge banner's Restart (BUG-13). Absent falls
+   * back to reloading the page, which is what the browser shell can do.
+   */
+  readonly onRelaunch?: () => void
   /**
    * Agent-edit counts per note, owned by the entrypoint so they survive the
    * remount that every note open performs. Absent gets a per-mount tally, which
@@ -1086,6 +1094,57 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     // without knowing they did. Its own × is the way to dismiss it.
   }
 
+  // ---- the wedge detector (BUG-13) ----
+  // The renderer can starve behind an external accessibility client's queries
+  // for as long as the app lives, with nothing on screen saying so. The page
+  // can observe its own starvation — rAF frames arriving seconds apart on an
+  // idle, visible document — and must say so out loud, with the recovery
+  // attached. A wedge only a diagnostician can see is a hidden failure.
+  const wedgeDetector = createWedgeDetector()
+  let wedgeBanner: HTMLElement | undefined
+  let wedgeDismissedAt = 0
+  const showWedgeBanner = (): void => {
+    if (wedgeBanner !== undefined) return
+    if (Date.now() - wedgeDismissedAt < 300_000) return
+    const banner = document.createElement('div')
+    banner.className = 'sm-wedge-banner'
+    banner.setAttribute('role', 'alert')
+    const text = document.createElement('span')
+    text.textContent =
+      'Something outside SimpleMark is overloading this document — the window may be freezing. Restarting clears it.'
+    const restart = document.createElement('button')
+    restart.type = 'button'
+    restart.dataset['action'] = 'wedge-restart'
+    restart.textContent = 'Restart SimpleMark'
+    restart.addEventListener('click', () => {
+      if (options.onRelaunch !== undefined) options.onRelaunch()
+      else window.location.reload()
+    })
+    const dismiss = document.createElement('button')
+    dismiss.type = 'button'
+    dismiss.dataset['action'] = 'wedge-dismiss'
+    dismiss.setAttribute('aria-label', 'Dismiss')
+    dismiss.textContent = '×'
+    dismiss.addEventListener('click', () => {
+      wedgeDismissedAt = Date.now()
+      wedgeDetector.reset()
+      banner.remove()
+      wedgeBanner = undefined
+    })
+    banner.append(text, restart, dismiss)
+    chrome.element.prepend(banner)
+    wedgeBanner = banner
+  }
+  let wedgeRaf = 0
+  const wedgeFrame = (now: number): void => {
+    if (wedgeDetector.observeFrame(now, !document.hidden)) showWedgeBanner()
+    wedgeRaf = requestAnimationFrame(wedgeFrame)
+  }
+  wedgeRaf = requestAnimationFrame(wedgeFrame)
+  const onWedgeInput = (): void => wedgeDetector.observeInput(performance.now())
+  chrome.element.addEventListener('keydown', onWedgeInput, true)
+  chrome.element.addEventListener('pointerdown', onWedgeInput, true)
+
   const noteRailHost = document.createElement('div')
   noteRailHost.className = 'sm-note-rail-host'
   const noteStackHost = document.createElement('div')
@@ -1747,9 +1806,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         paintNotes()
       },
       editsForTest: () => Object.fromEntries(agentEdits.all()),
+      /** Shows the wedge banner without starving anything (BUG-13 spec). */
+      triggerWedgeBannerForTest: () => showWedgeBanner(),
     },
     async destroy() {
       clearTimeout(saveTimer)
+      cancelAnimationFrame(wedgeRaf)
+      chrome.element.removeEventListener('keydown', onWedgeInput, true)
+      chrome.element.removeEventListener('pointerdown', onWedgeInput, true)
       chrome.element.removeEventListener('keydown', onSidePanelEscape)
       stopRevertMirror()
       agentController.dispose()

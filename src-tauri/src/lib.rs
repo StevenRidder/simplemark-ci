@@ -54,6 +54,8 @@ mod app_icons;
 #[cfg(target_os = "macos")]
 #[cfg(target_os = "macos")]
 mod macos_ax_guard;
+#[cfg(target_os = "macos")]
+mod macos_ax_privacy;
 mod macos_context_menu;
 #[cfg(target_os = "macos")]
 mod macos_note_navigation;
@@ -2479,6 +2481,25 @@ pub fn run() {
     }
 
     app.run(|_app, _event| {
+        // BUG-14: without this, an external accessibility client on some
+        // machines re-reads the whole document with spelling annotation on
+        // every keystroke, freezing typing. Ready is the first moment the
+        // window exists; losing the defense costs the defense, never the app.
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Ready = _event {
+            match _app.get_webview_window("main") {
+                Some(window) => {
+                    if let Err(error) = window.with_webview(|webview| {
+                        if let Err(error) = macos_ax_privacy::install(webview.inner().cast()) {
+                            eprintln!("SimpleMark could not hide the web view from accessibility: {error}");
+                        }
+                    }) {
+                        eprintln!("SimpleMark could not reach the web view for the accessibility override: {error}");
+                    }
+                }
+                None => eprintln!("SimpleMark could not find the main window for the accessibility override"),
+            }
+        }
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         if let RunEvent::Opened { urls } = _event {
             queue_opened_notes(_app, &urls);

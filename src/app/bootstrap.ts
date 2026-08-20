@@ -1387,6 +1387,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         if (thread === undefined) return
         void store.save(resolveThread(thread)).then(() => paintNotes())
       },
+      reopen: (id) => {
+        waitingReattachId = undefined
+        const thread = noteThreads.find((candidate) => candidate.id === id)
+        if (thread === undefined) return
+        void store.save({ ...thread, state: 'open' }).then(() => paintNotes())
+      },
       detach: (id) => {
         waitingReattachId = undefined
         const thread = noteThreads.find((candidate) => candidate.id === id)
@@ -1583,6 +1589,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
           degradedKey: noteKeyForPath,
           onSaved: () => paintNotes(),
           onNeedSelection: () => chrome.setStatus('error', NEED_SELECTION),
+          onSaveFailed: (message) => chrome.setStatus('error', `Could not save the note — ${message}`),
           onIdentityWritten: (markdown) => {
             session.adoptDiskWrite(markdown)
             editor.adoptFrontMatter(markdown)

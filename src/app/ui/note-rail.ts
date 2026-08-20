@@ -1,3 +1,4 @@
+import { makeDraggable } from '../../adapters/editor/draggable.js'
 import { hasAgentTurn, matchAnchor, threadTurns } from '../../domain/index.js'
 import type { Thread } from '../../domain/index.js'
 
@@ -22,6 +23,8 @@ import type { Thread } from '../../domain/index.js'
 
 export interface NoteRailActions {
   readonly resolve: (id: string) => void
+  /** Brings a resolved thread back as an open note. */
+  readonly reopen?: (id: string) => void
   readonly detach: (id: string) => void
   readonly remove: (id: string) => void
   readonly reattach: (id: string) => void
@@ -58,7 +61,8 @@ export function renderNoteRail(
 ): void {
   host.replaceChildren()
   const open = threads.filter((thread) => thread.state === 'open')
-  if (open.length === 0) return
+  const resolved = threads.filter((thread) => thread.state === 'resolved')
+  if (open.length === 0 && (resolved.length === 0 || actions.reopen === undefined)) return
 
   const sorted = [...open].sort((left, right) => {
     const a = left.anchor?.blockIndex
@@ -172,6 +176,33 @@ export function renderNoteRail(
     rail.append(row)
   }
 
+  if (resolved.length > 0 && actions.reopen !== undefined) {
+    // Google Docs keeps resolved comments in a history you can reopen from;
+    // notes that vanish for good the moment Resolve is pressed read as data
+    // loss, and were reported as exactly that.
+    const section = document.createElement('details')
+    section.className = 'sm-note-rail-resolved'
+    const summary = document.createElement('summary')
+    summary.textContent = resolved.length === 1 ? '1 resolved note' : `${resolved.length} resolved notes`
+    section.append(summary)
+    for (const thread of resolved) {
+      const row = document.createElement('div')
+      row.className = 'sm-note-rail-resolved-row'
+      row.dataset['thread'] = thread.id
+      const body = document.createElement('p')
+      body.textContent = thread.body.trim() === '' ? '(empty note)' : thread.body
+      const reopen = document.createElement('button')
+      reopen.type = 'button'
+      reopen.dataset['action'] = 'reopen'
+      reopen.textContent = 'Reopen'
+      reopen.title = 'Bring this note back to the passage it was on.'
+      reopen.addEventListener('click', () => actions.reopen!(thread.id))
+      row.append(body, reopen)
+      section.append(row)
+    }
+    rail.append(section)
+  }
+
   host.append(rail)
 }
 
@@ -195,6 +226,7 @@ export function renderNoteStack(host: HTMLElement, threads: readonly Thread[], o
     stack.append(item)
   }
 
+  makeDraggable(stack)
   host.append(stack)
   if (origin === undefined) return
   const hostBox = host.getBoundingClientRect()

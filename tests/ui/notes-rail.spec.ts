@@ -41,7 +41,7 @@ test('an unmatched note is listed as an orphan with its original quote', async (
   await expect(page.locator('.sm-note-anchor')).toHaveCount(0)
 })
 
-test('resolving removes the note from the rail and writes nothing', async ({ page }) => {
+test('resolving moves the note to the resolved history and writes nothing', async ({ page }) => {
   await page.evaluate((quote) => window.simplemark!.notes.setThreadsForTest([
     { id: 't1', noteKey: 'n', author: 'local', createdAt: '', body: 'done with this',
       anchor: { quote, prefix: '', suffix: '', blockIndex: 0 }, state: 'open' },
@@ -52,7 +52,11 @@ test('resolving removes the note from the rail and writes nothing', async ({ pag
   await page.locator('.sm-note-rail [data-action="resolve"]').first().click()
 
   await expect(page.locator('.sm-note-anchor')).toHaveCount(0)
-  await expect(page.locator('.sm-note-rail')).toHaveCount(0)
+  // Not gone — resolved notes keep a way back (the reported data-loss was
+  // exactly a Resolve with no Reopen). The open-note rows are gone; the
+  // resolved history remains.
+  await expect(page.locator('.sm-note-rail article')).toHaveCount(0)
+  await expect(page.locator('.sm-note-rail-resolved')).toContainText('1 resolved note')
   const after = await page.evaluate(() => window.simplemark!.editor.serialize())
   expect(after).toBe(before)
 })

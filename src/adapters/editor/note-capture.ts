@@ -1,3 +1,4 @@
+import { makeDraggable } from './draggable.js'
 import type { EditorView } from '@milkdown/kit/prose/view'
 
 import type { NoteIdentity, ThreadStore } from '../../application/index.js'
@@ -23,6 +24,13 @@ export interface NoteCaptureDeps {
   readonly degradedKey: (handle: string) => string
   readonly onSaved: () => void
   readonly onNeedSelection: () => void
+  /**
+   * A note that could not be saved must say so. The composer only opens after
+   * the thread persists, so a swallowed failure here looked like the button
+   * doing nothing at all — or worse, like a note that existed until the app
+   * closed.
+   */
+  readonly onSaveFailed?: (message: string) => void
   /** Front matter written by ensureId, so the next save keeps the comments link. */
   readonly onIdentityWritten?: (markdown: string) => void
 }
@@ -114,6 +122,8 @@ export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): Not
 
     const keyboardOpen = host.closest('.window')?.classList.contains('keyboard-open') === true
     panel.dataset['placement'] = keyboardOpen ? 'keyboard' : 'caret'
+    // A phone's composer is the keyboard accessory: docked, not a window.
+    if (!keyboardOpen) makeDraggable(panel)
     if (!keyboardOpen) {
       const coords = view.coordsAtPos(from)
       const hostBox = host.getBoundingClientRect()
@@ -178,6 +188,8 @@ export function installNoteCapture(view: EditorView, deps: NoteCaptureDeps): Not
       await deps.store.save(thread)
       deps.onSaved()
       openComposer(thread, from)
+    } catch (error) {
+      deps.onSaveFailed?.(error instanceof Error ? error.message : String(error))
     } finally {
       busy = false
     }
@@ -211,6 +223,7 @@ function promptUnwritable(view: EditorView): Promise<boolean> {
     panel.className = 'sm-note-unwritable'
     panel.setAttribute('role', 'dialog')
     panel.setAttribute('aria-label', 'File is read-only')
+    makeDraggable(panel)
 
     const body = document.createElement('p')
     body.textContent = "This file is read-only, so notes on it won't survive a rename."

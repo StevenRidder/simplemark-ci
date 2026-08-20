@@ -5640,3 +5640,87 @@ section.editor::-webkit-scrollbar {
   font-size: 10px;
   color: var(--ink-3);
 }
+
+/* A close control on the document-information panel (AGENT-13). */
+.info-panel-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.info-panel-close:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.info-panel-close svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* A refusal is readable, then dismissable with a click. */
+.status[data-state='error'] {
+  cursor: pointer;
+}
+
+/* The notes rail's own dismiss (AGENT-13). */
+.sm-note-rail-hide {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sm-note-rail-hide:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.sm-note-rail {
+  /* Room for the dismiss control above the first note. */
+  padding-top: 24px;
+}
+
+/*
+ * On a phone every rail action is a 44pt target, this one included.
+ *
+ * Shipped at 20px and an existing spec caught it. The rail is a bottom sheet
+ * there and a 20px dismiss beside 44pt buttons is the control people miss and
+ * then hit something else instead.
+ */
+@media (max-width: 620px) {
+  .sm-note-rail-hide {
+    top: 6px;
+    right: 8px;
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+
+  .sm-note-rail {
+    padding-top: 52px;
+  }
+}

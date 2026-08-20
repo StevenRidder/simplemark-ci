@@ -1035,12 +1035,21 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
    * one of two copies is a rule that is already broken.
    */
   const toggleAgentPanel = (): void => {
-    if (!agentPanel.isOpen()) activityTimeline.close()
+    if (!agentPanel.isOpen()) {
+      activityTimeline.close()
+      // The document-information panel shares the corner too, and it was left
+      // out of this rule — which is how Statistics ended up sitting on top of
+      // another panel, burying its close control.
+      chrome.closeInfoTab()
+    }
     agentPanel.toggle()
     chrome.setAgentOpen(agentPanel.isOpen())
   }
   const toggleActivityPanel = (): void => {
-    if (!activityTimeline.isOpen()) agentPanel.close()
+    if (!activityTimeline.isOpen()) {
+      agentPanel.close()
+      chrome.closeInfoTab()
+    }
     activityTimeline.toggle()
     chrome.setActivityOpen(activityTimeline.isOpen())
   }
@@ -1062,6 +1071,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     }
     if (agentPanel.isOpen()) {
       agentPanel.close()
+      event.stopPropagation()
+      return
+    }
+    // The rail last, because it is the one a reader is least likely to mean by
+    // "get this off my screen" — and it comes back when a note changes.
+    if (noteRailHost.childElementCount > 0) {
+      noteRailHidden = true
+      noteRailHost.replaceChildren()
       event.stopPropagation()
     }
   }
@@ -1191,6 +1208,13 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   let waitingReattachId: string | undefined
   /** The thread whose passage the agent is working on, for the rail's own line. */
   let agentBusyThreadId: string | undefined
+  /**
+   * Whether the reader has hidden the notes rail.
+   *
+   * Reset whenever the note set changes, so hiding is a dismissal of what is on
+   * screen now rather than a preference that silently swallows the next note.
+   */
+  let noteRailHidden = false
 
   const closeNoteStack = (): void => {
     noteStackHost.replaceChildren()
@@ -1260,8 +1284,27 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     void store.save({ ...thread, anchor }).then(() => paintNotes())
   }
 
+  /** Note ids and turn counts the rail last painted, to notice a real change. */
+  let paintedNoteSignature = ''
+
   paintNotes = (): void => {
     if (editor === undefined) return
+    // Hiding dismisses what is on screen now. A note arriving, resolving, or
+    // gaining a turn is new information, so it brings the rail back rather than
+    // being swallowed by an earlier dismissal.
+    const signature = noteThreads
+      .filter((thread) => thread.state === 'open')
+      .map((thread) => `${thread.id}:${thread.replies?.length ?? 0}`)
+      .sort()
+      .join('|')
+    if (signature !== paintedNoteSignature) {
+      paintedNoteSignature = signature
+      noteRailHidden = false
+    }
+    if (noteRailHidden) {
+      noteRailHost.replaceChildren()
+      return
+    }
     const derived = editor.currentNoteAnchors()
     noteThreads = noteThreads.map((thread) => {
       if (thread.state !== 'open') return thread
@@ -1308,6 +1351,10 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     }, text, waitingReattachId, {
       renderMarkdown: (markdown) => stepAdapter.renderMarkdown(markdown),
       ...(agentBusyThreadId === undefined ? {} : { busyThreadId: agentBusyThreadId }),
+      onHide: () => {
+        noteRailHidden = true
+        noteRailHost.replaceChildren()
+      },
     })
   }
 

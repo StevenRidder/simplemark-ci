@@ -336,6 +336,8 @@ export interface WindowChrome {
   setAgentOpen(open: boolean): void
   /** Reflects whether the Activity timeline is open on its control. */
   setActivityOpen(open: boolean): void
+  /** Closes the document-information panel, whichever tab it is showing. */
+  closeInfoTab(): void
   toggleHistoryNavigation(): void
   historyNavigationVisible(): boolean
   /**
@@ -490,6 +492,19 @@ function createInfoPanel(
   const heading = document.createElement('div')
   heading.className = 'info-panel-title'
 
+  // A close control on the panel itself. Re-pressing the titlebar button was
+  // the only way out, which is a target you have to remember rather than see —
+  // and a panel that lands on top of another one buries the other's controls,
+  // so "press the thing that opened it" is not always available.
+  const closePanel = document.createElement('button')
+  closePanel.type = 'button'
+  closePanel.className = 'info-panel-close'
+  closePanel.dataset['action'] = 'close-info'
+  closePanel.setAttribute('aria-label', 'Close document information')
+  closePanel.title = 'Close'
+  closePanel.innerHTML = tablerIcon('x')
+  closePanel.addEventListener('click', () => close())
+
   const tabs = document.createElement('div')
   tabs.className = 'info-panel-tabs'
   tabs.setAttribute('role', 'tablist')
@@ -497,7 +512,7 @@ function createInfoPanel(
   const body = document.createElement('div')
   body.className = 'info-panel-body'
   body.setAttribute('role', 'tabpanel')
-  element.append(heading, tabs, body)
+  element.append(heading, closePanel, tabs, body)
 
   let current: InfoTab | null = null
 
@@ -1646,6 +1661,15 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   status.dataset['state'] = 'saved'
   status.textContent = 'Saved'
   status.title = 'Saved'
+  // A refusal stays until it is read, and then has to be dismissable. Parked
+  // indefinitely it becomes a permanent error banner reporting something that
+  // happened minutes ago.
+  status.addEventListener('click', () => {
+    if (status.dataset['state'] !== 'error') return
+    status.dataset['state'] = 'saved'
+    status.textContent = 'Saved'
+    status.title = 'Saved'
+  })
   right.append(status)
 
   /**
@@ -3303,6 +3327,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     toggleStylesBar,
     stylesBarVisible: () => !stylesBar.hidden,
     toggleInfoTab: (tab) => infoPanel.toggle(tab),
+    closeInfoTab: () => infoPanel.close(),
     infoTab: () => infoPanel.tab(),
     openInfoTab: (tab) => infoPanel.open(tab),
     openContents: () => infoPanel.open('contents'),

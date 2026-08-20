@@ -237,3 +237,63 @@ test('Ask agent says why when it will not run', async ({ page }) => {
   await expect(page.locator('.sm-note-rail [data-thread="t1"] .sm-note-rail-body[data-author="agent"]'))
     .toContainText('No document agent is configured')
 })
+
+test('every side panel can be closed, and none buries another', async ({ page }) => {
+  await noteOnPassage(page, 'Tighten this.')
+
+  // The notes rail has its own dismiss. It is conditional, not permanent — but
+  // "conditional on something being unresolved" is not the same as dismissable.
+  await expect(page.locator('.sm-note-rail')).toHaveCount(1)
+  await page.locator('[data-action="hide-rail"]').click()
+  await expect(page.locator('.sm-note-rail')).toHaveCount(0)
+
+  // Document information has a close control on the panel, not only the
+  // titlebar button that opened it.
+  await page.evaluate(() => window.simplemark!.run('toggleStatistics'))
+  await expect(page.locator('.info-panel')).toBeVisible()
+  await page.locator('[data-action="close-info"]').click()
+  await expect(page.locator('.info-panel')).toBeHidden()
+
+  // Opening a side surface closes the others: they share one corner at one
+  // width, and two at once put one on top of the other's controls.
+  await page.evaluate(() => window.simplemark!.run('toggleStatistics'))
+  await expect(page.locator('.info-panel')).toBeVisible()
+  await page.evaluate(() => window.simplemark!.agent.toggle())
+  await expect(page.locator('.sm-agent-panel')).toHaveCount(1)
+  await expect(page.locator('.info-panel')).toBeHidden()
+
+  await page.evaluate(() => window.simplemark!.agent.toggleActivity())
+  await expect(page.locator('.sm-activity')).toHaveCount(1)
+  await expect(page.locator('.sm-agent-panel')).toHaveCount(0)
+})
+
+test('a note changing brings a hidden rail back', async ({ page }) => {
+  await noteOnPassage(page, 'Tighten this.')
+  await page.locator('[data-action="hide-rail"]').click()
+  await expect(page.locator('.sm-note-rail')).toHaveCount(0)
+
+  // Hiding dismisses what is on screen now. A new note is new information and
+  // must not be swallowed by an earlier dismissal.
+  await page.evaluate((quote) => window.simplemark!.notes.setThreadsForTest([
+    {
+      id: 't1',
+      noteKey: 'n',
+      author: 'local',
+      createdAt: 'x',
+      body: 'Tighten this.',
+      anchor: { quote, prefix: '', suffix: '', blockIndex: 1 },
+      state: 'open',
+    },
+    {
+      id: 't2',
+      noteKey: 'n',
+      author: 'local',
+      createdAt: 'y',
+      body: 'And check this claim.',
+      anchor: { quote: 'Alpha holds the opening claim.', prefix: '', suffix: '', blockIndex: 0 },
+      state: 'open',
+    },
+  ]), PASSAGE)
+  await expect(page.locator('.sm-note-rail')).toHaveCount(1)
+  await expect(page.locator('.sm-note-rail [data-thread]')).toHaveCount(2)
+})

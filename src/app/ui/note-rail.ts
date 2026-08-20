@@ -36,6 +36,16 @@ export interface NoteRailOptions {
   readonly renderMarkdown?: (markdown: string) => DocumentFragment
   /** The thread whose passage an agent is working on right now. */
   readonly busyThreadId?: string
+  /**
+   * Hides the rail until the notes change.
+   *
+   * The rail is conditional, not permanent (ADR-0007) — but "conditional on
+   * something being unresolved" is not the same as dismissable, and a reader
+   * with a note they are not ready to resolve had no way to get the rail out of
+   * the way. Absent leaves no control, for a caller with nowhere to keep the
+   * state.
+   */
+  readonly onHide?: () => void
 }
 
 export function renderNoteRail(
@@ -62,6 +72,18 @@ export function renderNoteRail(
   const rail = document.createElement('aside')
   rail.className = 'sm-note-rail'
   rail.setAttribute('aria-label', 'Unresolved notes')
+
+  if (options.onHide !== undefined) {
+    const hide = document.createElement('button')
+    hide.type = 'button'
+    hide.className = 'sm-note-rail-hide'
+    hide.dataset['action'] = 'hide-rail'
+    hide.setAttribute('aria-label', 'Hide notes')
+    hide.title = 'Hide notes — they come back when a note changes'
+    hide.textContent = '×'
+    hide.addEventListener('click', () => options.onHide?.())
+    rail.append(hide)
+  }
 
   for (const thread of sorted) {
     const matched =

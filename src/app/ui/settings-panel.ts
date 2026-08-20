@@ -1,7 +1,7 @@
 import type { ModelListTransport } from '../../adapters/ai/openai-compatible-diagram-fix.js'
 import { listModels } from '../../adapters/ai/openai-compatible-diagram-fix.js'
+import { AGENT_MODEL_OTHER, agentModelOptions } from '../agent-model-options.js'
 import {
-  AGENT_MODEL_PRESETS,
   AGENT_REASONING_LEVELS,
   loadStoredAgentConnection,
   normaliseAgentConnection,
@@ -171,38 +171,77 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
 
   const agentKeyField = field('API key', 'password', 'sk-…')
   const agentUrlField = field('Base URL', 'text', 'https://api.openai.com/v1')
-  const agentModelField = field('Model', 'text', 'e.g. gpt-4o')
-  agentModelField.input.dataset['field'] = 'agent-model'
+  /**
+   * Model is a selector, not a text box.
+   *
+   * Naming a tier is a choice from a short list, and typing `gpt-5.6-terra`
+   * correctly is not part of that choice. The named tiers are always present,
+   * whatever the endpoint answers; Load models adds the rest of what it offers;
+   * and `Other…` keeps any id the list cannot know reachable, so the selector
+   * never becomes a smaller set of options than the field it replaced.
+   *
+   * Which options and which selection is decided by `agentModelOptions`, which
+   * is unit-tested; this only renders the answer.
+   */
+  const agentModelRowField = document.createElement('label')
+  agentModelRowField.className = 'settings-field'
+  const agentModelLabel = document.createElement('span')
+  agentModelLabel.className = 'settings-field-label'
+  agentModelLabel.textContent = 'Model'
+  const agentModelSelect = document.createElement('select')
+  agentModelSelect.dataset['field'] = 'agent-model'
+  agentModelRowField.append(agentModelLabel, agentModelSelect)
 
-  // Named tiers, because "Sol / Terra / Luna" is how a person thinks about this
-  // and `gpt-5.6-terra` is not. The field remains free text underneath, and
-  // Load models still lists whatever the endpoint actually offers.
-  const agentPresetRow = document.createElement('div')
-  agentPresetRow.className = 'settings-model-presets'
-  agentPresetRow.setAttribute('role', 'group')
-  agentPresetRow.setAttribute('aria-label', 'Model tiers')
-  const agentPresetButtons = AGENT_MODEL_PRESETS.map((preset) => {
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.dataset['preset'] = preset.id
-    button.textContent = preset.label
-    button.title = `${preset.id} — ${preset.hint}`
-    button.addEventListener('click', () => {
-      agentModelField.input.value = preset.id
-      refreshAgentPresets()
-    })
-    agentPresetRow.append(button)
-    return button
-  })
+  const agentModelOther = field('Other model id', 'text', 'e.g. gpt-4o')
+  agentModelOther.input.dataset['field'] = 'agent-model-other'
+  agentModelOther.row.hidden = true
 
-  /** Marks the tier the current model id is, when it is one of them. */
-  function refreshAgentPresets(): void {
-    const current = agentModelField.input.value.trim()
-    for (const button of agentPresetButtons) {
-      button.setAttribute('aria-pressed', String(button.dataset['preset'] === current))
-    }
+  /** Ids the endpoint reported this session, beyond the named tiers. */
+  let agentLoadedModels: readonly string[] = []
+
+  /** The model id the panel would save. */
+  function agentModelValue(): string {
+    return agentModelSelect.value === AGENT_MODEL_OTHER
+      ? agentModelOther.input.value.trim()
+      : agentModelSelect.value
   }
-  agentModelField.input.addEventListener('input', refreshAgentPresets)
+
+  /**
+   * Rebuilds the options, keeping `selected` selectable even when neither the
+   * tiers nor the endpoint list carry it — otherwise opening Settings would
+   * quietly change a model somebody had deliberately set.
+   */
+  function paintAgentModels(selected: string): void {
+    const plan = agentModelOptions({ selected, loaded: agentLoadedModels })
+
+    agentModelSelect.replaceChildren()
+    let endpointGroup: HTMLOptGroupElement | undefined
+    for (const candidate of plan.options) {
+      const option = document.createElement('option')
+      option.value = candidate.value
+      option.textContent = candidate.label
+      if (candidate.hint !== undefined) option.title = candidate.hint
+      if (candidate.fromEndpoint !== true) {
+        agentModelSelect.append(option)
+        continue
+      }
+      if (endpointGroup === undefined) {
+        endpointGroup = document.createElement('optgroup')
+        endpointGroup.label = 'Other models on this endpoint'
+        agentModelSelect.append(endpointGroup)
+      }
+      endpointGroup.append(option)
+    }
+
+    agentModelSelect.value = plan.value
+    if (plan.otherValue !== '') agentModelOther.input.value = plan.otherValue
+    agentModelOther.row.hidden = plan.value !== AGENT_MODEL_OTHER
+  }
+
+  agentModelSelect.addEventListener('change', () => {
+    agentModelOther.row.hidden = agentModelSelect.value !== AGENT_MODEL_OTHER
+    if (agentModelSelect.value === AGENT_MODEL_OTHER) agentModelOther.input.focus()
+  })
 
   const agentModelRow = document.createElement('div')
   agentModelRow.className = 'settings-model-row'
@@ -213,10 +252,6 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
   agentLoadModels.textContent = 'Load models'
   agentModelRow.append(agentLoadModels)
 
-  const agentModelSelect = document.createElement('select')
-  agentModelSelect.className = 'settings-model-select'
-  agentModelSelect.dataset['field'] = 'agent-model-select'
-  agentModelSelect.hidden = true
   const agentModelError = document.createElement('p')
   agentModelError.className = 'settings-model-error'
   agentModelError.hidden = true
@@ -273,34 +308,20 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     refreshAgentFields()
 
     if (!result.ok) {
-      agentModelError.textContent = `Couldn't load models — ${result.message}. You can still type one.`
+      // The named tiers are still selectable, so a failed load costs the extras
+      // and nothing else.
+      agentModelError.textContent = `Couldn't load models — ${result.message}. The tiers above still work.`
       agentModelError.hidden = false
       return
     }
-    agentModelSelect.replaceChildren()
-    const placeholder = document.createElement('option')
-    placeholder.value = ''
-    placeholder.textContent = `Pick from ${result.models.length} model${result.models.length === 1 ? '' : 's'}…`
-    placeholder.disabled = true
-    placeholder.selected = true
-    agentModelSelect.append(placeholder, ...result.models.map((id) => {
-      const option = document.createElement('option')
-      option.value = id
-      option.textContent = id
-      return option
-    }))
-    agentModelSelect.hidden = false
+    agentLoadedModels = result.models
+    // Keeps whatever was chosen chosen: loading a list is not choosing from it.
+    paintAgentModels(agentModelValue())
   }
   agentLoadModels.addEventListener('click', (event) => {
     event.preventDefault()
     void handleLoadAgentModels()
   })
-  agentModelSelect.addEventListener('change', () => {
-    if (agentModelSelect.value === '') return
-    agentModelField.input.value = agentModelSelect.value
-    refreshAgentPresets()
-  })
-
   const actions = document.createElement('div')
   actions.className = 'settings-actions'
   const save = document.createElement('button')
@@ -320,7 +341,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
       normaliseAgentConnection({
         apiKey: agentKeyField.input.value,
         baseUrl: agentUrlField.input.value,
-        model: agentModelField.input.value,
+        model: agentModelValue(),
         reasoning: agentReasoning.value,
         shareCredentials: agentShare.checked,
       }),
@@ -343,10 +364,9 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     agentShareRow,
     agentKeyField.row,
     agentUrlField.row,
-    agentModelField.row,
-    agentPresetRow,
+    agentModelRowField,
+    agentModelOther.row,
     agentModelRow,
-    agentModelSelect,
     agentModelError,
     agentReasoningRow,
     actions,
@@ -374,14 +394,12 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     agentShare.checked = agent.shareCredentials
     agentKeyField.input.value = agent.apiKey
     agentUrlField.input.value = agent.baseUrl
-    agentModelField.input.value = agent.model
     agentReasoning.value = agent.reasoning
-    agentModelSelect.hidden = true
-    agentModelSelect.replaceChildren()
+    agentLoadedModels = []
+    paintAgentModels(agent.model)
     agentModelError.hidden = true
     agentLoadModels.textContent = 'Load models'
     refreshAgentFields()
-    refreshAgentPresets()
     modelSelect.hidden = true
     modelSelect.replaceChildren()
     modelError.hidden = true

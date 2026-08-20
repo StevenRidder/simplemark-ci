@@ -5435,27 +5435,3 @@ section.editor::-webkit-scrollbar {
   cursor: not-allowed;
 }
 
-/* The GPT-5.6 tier presets under the Document agent's Model field. */
-.settings-model-presets {
-  display: flex;
-  gap: 6px;
-  margin: -4px 0 0;
-}
-
-.settings-model-presets button {
-  flex: 1;
-  padding: 3px 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--paper);
-  color: var(--ink-2);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.settings-model-presets button[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--ink);
-  font-weight: 600;
-}

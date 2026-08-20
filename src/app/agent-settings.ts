@@ -77,6 +77,15 @@ export interface AgentModelPreset {
   readonly hint: string
 }
 
+/**
+ * Where the selector lands when nothing has been chosen.
+ *
+ * Luna: the fast, cheap tier is the right default for editing a paragraph, and
+ * the operator confirmed it. Named rather than positional so reordering the
+ * list cannot change the default.
+ */
+export const AGENT_DEFAULT_MODEL = 'gpt-5.6-luna'
+
 export const AGENT_MODEL_PRESETS: readonly AgentModelPreset[] = [
   { id: 'gpt-5.6-sol', label: 'Sol', hint: 'Flagship. The most capable, and the slowest.' },
   { id: 'gpt-5.6-terra', label: 'Terra', hint: 'Balanced everyday model.' },

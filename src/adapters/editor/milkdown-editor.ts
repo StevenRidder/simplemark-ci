@@ -2354,9 +2354,18 @@ function activeBlockSpellcheckPlugin(): Plugin {
         // The head of a drag crosses every block on its way, and recomputing
         // per selection change flipped `spellcheck` onto each of them in turn —
         // one synchronous AppleSpell round trip per block crossed in the
-        // packaged shell (BUG-10, the BUG-4 failure mode resurfacing). While
-        // any range exists, no block opts in.
-        if (!nextState.selection.empty) return DecorationSet.empty
+        // packaged shell (BUG-10, the BUG-4 failure mode resurfacing).
+        //
+        // While a range exists the set is FROZEN, not emptied (BUG-12):
+        // macOS word-selects under every right-click, and emptying here
+        // removed the attribute during AppKit's synchronous menu tracking —
+        // a DOM mutation at the worst possible moment. A frozen decoration
+        // changes nothing, which is the whole point in both cases.
+        if (!nextState.selection.empty) {
+          return transaction.docChanged
+            ? decorations.map(transaction.mapping, transaction.doc)
+            : decorations
+        }
         const target = activeBlockSpellcheckRange(nextState)
         if (target === undefined) return DecorationSet.empty
         const mapped = transaction.docChanged

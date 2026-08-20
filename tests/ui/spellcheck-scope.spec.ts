@@ -20,15 +20,35 @@ test('continuous spellchecking is limited to the active prose block', async ({ p
   await expect(editor.locator('[spellcheck="true"]')).toHaveCount(1)
 })
 
-test('a drag selection opts no block into spellchecking', async ({ page }) => {
-  // BUG-10: the head of a drag crosses every block on its way, and marking the
-  // block under it per selection change cost one synchronous AppleSpell round
-  // trip per block crossed in the packaged shell. A range selection is not
-  // typing, so while one exists nothing opts in.
+test('a drag selection never mutates a spellcheck attribute', async ({ page }) => {
+  // BUG-10: the head of a drag crosses every block, and marking the block
+  // under it per selection change cost one synchronous AppleSpell round trip
+  // per block crossed in the packaged shell. BUG-12 sharpened the fix from
+  // "empty the set" to "freeze it": macOS word-selects under every
+  // right-click, and emptying removed the attribute during AppKit's
+  // synchronous menu tracking. The contract is therefore zero attribute
+  // mutations while any range exists — frozen, not cleared.
   await page.goto('/?fixture=legacy')
   const editor = page.locator(EDITOR)
   const paragraphs = editor.locator('p')
   await expect(paragraphs.nth(1)).toBeVisible()
+
+  // Place the caret first, so one block is legitimately opted in.
+  await paragraphs.nth(0).click()
+  await expect(paragraphs.nth(0)).toHaveAttribute('spellcheck', 'true')
+
+  await page.evaluate(() => {
+    const w = window as unknown as { __flips: number; __obs: MutationObserver }
+    w.__flips = 0
+    w.__obs = new MutationObserver((records) => {
+      w.__flips += records.length
+    })
+    w.__obs.observe(document.querySelector('.milkdown .ProseMirror')!, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['spellcheck'],
+    })
+  })
 
   const first = await paragraphs.nth(0).boundingBox()
   const second = await paragraphs.nth(1).boundingBox()
@@ -38,14 +58,32 @@ test('a drag selection opts no block into spellchecking', async ({ page }) => {
   await page.mouse.down()
   await page.mouse.move(second.x + second.width - 8, second.y + second.height - 4, { steps: 12 })
   await page.mouse.up()
-
   await expect
     .poll(() => page.evaluate(() => (window.getSelection()?.toString() ?? '').length))
     .toBeGreaterThan(0)
-  await expect(editor.locator('[spellcheck="true"]')).toHaveCount(0)
 
-  // Collapsing back to a caret restores the single opted-in block.
-  await paragraphs.nth(1).click()
+  // The drag itself: zero mutations, in every engine. This is the BUG-10/12
+  // contract — a range freezes the decoration, and frozen means untouched.
+  const dragFlips = await page.evaluate(() => (window as unknown as { __flips: number }).__flips)
+  expect(dragFlips).toBe(0)
+  await expect(editor.locator('[spellcheck="true"]')).toHaveCount(1)
+
+  // A word-select inside a block — what macOS does under a right-click. WebKit
+  // delivers this as a momentary caret then the word range, so the caret's
+  // ordinary block move may cost one remove+add; Chromium collapses it to
+  // none. Bounded either way — the same price as clicking into a block, and
+  // nothing like the per-block storm this spec exists to forbid.
+  await page.mouse.dblclick(second.x + 30, second.y + 8)
+  const totalFlips = await page.evaluate(() => {
+    const w = window as unknown as { __flips: number; __obs: MutationObserver }
+    w.__obs.disconnect()
+    return w.__flips
+  })
+  expect(totalFlips - dragFlips).toBeLessThanOrEqual(2)
+
+  // Collapsing to a caret in another block moves the opt-in there, once.
+  await paragraphs.nth(1).click({ position: { x: 10, y: 4 } })
+  await expect(paragraphs.nth(1)).toHaveAttribute('spellcheck', 'true')
   await expect(editor.locator('[spellcheck="true"]')).toHaveCount(1)
 })
 

@@ -277,3 +277,49 @@ test('the agent can turn a paragraph into a chart', async ({ page }) => {
   expect(after).not.toContain(PASSAGE)
   expect(after).toContain('Alpha holds the opening claim.')
 })
+
+test('Ask agent appears only once the note has been written', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await expect(page.locator(editor)).toBeVisible()
+  await page.getByRole('button', { name: 'New note' }).click()
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.press('Enter')
+  await page.keyboard.type(PASSAGE)
+  await page.evaluate(() => window.simplemark!.flushPendingChanges())
+
+  // Add Note creates the thread with an empty body and opens its composer. An
+  // Ask agent offered at that moment reads a body the reader is still typing,
+  // so pressing it refuses — which reads as the button doing nothing.
+  await page.evaluate((quote) => window.simplemark!.notes.setThreadsForTest([
+    {
+      id: 'draft',
+      noteKey: 'n',
+      author: 'local',
+      createdAt: 'x',
+      body: '',
+      anchor: { quote, prefix: '', suffix: '', blockIndex: 1 },
+      state: 'open',
+    },
+  ]), PASSAGE)
+
+  const row = page.locator('.sm-note-rail [data-thread="draft"]')
+  await expect(row).toHaveCount(1)
+  await expect(row.locator('[data-action="ask-agent"]')).toHaveCount(0)
+  // Resolve is still there: an empty note is a note, just not an instruction.
+  await expect(row.locator('[data-action="resolve"]')).toBeVisible()
+
+  // Once written, the button is there to press.
+  await page.evaluate((quote) => window.simplemark!.notes.setThreadsForTest([
+    {
+      id: 'draft',
+      noteKey: 'n',
+      author: 'local',
+      createdAt: 'x',
+      body: 'Rewrite this to be more concrete.',
+      anchor: { quote, prefix: '', suffix: '', blockIndex: 1 },
+      state: 'open',
+    },
+  ]), PASSAGE)
+  await expect(row.locator('[data-action="ask-agent"]')).toBeVisible()
+})

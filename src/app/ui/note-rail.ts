@@ -120,7 +120,12 @@ export function renderNoteRail(
     const buttons = document.createElement('div')
     buttons.className = 'sm-note-rail-actions'
     if (matched) {
-      if (actions.askAgent !== undefined && !conversational) {
+      // Not before the note has been written. Add Note creates the thread with
+      // an empty body and opens its composer, so an Ask agent offered here reads
+      // a body the reader is still typing — presses, and refuses. The button has
+      // to appear only when there is an instruction for it to act on.
+      const hasInstruction = thread.body.trim() !== ''
+      if (actions.askAgent !== undefined && !conversational && hasInstruction) {
         // The wireframe's invocation: you select the passage, then ask. The note
         // body is the instruction and the anchor is the scope.
         //

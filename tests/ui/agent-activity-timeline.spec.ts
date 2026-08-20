@@ -223,30 +223,17 @@ test('Escape closes the open side panel, and only one is ever open', async ({ pa
 })
 
 test('Ask agent says why when it will not run', async ({ page }) => {
-  await page.goto('/')
-  await page.waitForFunction(() => window.simplemark !== undefined)
-  await expect(page.locator(editor)).toBeVisible()
-  await page.getByRole('button', { name: 'New note' }).click()
-  await page.evaluate(() => window.simplemark!.editor.focusEnd())
-  await page.keyboard.press('Enter')
-  await page.keyboard.type(PASSAGE)
-  await page.evaluate(() => window.simplemark!.flushPendingChanges())
+  await noteOnPassage(page, 'Rewrite this to be more concrete.')
 
-  // An empty note body: nothing to instruct with. Pressing Ask agent used to
-  // return in silence, which is indistinguishable from a hang.
-  await page.evaluate((quote) => window.simplemark!.notes.setThreadsForTest([
-    {
-      id: 'empty',
-      noteKey: 'n',
-      author: 'local',
-      createdAt: 'x',
-      body: '   ',
-      anchor: { quote, prefix: '', suffix: '', blockIndex: 1 },
-      state: 'open',
-    },
-  ]), PASSAGE)
+  // No provider configured — the realistic refusal, and the one still reachable
+  // through the button. An empty note body is now prevented earlier: Ask agent
+  // does not appear until the note has been written, so that refusal is no
+  // longer something a person can press their way into.
+  await page.evaluate(() => window.simplemark!.agent.setProviderForTest(undefined))
+  await page.locator('.sm-note-rail [data-thread="t1"] [data-action="ask-agent"]').click()
 
-  await page.locator('.sm-note-rail [data-thread="empty"] [data-action="ask-agent"]').click()
-  await expect(page.locator('.sm-note-rail [data-thread="empty"] .sm-note-rail-body[data-author="agent"]'))
-    .toContainText('This note is empty')
+  // Answered in the thread, where the question was asked. Silence here is
+  // indistinguishable from a hang and leaves nothing to act on.
+  await expect(page.locator('.sm-note-rail [data-thread="t1"] .sm-note-rail-body[data-author="agent"]'))
+    .toContainText('No document agent is configured')
 })

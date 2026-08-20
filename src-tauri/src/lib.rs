@@ -285,6 +285,50 @@ async fn ai_chat_completion_json(
     Ok(text)
 }
 
+fn responses_url(base_url: &str) -> String {
+    format!("{}/responses", base_url.trim_end_matches('/'))
+}
+
+/// The document agent's network call (AGENT-11).
+///
+/// A separate command rather than a path parameter on the others: each command
+/// here names exactly one endpoint, so what this crate can reach is readable
+/// from the command list instead of depending on a string the frontend passes.
+///
+/// The agent moved off `/v1/chat/completions` because that endpoint refuses
+/// function tools together with a reasoning level for this model — it says so
+/// itself. The body arrives already built and is forwarded untouched, same thin
+/// transport as `ai_chat_completion_json`.
+///
+/// Going through Rust is not optional: the packaged app's CSP
+/// (`connect-src 'self' ipc: http://ipc.localhost`, tauri.conf.json) silently
+/// blocks a frontend `fetch` to any external host.
+#[tauri::command]
+async fn ai_responses(
+    base_url: String,
+    api_key: String,
+    body: serde_json::Value,
+) -> Result<String, String> {
+    let client = http_client();
+    let url = responses_url(&base_url);
+    let response = client
+        .post(&url)
+        .bearer_auth(&api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach {url}: {error}"))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| format!("Could not read the response from {url}: {error}"))?;
+    if !status.is_success() {
+        return Err(format!("{url} returned {status}: {text}"));
+    }
+    Ok(text)
+}
+
 fn models_url(base_url: &str) -> String {
     format!("{}/models", base_url.trim_end_matches('/'))
 }
@@ -2388,6 +2432,7 @@ pub fn run() {
             host_platform,
             ai_chat_completion,
             ai_chat_completion_json,
+            ai_responses,
             ai_list_models,
             enable_page_magnification,
             set_page_magnification,
@@ -2716,6 +2761,22 @@ mod tests {
         assert_eq!(body["model"], "gpt-4o");
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["messages"][0]["content"], "fix it");
+    }
+
+    /// The Responses endpoint is derived the same way the others are (AGENT-11).
+    #[test]
+    fn responses_url_appends_the_endpoint_once() {
+        assert_eq!(
+            responses_url("https://api.openai.com/v1"),
+            "https://api.openai.com/v1/responses"
+        );
+        // A trailing slash must not produce a double slash, which some gateways
+        // route differently.
+        assert_eq!(
+            responses_url("https://api.openai.com/v1/"),
+            "https://api.openai.com/v1/responses"
+        );
+        assert_ne!(responses_url("https://api.openai.com/v1"), chat_completion_url("https://api.openai.com/v1"));
     }
 
     /// The agent transport must not rebuild the body (APP-32).

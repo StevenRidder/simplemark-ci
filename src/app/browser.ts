@@ -22,8 +22,8 @@ import type { SampleDocument } from './sample-documents.js'
 import { loadAiSettings } from './ai-settings.js'
 import { isAgentConfigured, loadAgentConnection } from './agent-settings.js'
 import { createAgentEditTally } from './agent-edit-overlay.js'
-import { OpenAiCompatibleAgentPort } from '../adapters/ai/openai-compatible-agent.js'
-import type { AgentCompletionTransport } from '../adapters/ai/openai-compatible-agent.js'
+import { OpenAiResponsesAgentPort } from '../adapters/ai/openai-responses-agent.js'
+import type { AgentResponsesTransport } from '../adapters/ai/openai-responses-agent.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import { NoteWalk } from './note-walk.js'
 import { VisitHistory } from './workspace-history.js'
@@ -339,22 +339,23 @@ async function mount(
     return text
   }
   /**
-   * The agent's own transport. Separate from the diagram one because the body
-   * carries `tools` and `tool_choice`, which the diagram transport rebuilds
-   * away.
+   * The agent's own transport, against `/v1/responses` (AGENT-11).
+   *
+   * Chat completions refuses function tools together with a reasoning level for
+   * this model, and the agent needs both.
    */
-  const agentCompletionTransport: AgentCompletionTransport = async (baseUrl, apiKey, _model, body) => {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+  const agentResponsesTransport: AgentResponsesTransport = async (baseUrl, apiKey, _model, body) => {
+    const response = await fetch(`${baseUrl}/responses`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
     const text = await response.text()
-    if (!response.ok) throw new Error(`${baseUrl}/chat/completions returned ${response.status}: ${text}`)
+    if (!response.ok) throw new Error(`${baseUrl}/responses returned ${response.status}: ${text}`)
     return text
   }
-  const agentPort = new OpenAiCompatibleAgentPort(
-    agentCompletionTransport,
+  const agentPort = new OpenAiResponsesAgentPort(
+    agentResponsesTransport,
     () => loadAgentConnection(window.localStorage),
   )
 

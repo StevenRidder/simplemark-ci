@@ -9,7 +9,7 @@ import { expect, test, type Page } from '@playwright/test'
  * model cannot be asked to be ambiguous on demand, and three of these six
  * assert that *nothing* was written, which a nondeterministic model can pass by
  * luck. The real provider's own request shape is pinned separately, in
- * `tests/adapters/openai-compatible-agent.test.ts`.
+ * `tests/adapters/openai-responses-agent.test.ts`.
  */
 
 const editor = '.milkdown .ProseMirror'

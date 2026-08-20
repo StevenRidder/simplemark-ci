@@ -471,6 +471,10 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       role: 'assistant',
       content: providerTurn.name,
       toolCallId: providerTurn.id,
+      // Carried so a provider that needs the call rebuilt as an item can do so
+      // faithfully, rather than inferring it from `content`.
+      toolName: providerTurn.name,
+      toolArgs: providerTurn.args,
     })
     messages.push({
       role: 'tool',

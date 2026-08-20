@@ -501,6 +501,17 @@ export interface AgentMessage {
   readonly role: 'user' | 'assistant' | 'tool'
   readonly content: string
   readonly toolCallId?: string
+  /**
+   * The tool an assistant turn called, and the arguments it passed.
+   *
+   * Chat completions needs only the name to echo a turn back. The Responses API
+   * needs the call rebuilt as an item — `function_call` with `call_id`, `name`
+   * and a JSON-encoded `arguments` — so the transcript has to carry enough to
+   * reconstruct it. Storing the name in `content` and hoping is what made this
+   * ambiguous.
+   */
+  readonly toolName?: string
+  readonly toolArgs?: unknown
 }
 
 export interface AgentProviderInput {

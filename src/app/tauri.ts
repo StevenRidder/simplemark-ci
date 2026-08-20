@@ -16,8 +16,8 @@ import { KatexRenderer } from '../adapters/renderers/katex-renderer.js'
 import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
 import { BrowserClipboardPort } from '../adapters/clipboard/browser-clipboard-port.js'
 import { OpenAiCompatibleDiagramFixPort } from '../adapters/ai/openai-compatible-diagram-fix.js'
-import { OpenAiCompatibleAgentPort } from '../adapters/ai/openai-compatible-agent.js'
-import type { AgentCompletionTransport } from '../adapters/ai/openai-compatible-agent.js'
+import { OpenAiResponsesAgentPort } from '../adapters/ai/openai-responses-agent.js'
+import type { AgentResponsesTransport } from '../adapters/ai/openai-responses-agent.js'
 import { isAgentConfigured, loadAgentConnection } from './agent-settings.js'
 import { applyAgentEditsToCatalog, createAgentEditTally } from './agent-edit-overlay.js'
 import type { AgentEditTally } from './agent-edit-overlay.js'
@@ -1208,17 +1208,17 @@ async function mount(
   const chatCompletionTransport: ChatCompletionTransport = (baseUrl, apiKey, model, messages) =>
     invoke('ai_chat_completion', { baseUrl, apiKey, model, messages })
   /**
-   * The agent's transport, through its own native command (APP-32).
+   * The agent's transport, through its own native command (AGENT-11).
    *
-   * `ai_chat_completion` rebuilds the request from `{model, messages}`, so it
-   * silently drops `tools` and `tool_choice` and the model answers in prose
-   * instead of calling anything. The packaged app's CSP blocks a frontend
-   * `fetch` outright, so this hop is not optional either.
+   * `/v1/responses`, not chat completions: that endpoint refuses function tools
+   * together with a reasoning level for this model, and the agent needs both.
+   * The packaged app's CSP blocks a frontend `fetch` outright, so this hop is
+   * not optional either.
    */
-  const agentCompletionTransport: AgentCompletionTransport = (baseUrl, apiKey, _model, body) =>
-    invoke('ai_chat_completion_json', { baseUrl, apiKey, body })
-  const agentPort = new OpenAiCompatibleAgentPort(
-    agentCompletionTransport,
+  const agentResponsesTransport: AgentResponsesTransport = (baseUrl, apiKey, _model, body) =>
+    invoke('ai_responses', { baseUrl, apiKey, body })
+  const agentPort = new OpenAiResponsesAgentPort(
+    agentResponsesTransport,
     () => loadAgentConnection(window.localStorage),
   )
 

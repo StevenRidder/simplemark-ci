@@ -101,6 +101,9 @@ describe('the /v1/responses request', () => {
     // The authority refuses any call whose scope is not current, so a model made
     // to guess the token cannot make one valid call.
     expect(String(body()['instructions'])).toContain('scope-token-abc')
+    // AGENT-12: document edits must be told to use the note's Markdown idiom,
+    // or the model bulletpoints its replies while writing prose into the note.
+    expect(String(body()['instructions'])).toContain('Markdown idiom')
   })
 
   it('refuses to call out at all when nothing is configured', async () => {

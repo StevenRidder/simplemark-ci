@@ -205,6 +205,11 @@ export class OpenAiResponsesAgentPort implements AgentProviderPort {
           'Pass that token as the `scope` argument of every tool that takes one.',
           'You supply the Markdown that changes. The authority owns the range —',
           'never invent, compute, or send a position, offset, or range.',
+          // AGENT-12: without this the model writes walls of prose into the
+          // document while happily bulleting the same content in its replies.
+          'Write in the note’s own Markdown idiom: use headings, bullet',
+          'lists, emphasis, and tables where they aid reading — reasons,',
+          'steps, and comparisons belong in lists, not paragraphs of prose.',
           'When the work is done, reply with plain text and call no further tool.',
         ].join(' '),
         input: [

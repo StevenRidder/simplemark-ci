@@ -267,6 +267,41 @@ test('every side panel can be closed, and none buries another', async ({ page })
   await expect(page.locator('.sm-agent-panel')).toHaveCount(0)
 })
 
+test('hiding the rail keeps the passage tints', async ({ page }) => {
+  await noteOnPassage(page, 'Tighten this.')
+  await expect(page.locator('.sm-note-anchor')).toHaveCount(1)
+
+  await page.locator('[data-action="hide-rail"]').click()
+  await expect(page.locator('.sm-note-rail')).toHaveCount(0)
+
+  // The tint is in the document, not in the rail. Losing it with the rail meant
+  // scrolling to a note showed nothing at all — the note was still there and
+  // there was no sign of it anywhere.
+  await expect(page.locator('.sm-note-anchor')).toHaveCount(1)
+
+  // And it survives an edit, which repaints notes on every keystroke.
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await page.keyboard.type(' More text.')
+  await page.evaluate(() => window.simplemark!.flushPendingChanges())
+  await expect(page.locator('.sm-note-anchor')).toHaveCount(1)
+})
+
+test('Escape does not take the notes rail away', async ({ page }) => {
+  await noteOnPassage(page, 'Tighten this.')
+  await page.evaluate(() => window.simplemark!.agent.toggle())
+  await expect(page.locator('.sm-agent-panel')).toHaveCount(1)
+
+  // Escape closes what a person opened. The rail appears on its own because
+  // something is unresolved, and losing it to a keystroke aimed at the panel is
+  // how a reader loses their notes without knowing they did.
+  await page.locator('.milkdown .ProseMirror').press('Escape')
+  await expect(page.locator('.sm-agent-panel')).toHaveCount(0)
+  await expect(page.locator('.sm-note-rail')).toHaveCount(1)
+
+  await page.locator('.milkdown .ProseMirror').press('Escape')
+  await expect(page.locator('.sm-note-rail')).toHaveCount(1)
+})
+
 test('a note changing brings a hidden rail back', async ({ page }) => {
   await noteOnPassage(page, 'Tighten this.')
   await page.locator('[data-action="hide-rail"]').click()

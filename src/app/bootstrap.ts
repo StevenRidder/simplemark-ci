@@ -1072,15 +1072,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     if (agentPanel.isOpen()) {
       agentPanel.close()
       event.stopPropagation()
-      return
     }
-    // The rail last, because it is the one a reader is least likely to mean by
-    // "get this off my screen" — and it comes back when a note changes.
-    if (noteRailHost.childElementCount > 0) {
-      noteRailHidden = true
-      noteRailHost.replaceChildren()
-      event.stopPropagation()
-    }
+    // Deliberately not the notes rail. Escape closes surfaces a person opened;
+    // the rail appears on its own because something is unresolved, and hiding it
+    // by a keystroke aimed at something else is how a reader loses their notes
+    // without knowing they did. Its own × is the way to dismiss it.
   }
 
   const noteRailHost = document.createElement('div')
@@ -1301,10 +1297,6 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       paintedNoteSignature = signature
       noteRailHidden = false
     }
-    if (noteRailHidden) {
-      noteRailHost.replaceChildren()
-      return
-    }
     const derived = editor.currentNoteAnchors()
     noteThreads = noteThreads.map((thread) => {
       if (thread.state !== 'open') return thread
@@ -1313,6 +1305,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     })
     const text = editor.noteDocumentText()
     editor.setNoteThreads(noteThreads)
+    if (noteRailHidden) {
+      // Hiding hides the rail, and nothing else. Returning before this point
+      // skipped `setNoteThreads` as well, so a dismissal also stopped painting
+      // the passage tints — and then scrolling to a note showed nothing at all.
+      // The tints are in the document; they are not the rail's to take away.
+      noteRailHost.replaceChildren()
+      return
+    }
     renderNoteRail(noteRailHost, noteThreads, {
       resolve: (id) => {
         waitingReattachId = undefined

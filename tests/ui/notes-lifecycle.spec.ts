@@ -64,3 +64,50 @@ test('a resolved note can be reopened, and comes back to its passage', async ({ 
   await page.waitForFunction(() => window.simplemark !== undefined)
   await expect(page.locator('.sm-note-anchor')).toHaveCount(1)
 })
+
+test('a resolved note can be deleted forever', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await expect(page.locator('.milkdown .ProseMirror')).toBeVisible()
+
+  await page.evaluate((quote) => window.simplemark!.notes.selectTextForTest(quote), MATCHED_QUOTE)
+  await page.keyboard.press('Meta+Shift+M')
+  await page.keyboard.type('done and gone')
+  await page.keyboard.press('Enter')
+  await page.locator('.sm-note-rail [data-action="resolve"]').first().click()
+
+  await page.locator('.sm-note-rail-resolved summary').click()
+  await page.locator('.sm-note-rail-resolved [data-action="delete-forever"]').first().click()
+  await expect(page.locator('.sm-note-rail')).toHaveCount(0)
+
+  // Forever survives a reload: the store no longer holds it.
+  await page.reload()
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await expect(page.locator('.sm-note-rail')).toHaveCount(0)
+  await expect(page.locator('.sm-note-anchor')).toHaveCount(0)
+})
+
+test('a note body can be edited in place, and the edit survives a reload', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await expect(page.locator('.milkdown .ProseMirror')).toBeVisible()
+
+  await page.evaluate((quote) => window.simplemark!.notes.selectTextForTest(quote), MATCHED_QUOTE)
+  await page.keyboard.press('Meta+Shift+M')
+  await page.keyboard.type('first draft of the note')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.sm-note-rail')).toContainText('first draft of the note')
+
+  await page.locator('.sm-note-rail [data-action="edit-note"]').first().click()
+  const input = page.locator('.sm-note-rail-edit textarea')
+  await input.fill('second thoughts, sharper ask')
+  await input.press('Enter')
+  await expect(page.locator('.sm-note-rail')).toContainText('second thoughts, sharper ask')
+  await expect(page.locator('.sm-note-rail')).not.toContainText('first draft')
+
+  await page.reload()
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await expect(page.locator('.sm-note-rail')).toContainText('second thoughts, sharper ask')
+  // The edited note still drives the agent: body is the instruction.
+  await expect(page.locator('.sm-note-rail [data-action="ask-agent"]')).toHaveCount(1)
+})

@@ -28,6 +28,8 @@ export interface NoteRailActions {
   readonly detach: (id: string) => void
   readonly remove: (id: string) => void
   readonly reattach: (id: string) => void
+  /** Rewrites a note's body — the comment-edit every comment system has. */
+  readonly editBody?: (id: string, body: string) => void
   /** Runs the agent against this thread's passage, using its body as the ask. */
   readonly askAgent?: (id: string) => void
   /** Sends a turn into the thread. `redirect` also fences the live generation. */
@@ -164,6 +166,11 @@ export function renderNoteRail(
         ask.title = 'Ask the agent to act on this passage, using this note as the instruction'
         buttons.append(ask)
       }
+      // Editing is for notes, not conversations: once an agent has answered,
+      // rewriting the question it answered would falsify the thread.
+      if (actions.editBody !== undefined && !conversational) {
+        buttons.append(actionButton('edit-note', 'Edit', () => beginEdit(row, thread)))
+      }
       buttons.append(actionButton('resolve', 'Resolve', () => actions.resolve(thread.id)))
     } else {
       buttons.append(
@@ -197,13 +204,59 @@ export function renderNoteRail(
       reopen.textContent = 'Reopen'
       reopen.title = 'Bring this note back to the passage it was on.'
       reopen.addEventListener('click', () => actions.reopen!(thread.id))
-      row.append(body, reopen)
+      // Forever means forever: no archive behind the archive. The title says
+      // so, because this is the one button in the rail with no way back.
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.dataset['action'] = 'delete-forever'
+      remove.textContent = 'Delete'
+      remove.title = 'Deletes this note permanently. There is no undo.'
+      remove.addEventListener('click', () => actions.remove(thread.id))
+      row.append(body, reopen, remove)
       section.append(row)
     }
     rail.append(section)
   }
 
   host.append(rail)
+
+  function beginEdit(row: HTMLElement, thread: Thread): void {
+    if (row.querySelector('.sm-note-rail-edit') !== null) return
+    const body = row.querySelector('.sm-note-rail-body')
+    const editor = document.createElement('form')
+    editor.className = 'sm-note-rail-edit'
+    const input = document.createElement('textarea')
+    input.setAttribute('aria-label', 'Edit note')
+    input.value = thread.body
+    editor.append(input)
+    const save = document.createElement('button')
+    save.type = 'submit'
+    save.dataset['action'] = 'save-edit'
+    save.textContent = 'Save'
+    editor.append(save)
+    editor.addEventListener('submit', (event) => {
+      event.preventDefault()
+      const next = input.value.trim()
+      if (next === '') return
+      actions.editBody!(thread.id, next)
+    })
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault()
+        editor.requestSubmit()
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        editor.remove()
+        if (body instanceof HTMLElement) body.style.display = ''
+      }
+    })
+    if (body instanceof HTMLElement) body.style.display = 'none'
+    row.prepend(editor)
+    input.focus()
+    input.setSelectionRange(input.value.length, input.value.length)
+  }
 }
 
 /** The popover that a tint click opens — one note, or the stack on that passage. */

@@ -1393,6 +1393,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         if (thread === undefined) return
         void store.save({ ...thread, state: 'open' }).then(() => paintNotes())
       },
+      editBody: (id, body) => {
+        const thread = noteThreads.find((candidate) => candidate.id === id)
+        if (thread === undefined) return
+        void store.save({ ...thread, body }).then(() => paintNotes())
+      },
       detach: (id) => {
         waitingReattachId = undefined
         const thread = noteThreads.find((candidate) => candidate.id === id)

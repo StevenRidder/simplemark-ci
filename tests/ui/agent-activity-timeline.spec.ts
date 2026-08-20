@@ -143,16 +143,16 @@ test('reverting the agent’s last change restores the passage', async ({ page }
   await expect(agentRow.locator('.sm-activity-reverted')).toBeVisible()
 })
 
-test('a change something else came after says so instead of offering Revert', async ({ page }) => {
+test('reverting an agent change keeps a paragraph typed after it (BUG-9)', async ({ page }) => {
   await noteOnPassage(page, 'Split this by region.')
   await scriptAgent(page, 'Beta, split by region.', 'Done.')
   await page.locator('.sm-note-rail [data-thread="t1"] [data-action="ask-agent"]').click()
   await expect(page.locator(editor)).toContainText('Beta, split by region.')
 
-  // Anything typed after it supersedes it. Reverting past a later editor batch
-  // is not yet trustworthy — replaying that batch under a headless rebase does
-  // not reproduce a block added afterwards, which then vanishes (BUG-9). The
-  // timeline refuses rather than risking a paragraph.
+  // Type after the agent — the batch is stored as the editor's own step JSON,
+  // which does not reproduce its markdown under a headless replay. Reverting
+  // the agent's change must position its inverse through this batch, never
+  // replay it: the replay is exactly what used to eat this paragraph (BUG-9).
   await page.evaluate(() => window.simplemark!.editor.focusEnd())
   await page.keyboard.press('Enter')
   await page.keyboard.type('A paragraph of my own.')
@@ -160,12 +160,20 @@ test('a change something else came after says so instead of offering Revert', as
 
   await page.evaluate(() => window.simplemark!.agent.toggleActivity())
   const agentRow = page.locator('.sm-activity-row[data-actor="agent"]').first()
-  await expect(agentRow.locator('[data-action="revert"]')).toHaveCount(0)
-  await expect(agentRow.locator('.sm-activity-unavailable'))
-    .toHaveText('superseded by later edits')
-  // And nothing was lost by refusing.
-  expect(await markdown(page)).toContain('A paragraph of my own.')
-  expect(await markdown(page)).toContain('Beta, split by region.')
+  await agentRow.locator('[data-action="revert"]').click()
+
+  await expect
+    .poll(() => markdown(page), { timeout: 10_000 })
+    .toContain(PASSAGE)
+  const after = await markdown(page)
+  expect(after).not.toContain('Beta, split by region.')
+  // The paragraph typed in between is exactly what the old rebase dropped.
+  expect(after).toContain('A paragraph of my own.')
+  expect(after).toContain('Alpha holds the opening claim.')
+  await expect(agentRow.locator('.sm-activity-reverted')).toBeVisible()
+  // And the editor shows the same document the authority holds.
+  await expect(page.locator(editor)).toContainText('A paragraph of my own.')
+  await expect(page.locator(editor)).not.toContainText('Beta, split by region.')
 })
 
 test('a row with no stored inverse says so instead of offering Revert', async ({ page }) => {

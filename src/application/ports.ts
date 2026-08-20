@@ -386,6 +386,22 @@ export interface StepDocumentPort {
     committedBatches: readonly StepBatch[],
   ): StepApplicationResult
   invertSteps(markdown: string, steps: StepBatch): StepBatch | null
+  /**
+   * Applies one change's stored inverse to the current document, positioned
+   * through the batches committed after it (BUG-9).
+   *
+   * Deliberately not `rebaseSteps`: rebasing replays the later batches onto a
+   * historical document, and a live editor batch is stored as the editor's own
+   * step JSON, which does not reproduce its recorded markdown under a headless
+   * replay — content the batch added silently vanishes. Repositioning the
+   * inverse needs only each later step's positional map, never its replay, so
+   * the one document this parses is the current one.
+   */
+  revertSteps(
+    currentMarkdown: string,
+    inverse: StepBatch,
+    laterBatches: readonly StepBatch[],
+  ): StepApplicationResult
   markdownToSteps(
     markdown: string,
     replacement: string,

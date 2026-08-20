@@ -50,6 +50,7 @@ function recordingSteps(): StepDocumentPort {
       return apply(current, local)
     },
     invertSteps: () => [],
+    revertSteps: (current, inverse) => apply(current, inverse),
     markdownToSteps: (markdown, replacement, range) => ({
       ok: true,
       steps: [

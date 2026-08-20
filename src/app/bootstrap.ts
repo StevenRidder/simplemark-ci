@@ -1211,7 +1211,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       const result = session.revert(id)
       if (!result.ok) {
         chrome.setStatus('error', `Could not revert — ${result.reason}`)
-        return
+        return false
       }
       // The view is updated by the accepted-change mirror below, not from here.
       // Replacing the whole document instead lost unrelated blocks: the session
@@ -1220,6 +1220,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       chrome.refreshStatistics()
       paintNotes()
       activityTimeline.repaint()
+      return true
     },
   })
   documentSurface?.append(activityTimeline.host)

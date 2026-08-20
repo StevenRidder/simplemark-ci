@@ -429,13 +429,14 @@ export class DocumentSession {
     const later = this.#laterStepBatches(changeIndex)
     if (later === null) return { ok: false, reason: 'rebase_failed' }
 
-    const afterMarkdown = this.#documents[changeIndex + 1]
-    if (afterMarkdown === undefined) return { ok: false, reason: 'unknown-id' }
-
+    // Position the inverse through the later batches; never replay them. A
+    // live editor batch is stored as the editor's own step JSON and does not
+    // reproduce its markdown under a headless replay, so a rebase from the
+    // historical document silently dropped what that batch added (BUG-9).
     const inverse = cloneStepBatch(change.inverse)
     const result = later.length === 0
       ? this.steps.applySteps(this.markdown, inverse)
-      : this.steps.rebaseSteps(afterMarkdown, inverse, later)
+      : this.steps.revertSteps(this.markdown, inverse, later)
     if (!result.ok) return { ok: false, reason: 'rebase_failed' }
 
     this.#acceptSteps('activity', `Revert ${change.name}`, cloneStepBatch(result.steps), result.markdown)

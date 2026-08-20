@@ -12,7 +12,7 @@ import { Clock, Container, Ctx, type MilkdownPlugin } from '@milkdown/kit/ctx'
 import { gfm } from '@milkdown/kit/preset/gfm'
 import { commonmark, paragraphSchema } from '@milkdown/kit/preset/commonmark'
 import { DOMSerializer, Slice, type Node as ProseNode, type Schema } from '@milkdown/kit/prose/model'
-import { Mapping, Step, Transform } from '@milkdown/kit/prose/transform'
+import { Mapping, ReplaceStep, Step, Transform } from '@milkdown/kit/prose/transform'
 import type { Editor } from '@milkdown/kit/core'
 
 import type {
@@ -305,6 +305,142 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
       markdown: this.#serialize(transform.doc),
       steps: toStepBatch(rebased),
     }
+  }
+
+  revertSteps(
+    currentMarkdown: string,
+    inverseJson: StepBatch,
+    laterBatches: readonly StepBatch[],
+  ): StepApplicationResult {
+    const current = this.#parse(currentMarkdown)
+    if (!validDocument(current)) return { ok: false, kind: 'invalid_schema' }
+
+    const inverse = decodeSteps(this.milkdown.schema, inverseJson)
+    const later = decodeBatches(this.milkdown.schema, laterBatches)
+    if (inverse === null || later === null) return { ok: false, kind: 'invalid_step' }
+
+    // The mapping from the document the inverse was computed against to the
+    // current one, from positional maps only. Replaying the later batches
+    // instead is the original BUG-9 corruption: a live editor batch does not
+    // reproduce its recorded markdown under a headless replay, so the rebase
+    // computed against a document that never existed and dropped what the
+    // batch added.
+    const mapping = new Mapping()
+    for (const step of later) mapping.appendMap(step.getMap())
+
+    const only = inverse.length === 1 ? inverse[0] : undefined
+    if (only instanceof ReplaceStep) {
+      const applied = this.#revertReplace(current, only, mapping)
+      if (applied === null) return { ok: false, kind: 'rebase_failed' }
+      if (!validDocument(applied.doc)) return { ok: false, kind: 'invalid_schema' }
+      return {
+        ok: true,
+        markdown: this.#serialize(applied.doc),
+        steps: toStepBatch(applied.steps),
+      }
+    }
+
+    // A multi-step inverse is mapped step by step — exact for changes the
+    // later batches did not write inside of, refused when a position has no
+    // home. Agent transactions arrive as a single replace, so this path is
+    // the uncommon one.
+    const transform = new Transform(current)
+    for (let index = 0; index < inverse.length; index += 1) {
+      const step = inverse[index]
+      if (step === undefined) return { ok: false, kind: 'invalid_step' }
+      const own = new Mapping()
+      for (let undo = index - 1; undo >= 0; undo -= 1) {
+        const preceding = inverse[undo]
+        if (preceding === undefined) return { ok: false, kind: 'invalid_step' }
+        own.appendMap(preceding.getMap().invert())
+      }
+      own.appendMapping(mapping)
+      for (const done of transform.steps) own.appendMap(done.getMap())
+      const mapped = step.map(own)
+      if (mapped === null) return { ok: false, kind: 'rebase_failed' }
+      if (transform.maybeStep(mapped).failed !== null) return { ok: false, kind: 'rebase_failed' }
+    }
+
+    if (!validDocument(transform.doc)) return { ok: false, kind: 'invalid_schema' }
+
+    return {
+      ok: true,
+      markdown: this.#serialize(transform.doc),
+      steps: toStepBatch(transform.steps),
+    }
+  }
+
+  /**
+   * Applies one inverse replace to the current document, excluding what later
+   * batches inserted inside its span (BUG-9).
+   *
+   * Mapping the step whole is wrong in exactly the way people type: pressing
+   * Enter at the end of the agent's paragraph splits the agent's node, so the
+   * paragraph typed next lives positionally inside the span the inverse
+   * replaces — a plainly-mapped `to` expands over it and the revert eats it.
+   *
+   * Instead the span is walked token by token: a token survives when its two
+   * boundaries still map one token apart. Surviving runs are the agent content
+   * still present; the gaps between runs are later insertions and are kept.
+   * The restored content replaces the first run; later runs still holding text
+   * are deleted; token-only runs — structure now owned by later content, like
+   * the split-off paragraph end — stay where they are.
+   */
+  #revertReplace(
+    current: ProseNode,
+    step: ReplaceStep,
+    mapping: Mapping,
+  ): { readonly doc: ProseNode; readonly steps: readonly Step[] } | null {
+    const segments: { start: number; end: number }[] = []
+    let open: { start: number; end: number } | undefined
+    for (let position = step.from; position < step.to; position += 1) {
+      const left = mapping.map(position, 1)
+      const right = mapping.map(position + 1, -1)
+      if (right - left !== 1) {
+        open = undefined
+        continue
+      }
+      if (open !== undefined && open.end === left) {
+        open.end = right
+      } else {
+        open = { start: left, end: right }
+        segments.push(open)
+      }
+    }
+    // The restored content needs a home: the first run still holding the
+    // agent's text. All-structural crumbs mean later edits consumed the
+    // content itself, and a revert with nowhere to put things back refuses.
+    const restoreInto = segments.find(
+      (segment) => current.textBetween(segment.start, segment.end).length > 0,
+    )
+    if (restoreInto === undefined) return null
+
+    let doc = current
+    const steps: Step[] = []
+    const attempt = (build: (transform: Transform) => void): boolean => {
+      const transform = new Transform(doc)
+      try {
+        build(transform)
+      } catch {
+        return false
+      }
+      if (!validDocument(transform.doc)) return false
+      doc = transform.doc
+      steps.push(...transform.steps)
+      return true
+    }
+
+    for (let index = segments.length - 1; index >= 0; index -= 1) {
+      const segment = segments[index]
+      if (segment === undefined || segment === restoreInto) continue
+      // Token-only runs are structure that later content now owns.
+      if (doc.textBetween(segment.start, segment.end).length === 0) continue
+      attempt((transform) => transform.deleteRange(segment.start, segment.end))
+    }
+    if (!attempt((transform) => transform.replaceRange(restoreInto.start, restoreInto.end, step.slice))) {
+      return null
+    }
+    return { doc, steps }
   }
 
   invertSteps(markdown: string, stepsJson: StepBatch): StepBatch | null {

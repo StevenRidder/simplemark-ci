@@ -24,8 +24,11 @@ import { tablerIcon } from './tabler-icons.js'
 export interface ActivityTimelineActions {
   /** Brings the change's own passage into view. */
   jumpTo(transactionId: string): void
-  /** Undoes one named transaction, keeping later edits. */
-  revert(transactionId: string): void
+  /**
+   * Undoes one named transaction, keeping later edits. False when the
+   * authority refused — the row must not claim a revert that never happened.
+   */
+  revert(transactionId: string): boolean
 }
 
 export interface ActivityTimeline {
@@ -63,27 +66,7 @@ export function createActivityTimeline(options: ActivityTimelineOptions): Activi
   /** Rows the reader has reverted this session, so the row can say so. */
   const reverted = new Set<string>()
 
-  /**
-   * Revert is offered on the newest revertible change only.
-   *
-   * `DocumentSession.revert` rebases the inverse over everything that came
-   * after, and that is correct at the authority — proven directly against the
-   * step port. Through the live editor it is not yet trustworthy: an editor
-   * batch is stored as the editor's own step JSON without being replayed through
-   * the headless port, and replaying it during a rebase does not reproduce a
-   * block the reader added afterwards, which silently disappears.
-   *
-   * So the promise is narrowed to the case with nothing to rebase over, which is
-   * also the case people actually reach for — undoing what the agent just did.
-   * Older rows say why rather than offering a button that can lose a paragraph.
-   * Filed as BUG-9.
-   */
-  function newestRevertibleId(records: readonly AcceptedChangeRecord[]): string | undefined {
-    const last = records[records.length - 1]
-    return last !== undefined && last.revertible ? last.transactionId : undefined
-  }
-
-  function row(record: AcceptedChangeRecord, newestId: string | undefined): HTMLElement {
+  function row(record: AcceptedChangeRecord): HTMLElement {
     const item = document.createElement('article')
     item.className = 'sm-activity-row'
     item.dataset['transaction'] = record.transactionId
@@ -115,27 +98,31 @@ export function createActivityTimeline(options: ActivityTimelineOptions): Activi
       done.className = 'sm-activity-reverted'
       done.textContent = 'reverted'
       actions.append(done)
-    } else if (record.revertible && record.transactionId === newestId) {
+    } else if (record.revertible) {
+      // Any revertible row, not only the newest: the inverse is positioned
+      // through later batches' step maps without replaying them, so a
+      // paragraph typed afterwards survives the revert (BUG-9). The authority
+      // still refuses when a later edit consumed the passage; the row is
+      // marked reverted only when it actually happened.
       const revert = document.createElement('button')
       revert.type = 'button'
       revert.dataset['action'] = 'revert'
       revert.textContent = 'Revert'
-      revert.title = 'Undo this change.'
+      revert.title = 'Undo this change. Later edits stay.'
       revert.addEventListener('click', () => {
+        // Marked before the call: a successful revert repaints this panel from
+        // inside it, and the repaint must already see the row as reverted.
         reverted.add(record.transactionId)
-        options.revert(record.transactionId)
+        if (!options.revert(record.transactionId)) reverted.delete(record.transactionId)
       })
       actions.append(revert)
     } else {
-      // Honest rather than hopeful. Either no inverse was stored — a live typing
-      // batch, a whole-document barrier — or something has changed since, and
-      // reverting past it is not yet trustworthy (BUG-9).
+      // Honest rather than hopeful: no inverse was stored — a live typing
+      // batch, a whole-document barrier.
       const why = document.createElement('span')
       why.className = 'sm-activity-unavailable'
-      why.textContent = record.revertible ? 'superseded by later edits' : 'not separately revertible'
-      why.title = record.revertible
-        ? 'Only the newest change can be reverted. Ordinary undo still applies.'
-        : 'No inverse was stored for this change. Ordinary undo still applies.'
+      why.textContent = 'not separately revertible'
+      why.title = 'No inverse was stored for this change. Ordinary undo still applies.'
       actions.append(why)
     }
 
@@ -167,16 +154,14 @@ export function createActivityTimeline(options: ActivityTimelineOptions): Activi
     list.className = 'sm-activity-rows'
     // Newest first: the change you are asking about is almost always the last
     // one that happened.
-    const log = options.history()
-    const newestId = newestRevertibleId(log)
-    const records = [...log].reverse()
+    const records = [...options.history()].reverse()
     if (records.length === 0) {
       const empty = document.createElement('p')
       empty.className = 'sm-activity-empty'
       empty.textContent = 'Nothing has changed this document yet.'
       list.append(empty)
     } else {
-      for (const record of records) list.append(row(record, newestId))
+      for (const record of records) list.append(row(record))
     }
 
     panel.append(header, list)

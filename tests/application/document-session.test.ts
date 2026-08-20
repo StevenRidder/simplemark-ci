@@ -42,6 +42,11 @@ function stepPort() {
     readonly localSteps: StepBatch
     readonly committedBatches: readonly StepBatch[]
   }[] = []
+  const reverts: {
+    readonly currentMarkdown: string
+    readonly inverse: StepBatch
+    readonly laterBatches: readonly StepBatch[]
+  }[] = []
 
   const apply = (markdown: string, steps: StepBatch): StepApplicationResult => {
     let next = markdown
@@ -71,6 +76,12 @@ function stepPort() {
       }
       return apply(current, localSteps)
     },
+    revertSteps(currentMarkdown, inverse, laterBatches) {
+      reverts.push({ currentMarkdown, inverse, laterBatches })
+      // The whole point: the later batches are positioning input, never
+      // replayed. The stub applies only the inverse, to the current document.
+      return apply(currentMarkdown, inverse)
+    },
     invertSteps(_markdown, steps) {
       const inverse: TestStep[] = []
       for (const step of steps as readonly TestStep[]) {
@@ -90,7 +101,7 @@ function stepPort() {
     markdownToSteps: () => ({ ok: false, kind: 'invalid_step' }),
   }
 
-  return { port, rebases }
+  return { port, rebases, reverts }
 }
 
 describe('DocumentSession', () => {
@@ -459,11 +470,45 @@ describe('DocumentSession', () => {
 
     expect(reverted).toEqual({ ok: true, revision: 3 })
     expect(session.snapshot()).toEqual({ revision: 3, markdown: 'baseB', dirty: true })
-    expect(steps.rebases).toEqual([{
-      baseMarkdown: 'baseA',
-      localSteps: [{ deleteToken: 'A' }],
-      committedBatches: [[{ append: 'B' }]],
+    // The inverse goes to the current document with the later batches as
+    // positioning input — not to a historical document with a replay.
+    expect(steps.reverts).toEqual([{
+      currentMarkdown: 'baseAB',
+      inverse: [{ deleteToken: 'A' }],
+      laterBatches: [[{ append: 'B' }]],
     }])
+    expect(steps.rebases).toEqual([])
+  })
+
+  test('reverting past a live editor batch never replays that batch', async () => {
+    const { port: files } = stubPort('base')
+    const steps = stepPort()
+    const session = await DocumentSession.open(files, undefined, steps.port)
+    const first = session.applySteps({
+      actorId: 'agent',
+      name: 'Append A',
+      baseVersion: 0,
+      steps: [{ append: 'A' }],
+    })
+    expect(first).toMatchObject({ ok: true, revision: 1 })
+    if (!first.ok) throw new Error('Expected the agent write to commit')
+    // A live editor batch is stored as-is: the editor's own step JSON and its
+    // own serialized markdown. These steps cannot be replayed by this port at
+    // all — which is the BUG-9 point: reverting an older change must succeed
+    // without ever replaying them.
+    expect(session.acceptEditorSteps({
+      actorId: 'human',
+      name: 'Typing',
+      baseVersion: 1,
+      steps: [{ error: 'invalid_step' }],
+      markdown: 'baseAB',
+    })).toMatchObject({ ok: true, revision: 2 })
+
+    const reverted = session.revert(String(first.revision))
+
+    expect(reverted).toEqual({ ok: true, revision: 3 })
+    expect(session.snapshot()).toEqual({ revision: 3, markdown: 'baseB', dirty: true })
+    expect(steps.rebases).toEqual([])
   })
 
   test('refuses an unrebasable revert and leaves the document untouched', async () => {

@@ -2346,10 +2346,37 @@ function activeBlockSpellcheckPlugin(): Plugin {
     key: activeBlockSpellcheckKey,
     state: {
       init: (_config, state) => activeBlockSpellcheckDecorations(state),
-      apply: (transaction, decorations, previousState, nextState) =>
-        transaction.docChanged || !previousState.selection.eq(nextState.selection)
-          ? activeBlockSpellcheckDecorations(nextState)
-          : decorations.map(transaction.mapping, transaction.doc),
+      apply: (transaction, decorations, previousState, nextState) => {
+        if (!transaction.docChanged && previousState.selection.eq(nextState.selection)) {
+          return decorations
+        }
+        // Spellcheck exists for typing, and a range selection is not typing.
+        // The head of a drag crosses every block on its way, and recomputing
+        // per selection change flipped `spellcheck` onto each of them in turn —
+        // one synchronous AppleSpell round trip per block crossed in the
+        // packaged shell (BUG-10, the BUG-4 failure mode resurfacing). While
+        // any range exists, no block opts in.
+        if (!nextState.selection.empty) return DecorationSet.empty
+        const target = activeBlockSpellcheckRange(nextState)
+        if (target === undefined) return DecorationSet.empty
+        const mapped = transaction.docChanged
+          ? decorations.map(transaction.mapping, transaction.doc)
+          : decorations
+        const existing = mapped.find()
+        // The caret is still in the same block: keep the mapped decoration.
+        // Recreating it per keystroke re-announced the attribute WebKit was
+        // already honouring.
+        if (
+          existing.length === 1
+          && existing[0]!.from === target.from
+          && existing[0]!.to === target.to
+        ) {
+          return mapped
+        }
+        return DecorationSet.create(nextState.doc, [
+          Decoration.node(target.from, target.to, { spellcheck: 'true' }),
+        ])
+      },
     },
     props: {
       decorations: (state) => activeBlockSpellcheckKey.getState(state),
@@ -2367,16 +2394,28 @@ function activeBlockSpellcheckPlugin(): Plugin {
 
 const activeBlockSpellcheckKey = new PluginKey<DecorationSet>('simplemark-active-block-spellcheck')
 
-/** Decorates exactly the text block that holds the selection. */
-function activeBlockSpellcheckDecorations(state: EditorState): DecorationSet {
+/** The text block holding the caret, when the selection is a caret at all. */
+function activeBlockSpellcheckRange(
+  state: EditorState,
+): { readonly from: number; readonly to: number } | undefined {
   const $head = state.selection.$head
   for (let depth = $head.depth; depth > 0; depth -= 1) {
     const node = $head.node(depth)
     if (!node.isTextblock || node.type.spec.code === true) continue
     const from = $head.before(depth)
-    return DecorationSet.create(state.doc, [Decoration.node(from, from + node.nodeSize, { spellcheck: 'true' })])
+    return { from, to: from + node.nodeSize }
   }
-  return DecorationSet.empty
+  return undefined
+}
+
+/** Decorates exactly the text block that holds a caret; a range marks nothing. */
+function activeBlockSpellcheckDecorations(state: EditorState): DecorationSet {
+  if (!state.selection.empty) return DecorationSet.empty
+  const target = activeBlockSpellcheckRange(state)
+  if (target === undefined) return DecorationSet.empty
+  return DecorationSet.create(state.doc, [
+    Decoration.node(target.from, target.to, { spellcheck: 'true' }),
+  ])
 }
 
 

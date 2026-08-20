@@ -109,6 +109,17 @@ export interface AcceptedChange {
 
 export type AcceptedChangeListener = (change: AcceptedChange) => void
 
+/** One row of the accepted-change log, as a surface should read it. */
+export interface AcceptedChangeRecord {
+  /** Pass to `revert`. Opaque on purpose. */
+  readonly transactionId: string
+  readonly revision: number
+  readonly actorId: string
+  readonly name: string
+  /** False when no inverse was stored, so Revert would refuse. */
+  readonly revertible: boolean
+}
+
 export type RevertResult =
   | { readonly ok: true; readonly revision: number }
   | {
@@ -195,6 +206,28 @@ export class DocumentSession {
 
   snapshot(): DocumentSnapshot {
     return { revision: this.#revision, markdown: this.markdown, dirty: this.#dirty }
+  }
+
+  /**
+   * Every accepted change, oldest first (AGENT-10).
+   *
+   * The timeline's source. `transactionId` is what `revert` takes, so a caller
+   * never has to know that it happens to be the revision number as a string —
+   * an encoding this method exists to stop leaking into every surface.
+   *
+   * `revertible` is false for a whole-document barrier and for a live editor
+   * batch, neither of which stored an inverse. Saying so is the point: a
+   * timeline that offered Revert on every row and then refused half of them
+   * would be worse than one that shows which rows can actually go back.
+   */
+  history(): readonly AcceptedChangeRecord[] {
+    return this.#changes.map((change, index) => ({
+      transactionId: String(index + 1),
+      revision: index + 1,
+      actorId: change.actorId,
+      name: change.name,
+      revertible: change.kind === 'steps' && change.inverse !== null,
+    }))
   }
 
   /**

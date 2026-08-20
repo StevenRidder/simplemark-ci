@@ -1,6 +1,7 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 
 /**
@@ -32,6 +33,59 @@ import { $prose } from '@milkdown/kit/utils'
 
 /** The actor a transaction is attributed to. `you` is this person, always. */
 export const HUMAN_ACTOR = 'you'
+
+/**
+ * The scope an agent is working in right now (AGENT-10).
+ *
+ * The status line says an agent is working; this says *where*. The wireframe
+ * calls it the agent's cursor: "you select and invoke → may edit within that
+ * scope, live, with its cursor visible."
+ *
+ * A decoration, so it costs the document nothing and disappears with the run.
+ * `undefined` clears it — an agent that is not writing has no scope to show, and
+ * a stale highlight would claim it does.
+ */
+export const agentScopeKey = new PluginKey<DecorationSet>('simplemark-agent-scope')
+
+export function setAgentScope(
+  view: EditorView,
+  range: { readonly from: number; readonly to: number } | undefined,
+): void {
+  view.dispatch(view.state.tr.setMeta(agentScopeKey, range ?? null))
+}
+
+function agentScopePlugin(): Plugin<DecorationSet> {
+  return new Plugin<DecorationSet>({
+    key: agentScopeKey,
+    state: {
+      init: () => DecorationSet.empty,
+      apply: (transaction, value, _oldState, nextState) => {
+        const meta = transaction.getMeta(agentScopeKey) as
+          | { from: number; to: number }
+          | null
+          | undefined
+        if (meta === null) return DecorationSet.empty
+        if (meta !== undefined) {
+          const from = Math.max(0, Math.min(meta.from, nextState.doc.content.size))
+          const to = Math.max(from, Math.min(meta.to, nextState.doc.content.size))
+          if (from === to) return DecorationSet.empty
+          return DecorationSet.create(nextState.doc, [
+            Decoration.inline(from, to, { class: 'sm-agent-scope' }),
+          ])
+        }
+        // Follows its passage through the reader's own edits, rather than
+        // marking whatever text has since moved into those positions.
+        return transaction.docChanged ? value.map(transaction.mapping, transaction.doc) : value
+      },
+    },
+    props: {
+      decorations: (state) => agentScopeKey.getState(state) ?? DecorationSet.empty,
+    },
+  })
+}
+
+/** The milkdown wrapper for the live agent scope. */
+export const agentScopeDecoration = $prose(() => agentScopePlugin())
 
 export interface AttributionMeta {
   /** Attribute this transaction's changes to a named participant. */

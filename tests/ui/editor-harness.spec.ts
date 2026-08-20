@@ -119,11 +119,13 @@ test('is the real ProseMirror candidate, not a contenteditable demo', async ({ p
   await expect(page.locator(`${editor} h2`).first()).toContainText('Start here')
 })
 
-test('workspace controls are real while collaboration controls stay disabled', async ({ page }) => {
+test('workspace controls are real, and Work with AI is no longer later work', async ({ page }) => {
   // TOOLBAR-1 made Checklist, Table and Convert to diagram real; EDITOR-4 made
-  // portable image/file references real. SHELL-1 delivers search, new note,
-  // and the document list; Work with AI remains later work.
-  await expect(page.getByRole('button', { name: 'Work with AI' })).toBeDisabled()
+  // portable image/file references real. SHELL-1 delivers search, new note, and
+  // the document list. Work with AI was "later work" until APP-32 and AGENT-9
+  // arrived; it now opens the app-level agent conversation, and a single passage
+  // is asked through its own note instead.
+  await expect(page.getByRole('button', { name: 'Work with AI' })).toBeEnabled()
   await expect(page.getByLabel('Styles bar').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Search' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Open note' })).toBeEnabled()

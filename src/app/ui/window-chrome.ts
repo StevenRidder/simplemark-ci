@@ -137,6 +137,12 @@ export interface WindowChromeOptions {
    * asks for the panel, so a shell that cannot host one shows no way to ask.
    */
   readonly onToggleAgent?: (() => void) | undefined
+  /**
+   * Opens the Activity timeline (AGENT-10).
+   *
+   * In `right`, like Work with AI, because the macOS titlebar drops `left`.
+   */
+  readonly onToggleActivity?: (() => void) | undefined
   readonly getSelectionShape?: () => {
     readonly inTable: boolean
     readonly inCode: boolean
@@ -328,6 +334,8 @@ export interface WindowChrome {
   setPreferences(next: ReaderPreferences): void
   /** Reflects whether the agent conversation is open on its control. */
   setAgentOpen(open: boolean): void
+  /** Reflects whether the Activity timeline is open on its control. */
+  setActivityOpen(open: boolean): void
   toggleHistoryNavigation(): void
   historyNavigationVisible(): boolean
   /**
@@ -1319,23 +1327,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     event.preventDefault()
     options.onSave()
   })
-  // ---- agent conversation (ADR-0012) ----
-  // A control, not a panel: nothing is added to the layout until it is pressed.
-  const agentButton = document.createElement('button')
-  agentButton.type = 'button'
-  agentButton.className = 'tool agent'
-  agentButton.dataset['action'] = 'toggle-agent'
-  agentButton.setAttribute('aria-label', 'Agent conversation')
-  agentButton.setAttribute('aria-expanded', 'false')
-  agentButton.title = 'Agent conversation'
-  agentButton.innerHTML = tablerIcon('sparkles')
-  if (options.onToggleAgent === undefined) {
-    agentButton.hidden = true
-  } else {
-    agentButton.addEventListener('click', () => options.onToggleAgent?.())
-  }
-
-  left.append(saveButton, agentButton)
+  left.append(saveButton)
 
   // ---- document information (EDITOR-3, widened for APP-2) ----
   // Contents and statistics share one temporary panel rather than each growing
@@ -1656,13 +1648,29 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   status.title = 'Saved'
   right.append(status)
 
+  /**
+   * Work with AI — the placeholder this build finally fills.
+   *
+   * It lives in `right` because that is the group both titlebars append: the
+   * macOS bar drops `left` entirely, the traffic lights owning that corner. An
+   * earlier attempt put an agent toggle in `left`, which meant the control did
+   * not exist in the packaged app at all while passing every browser test,
+   * since the browser shell is the one path that keeps `left`.
+   */
   const workWithAi = document.createElement('button')
   workWithAi.className = hasNativeTitlebar ? 'tool work-with-ai' : 'join'
   workWithAi.type = 'button'
+  workWithAi.dataset['action'] = 'toggle-agent'
   workWithAi.textContent = hasNativeTitlebar ? '✦' : 'Work with AI'
   workWithAi.setAttribute('aria-label', 'Work with AI')
-  workWithAi.disabled = true
-  workWithAi.title = 'Work with AI — not in this build; the live-agent deliverable delivers it'
+  if (options.onToggleAgent === undefined) {
+    workWithAi.disabled = true
+    workWithAi.title = 'Work with AI — not available in this shell'
+  } else {
+    workWithAi.setAttribute('aria-expanded', 'false')
+    workWithAi.title = 'Work with AI — ask across notes. To edit one passage, note it and Ask agent.'
+    workWithAi.addEventListener('click', () => options.onToggleAgent?.())
+  }
   right.append(workWithAi)
   for (const entry of TRAILING) {
     const button = svgButton('tool', entry.label, entry.icon, { disabled: true, owner: entry.owner })
@@ -1676,6 +1684,21 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // palette that is already where the person put it, and View › Toggle Styles
   // Bar (⇧⌘Y) covers hiding it. A second control would be titlebar furniture
   // competing with the document, which is what the titlebar rule forbids.
+  const activityButton = svgButton(
+    'tool activity',
+    'Activity',
+    '<path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/>',
+  )
+  activityButton.dataset['action'] = 'toggle-activity'
+  if (options.onToggleActivity === undefined) {
+    activityButton.hidden = true
+  } else {
+    activityButton.disabled = false
+    activityButton.title = 'Activity — named changes you can jump to or revert'
+    activityButton.addEventListener('click', () => options.onToggleActivity?.())
+  }
+  right.append(activityButton)
+
   const infoButton = svgButton(
     'tool document-information',
     'Document information',
@@ -3295,8 +3318,12 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     },
     setUpdateStatus: showUpdate,
     setAgentOpen: (open: boolean) => {
-      agentButton.setAttribute('aria-expanded', String(open))
-      agentButton.classList.toggle('active', open)
+      workWithAi.setAttribute('aria-expanded', String(open))
+      workWithAi.classList.toggle('active', open)
+    },
+    setActivityOpen: (open: boolean) => {
+      activityButton.setAttribute('aria-expanded', String(open))
+      activityButton.classList.toggle('active', open)
     },
     toggleHistoryNavigation,
     historyNavigationVisible: () => !historyNavigation.hidden,

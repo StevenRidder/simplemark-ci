@@ -1,13 +1,23 @@
-import { matchAnchor } from '../../domain/index.js'
+import { hasAgentTurn, matchAnchor, threadTurns } from '../../domain/index.js'
 import type { Thread } from '../../domain/index.js'
 
 /**
- * The conditional notes rail (ADR-0007).
+ * The conditional notes rail (ADR-0007), and the passage conversation (AGENT-9).
  *
  * No open threads, no rail element. An unmatched open thread is an orphan:
  * it keeps the original quote, tints nowhere, and offers reattach / detach /
- * remove. A matched open thread offers resolve. Bodies are plain text here;
- * Markdown rendering is a recorded deferral.
+ * remove. A matched open thread offers resolve.
+ *
+ * A matched thread also offers **Ask agent**, and that is the whole passage
+ * conversation: the note body is the instruction, its anchor is the scope, and
+ * the answer arrives as another turn in the same thread. There is no second
+ * surface, because the wireframe is explicit that the conversation opens *at the
+ * passage* and that a rail never exists for agents — what separates a note from
+ * a conversation is that somebody answered, and the composer mode they used.
+ *
+ * Once a thread has an agent in it the composer appears, with the two modes that
+ * must never be conflated: Leave note posts, Redirect now fences the current
+ * generation and starts replacement work.
  */
 
 export interface NoteRailActions {
@@ -15,6 +25,17 @@ export interface NoteRailActions {
   readonly detach: (id: string) => void
   readonly remove: (id: string) => void
   readonly reattach: (id: string) => void
+  /** Runs the agent against this thread's passage, using its body as the ask. */
+  readonly askAgent?: (id: string) => void
+  /** Sends a turn into the thread. `redirect` also fences the live generation. */
+  readonly sendTurn?: (id: string, mode: 'note' | 'redirect', body: string) => void
+}
+
+export interface NoteRailOptions {
+  /** Renders a turn's Markdown through the document's own pipeline. */
+  readonly renderMarkdown?: (markdown: string) => DocumentFragment
+  /** The thread whose passage an agent is working on right now. */
+  readonly busyThreadId?: string
 }
 
 export function renderNoteRail(
@@ -23,6 +44,7 @@ export function renderNoteRail(
   actions: NoteRailActions,
   documentText: string,
   waitingId?: string,
+  options: NoteRailOptions = {},
 ): void {
   host.replaceChildren()
   const open = threads.filter((thread) => thread.state === 'open')
@@ -49,10 +71,30 @@ export function renderNoteRail(
     row.dataset['orphan'] = matched ? 'false' : 'true'
     row.dataset['waiting'] = waitingId === thread.id ? 'true' : 'false'
 
-    const body = document.createElement('p')
-    body.className = 'sm-note-rail-body'
-    body.textContent = thread.body
-    row.append(body)
+    // Every turn, oldest first, the opening note included — a conversation that
+    // rendered only the replies would hide what was asked.
+    const conversational = hasAgentTurn(thread)
+    row.dataset['conversation'] = String(conversational)
+    for (const turn of threadTurns(thread)) {
+      const body = document.createElement('p')
+      body.className = 'sm-note-rail-body'
+      body.dataset['author'] = turn.author
+      if (turn.mode !== undefined) body.dataset['mode'] = turn.mode
+      if (options.renderMarkdown === undefined) {
+        body.textContent = turn.body
+      } else {
+        body.append(options.renderMarkdown(turn.body))
+      }
+      row.append(body)
+    }
+
+    if (options.busyThreadId === thread.id) {
+      const working = document.createElement('p')
+      working.className = 'sm-note-rail-quote'
+      working.dataset['state'] = 'working'
+      working.textContent = 'Agent is working on this passage…'
+      row.append(working)
+    }
 
     if (!matched && thread.anchor !== undefined) {
       const quote = document.createElement('p')
@@ -68,9 +110,29 @@ export function renderNoteRail(
       row.append(hint)
     }
 
+    // The composer, once there is an agent in the thread to speak to. Before
+    // that the note is a note, and a composer would be a chat box on a document
+    // nobody has invited anything into.
+    if (conversational && actions.sendTurn !== undefined) {
+      row.append(threadComposer(thread.id, actions.sendTurn))
+    }
+
     const buttons = document.createElement('div')
     buttons.className = 'sm-note-rail-actions'
     if (matched) {
+      if (actions.askAgent !== undefined && !conversational) {
+        // The wireframe's invocation: you select the passage, then ask. The note
+        // body is the instruction and the anchor is the scope.
+        //
+        // Never disabled for "no provider configured". Whether one is configured
+        // changes in Settings, which does not repaint this rail — so a button
+        // disabled at paint time stayed disabled after the key was entered. The
+        // run itself already answers "no document agent is configured" into the
+        // thread, which is both current and self-explanatory.
+        const ask = actionButton('ask-agent', 'Ask agent', () => actions.askAgent!(thread.id))
+        ask.title = 'Ask the agent to act on this passage, using this note as the instruction'
+        buttons.append(ask)
+      }
       buttons.append(actionButton('resolve', 'Resolve', () => actions.resolve(thread.id)))
     } else {
       buttons.append(
@@ -111,6 +173,50 @@ export function renderNoteStack(host: HTMLElement, threads: readonly Thread[], o
   const hostBox = host.getBoundingClientRect()
   stack.style.top = `${Math.max(8, origin.bottom - hostBox.top + 8)}px`
   stack.style.left = `${Math.max(8, origin.left - hostBox.left)}px`
+}
+
+/**
+ * The two composer modes, at the passage.
+ *
+ * Two buttons rather than a mode plus one Send: there is no stored mode to be
+ * wrong about when you press, which is the cheapest possible guarantee that
+ * communication and control cannot be conflated. A message reading "stop" sent
+ * with Leave note is a message (SWITCHBOARD-KERNEL.md §5).
+ */
+function threadComposer(
+  threadId: string,
+  send: (id: string, mode: 'note' | 'redirect', body: string) => void,
+): HTMLElement {
+  const composer = document.createElement('form')
+  composer.className = 'sm-note-rail-composer'
+
+  const input = document.createElement('textarea')
+  input.className = 'sm-note-rail-input'
+  input.setAttribute('aria-label', 'Reply in this passage conversation')
+  input.placeholder = 'To the agent…'
+  composer.append(input)
+
+  const buttons = document.createElement('div')
+  buttons.className = 'sm-note-rail-actions'
+  for (const mode of ['redirect', 'note'] as const) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.dataset['action'] = mode === 'redirect' ? 'redirect-now' : 'leave-note'
+    button.textContent = mode === 'redirect' ? 'Redirect now' : 'Leave note'
+    button.title = mode === 'redirect'
+      ? 'Fences what the agent is doing and starts again from this'
+      : 'Posts this into the thread. Changes nothing the agent is doing.'
+    button.addEventListener('click', () => {
+      const body = input.value.trim()
+      if (body === '') return
+      input.value = ''
+      send(threadId, mode, body)
+    })
+    buttons.append(button)
+  }
+  composer.append(buttons)
+  composer.addEventListener('submit', (event) => event.preventDefault())
+  return composer
 }
 
 function actionButton(action: string, label: string, onClick: () => void): HTMLButtonElement {

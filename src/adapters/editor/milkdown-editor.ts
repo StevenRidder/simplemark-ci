@@ -93,9 +93,11 @@ import {
   documentRangeAt,
 } from './note-decorations.js'
 import {
+  agentScopeDecoration,
   attributionKey,
   attributionPlugin,
   currentAttribution,
+  setAgentScope,
   type AttributionMeta,
 } from './attribution-decorations.js'
 import { installNoteCapture, anchorFromView } from './note-capture.js'
@@ -676,6 +678,8 @@ export class MilkdownEditor {
       // Margin attribution (APP-32). Inert until an agent writes, and derived
       // from the transactions rather than recorded beside them.
       .use(attributionPlugin(REMOTE_STEPS_META))
+      // Where the agent is working, while it works (AGENT-10).
+      .use(agentScopeDecoration)
       .use(mathRemark)
       .use(inlineMathSchema)
       .use(mathBlockSchema)
@@ -2079,6 +2083,17 @@ export class MilkdownEditor {
       if (empty || from === to) return undefined
       return { from, to }
     })
+  }
+
+  /**
+   * Shows, or clears, the scope an agent is writing in.
+   *
+   * Decoration only: the document bytes do not change, and the highlight
+   * disappears with the run rather than being something to clean up.
+   */
+  showAgentScope(range: { readonly from: number; readonly to: number } | undefined): void {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    setAgentScope(view, range)
   }
 
   /**

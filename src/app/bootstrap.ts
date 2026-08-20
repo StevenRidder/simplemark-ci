@@ -10,10 +10,12 @@ import type {
   ThreadStore,
 } from '../application/index.js'
 import {
+  appendReply,
   codeFenceContent,
   markdownTableToCsv,
   markdownTableToHtml,
   markdownToPlainText,
+  matchAnchor,
   detachThread,
   resolveThread,
 } from '../domain/index.js'
@@ -26,6 +28,7 @@ import { createWindowChrome } from './ui/window-chrome.js'
 import { createFindBar } from './ui/find-bar.js'
 import { renderNoteRail, renderNoteStack } from './ui/note-rail.js'
 import { createAgentPanel } from './ui/agent-panel.js'
+import { createActivityTimeline } from './ui/activity-timeline.js'
 import { createAgentStatusLine } from './ui/agent-status-line.js'
 import { AgentConversation } from './agent-conversation.js'
 import type { ComposerMode } from './agent-conversation.js'
@@ -147,6 +150,9 @@ export interface AppComposition {
     isRunning(): boolean
     /** Whether the reader has opted into following the agent. */
     isFollowing(): boolean
+    /** Opens or closes the Activity timeline. */
+    toggleActivity(): void
+    isActivityOpen(): boolean
     /**
      * Replaces the provider for a test.
      *
@@ -827,6 +833,10 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         agentPanel.toggle()
         chrome.setAgentOpen(agentPanel.isOpen())
       },
+      onToggleActivity: () => {
+        activityTimeline.toggle()
+        chrome.setActivityOpen(activityTimeline.isOpen())
+      },
     }),
     fileName: session.name,
     filePath: options.filePath,
@@ -1061,6 +1071,55 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   // scopes it to the surface it belongs beside.
   documentSurface?.append(agentPanel.host)
 
+  /**
+   * Where each accepted agent change landed, by transaction id.
+   *
+   * The session sequences opaque steps and cannot say where one applied; the
+   * run knows, because the authority scoped it. Recorded here so the timeline
+   * can offer Jump to on the rows it can actually jump to.
+   */
+  const agentChangePositions = new Map<string, number>()
+
+  const activityTimeline = createActivityTimeline({
+    history: () => session.history(),
+    humanActor: 'human',
+    positionOf: (id) => agentChangePositions.get(id),
+    jumpTo: (id) => {
+      const position = agentChangePositions.get(id)
+      if (position !== undefined) editor?.reveal(position)
+    },
+    revert: (id) => {
+      const result = session.revert(id)
+      if (!result.ok) {
+        chrome.setStatus('error', `Could not revert — ${result.reason}`)
+        return
+      }
+      // The view is updated by the accepted-change mirror below, not from here.
+      // Replacing the whole document instead lost unrelated blocks: the session
+      // had reverted correctly and the replacement was what damaged it.
+      chrome.setStatus('dirty')
+      chrome.refreshStatistics()
+      paintNotes()
+      activityTimeline.repaint()
+    },
+  })
+  documentSurface?.append(activityTimeline.host)
+
+  /**
+   * Mirrors a reverted transaction into the visible view.
+   *
+   * The same path an agent edit takes, deliberately: one accepted-change stream,
+   * one way of getting a change the editor did not make onto the screen
+   * (ADR-0006). Reverting by re-rendering the whole document from the snapshot
+   * looked equivalent and was not — it dropped blocks the revert had correctly
+   * left alone, because a whole-document replace is not the change that was
+   * accepted.
+   */
+  const stopRevertMirror = session.onAccepted((change) => {
+    if (change.actorId !== 'activity' || change.steps === undefined) return
+    editor?.applyRemoteSteps(change.steps, 'activity')
+  })
+
   const agentController = createAgentController({
     session,
     editor: {
@@ -1069,12 +1128,17 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       reveal: (range) => editor?.reveal(range.from),
       documentText: () => editor?.noteDocumentText() ?? session.snapshot().markdown,
       documentRangeAt: (offset, length) => editor?.documentRangeAt(offset, length),
+      showScope: (range) => editor?.showAgentScope(range),
     },
     panel: agentPanel,
     status: agentStatus,
     conversation,
     provider: () => agentProvider?.(),
     noteHandle: () => options.noteRowId?.() ?? session.documentHandle(),
+    onAcceptedAt: (transactionId, from) => {
+      agentChangePositions.set(transactionId, from)
+      activityTimeline.repaint()
+    },
     onAgentEdit: (handle) => {
       // Two writes, both needed. The tally is the durable one the next render
       // reads from; patching the row is only so the marker appears now, without
@@ -1085,6 +1149,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   })
 
   let waitingReattachId: string | undefined
+  /** The thread whose passage the agent is working on, for the rail's own line. */
+  let agentBusyThreadId: string | undefined
 
   const closeNoteStack = (): void => {
     noteStackHost.replaceChildren()
@@ -1187,7 +1253,92 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         waitingReattachId = id
         paintNotes()
       },
-    }, text, waitingReattachId)
+      askAgent: (id) => void askAgentForThread(id),
+      sendTurn: (id, mode, body) => void sendThreadTurn(id, mode, body),
+    }, text, waitingReattachId, {
+      renderMarkdown: (markdown) => stepAdapter.renderMarkdown(markdown),
+      ...(agentBusyThreadId === undefined ? {} : { busyThreadId: agentBusyThreadId }),
+    })
+  }
+
+  /**
+   * Ask the agent to act on one note's passage (AGENT-9).
+   *
+   * The note body is the instruction and the anchor is the scope, which is the
+   * wireframe's invocation: you select the passage, then ask. The anchor is
+   * matched against the editor's own text and mapped to document positions
+   * there, so the scope is the passage as it reads *now* rather than where it
+   * was when the note was written.
+   */
+  async function askAgentForThread(id: string): Promise<void> {
+    const thread = noteThreads.find((candidate) => candidate.id === id)
+    if (thread === undefined || thread.anchor === undefined) return
+    const instruction = thread.body.trim()
+    if (instruction === '') return
+
+    const text = editor?.noteDocumentText() ?? session.snapshot().markdown
+    const offset = matchAnchor(thread.anchor, text)
+    if (offset === undefined) {
+      // An orphan has no passage to scope to, and guessing one is exactly what
+      // the anchor rules forbid. The rail already says the note is adrift.
+      await recordThreadReply(thread.id, 'agent', 'This note is no longer on a passage, so there is nothing to scope to.')
+      return
+    }
+    const range = editor?.documentRangeAt(offset, thread.anchor.quote.length)
+    if (range === undefined) return
+
+    agentBusyThreadId = thread.id
+    paintNotes()
+    const answer = await agentController.runForPassage(instruction, range)
+    agentBusyThreadId = undefined
+    await recordThreadReply(thread.id, 'agent', answer)
+  }
+
+  /** A turn typed into the passage conversation. `redirect` also fences. */
+  async function sendThreadTurn(
+    id: string,
+    mode: 'note' | 'redirect',
+    body: string,
+  ): Promise<void> {
+    await recordThreadReply(id, 'local', body, mode)
+    if (mode === 'note') return
+    const thread = noteThreads.find((candidate) => candidate.id === id)
+    if (thread === undefined || thread.anchor === undefined) return
+    const text = editor?.noteDocumentText() ?? session.snapshot().markdown
+    const offset = matchAnchor(thread.anchor, text)
+    const range = offset === undefined
+      ? undefined
+      : editor?.documentRangeAt(offset, thread.anchor.quote.length)
+    agentBusyThreadId = id
+    paintNotes()
+    const answer = await agentController.redirectForPassage(body, range)
+    agentBusyThreadId = undefined
+    await recordThreadReply(id, 'agent', answer)
+  }
+
+  async function recordThreadReply(
+    id: string,
+    author: string,
+    body: string,
+    mode?: 'note' | 'redirect',
+  ): Promise<void> {
+    const thread = noteThreads.find((candidate) => candidate.id === id)
+    if (thread === undefined) return
+    const next = appendReply(thread, {
+      id: `${id}-${(thread.replies?.length ?? 0) + 1}`,
+      author,
+      createdAt: new Date().toISOString(),
+      body,
+      ...(mode === undefined ? {} : { mode }),
+    })
+    try {
+      await store.save(next)
+    } catch {
+      // A sidecar that cannot be written costs the transcript, not the edit
+      // that already landed. Keep the turn in memory so the rail still shows it.
+      noteThreads = [...noteThreads.filter((candidate) => candidate.id !== id), next]
+    }
+    paintNotes()
   }
   const notes: AppComposition['notes'] = {
     setThreadsForTest: (threads) => {
@@ -1453,14 +1604,21 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       stop: () => agentController.stop(),
       isRunning: () => agentController.isRunning(),
       isFollowing: () => agentStatus.isFollowing(),
+      toggleActivity: () => {
+        activityTimeline.toggle()
+        chrome.setActivityOpen(activityTimeline.isOpen())
+      },
+      isActivityOpen: () => activityTimeline.isOpen(),
       setProviderForTest: (provider) => {
         agentProvider = provider === undefined ? undefined : () => provider
         agentPanel.repaint()
+        paintNotes()
       },
       editsForTest: () => Object.fromEntries(agentEdits.all()),
     },
     async destroy() {
       clearTimeout(saveTimer)
+      stopRevertMirror()
       agentController.dispose()
       await persistDerivedAnchors()
       noteCapture.destroy()

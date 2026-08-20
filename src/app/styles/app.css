@@ -5414,7 +5414,8 @@ section.editor::-webkit-scrollbar {
   color: var(--ink-2);
 }
 
-.tool.agent.active {
+.tool.work-with-ai.active,
+.join.active {
   color: var(--accent);
 }
 
@@ -5435,3 +5436,207 @@ section.editor::-webkit-scrollbar {
   cursor: not-allowed;
 }
 
+/* ---------------------------------------------------------------------------
+ * The passage conversation (AGENT-9)
+ *
+ * The same rail the anchored note already uses. A note with an agent in it is
+ * still a note, so it gains turns and a composer rather than a second surface.
+ * ------------------------------------------------------------------------- */
+
+.sm-note-rail-body[data-author='agent'] {
+  padding-left: 8px;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  color: var(--ink);
+}
+
+.sm-note-rail-body[data-mode='redirect']::before {
+  content: 'Redirect · ';
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sm-note-rail-quote[data-state='working'] {
+  color: var(--accent);
+}
+
+.sm-note-rail-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.sm-note-rail-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.sm-note-rail-actions button[data-action='ask-agent'],
+.sm-note-rail-actions button[data-action='redirect-now'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.sm-note-rail-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+ * The agent's live scope (AGENT-10).
+ *
+ * Where it is working, while it works — the wireframe's "cursor visible".
+ * A tint rather than a caret: an agent holds a passage, not an insertion point,
+ * and drawing a fake caret would imply it types character by character.
+ */
+.milkdown .ProseMirror .sm-agent-scope {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent-soft) 85%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * The Activity timeline (AGENT-10)
+ *
+ * Opened deliberately, and absent otherwise: `DESIGN.md` §9 forbids a resident
+ * activity rail, and this is the surface that sentence is most about.
+ * ------------------------------------------------------------------------- */
+
+.sm-activity-host:empty {
+  display: none;
+}
+
+.sm-activity {
+  position: absolute;
+  z-index: 71;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: var(--sm-agent-panel-width);
+  padding: 12px;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(32, 29, 24, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.document-surface:has(.sm-activity) .editor {
+  padding-right: calc(var(--sm-agent-panel-width) + 16px);
+}
+
+.sm-activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sm-activity-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.sm-activity-close {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.sm-activity-close svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.sm-activity-rows {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sm-activity-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.sm-activity-row {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+}
+
+.sm-activity-row[data-actor='agent'] {
+  background: color-mix(in srgb, var(--accent-soft) 55%, var(--paper));
+}
+
+.sm-activity-actor {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.sm-activity-name {
+  margin: 2px 0 5px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.sm-activity-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sm-activity-actions button {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sm-activity-actions button[data-action='revert'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.sm-activity-reverted,
+.sm-activity-unavailable {
+  font-size: 10px;
+  color: var(--ink-3);
+}

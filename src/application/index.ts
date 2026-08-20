@@ -66,6 +66,7 @@ export { dirtyBlocks } from './dirty-blocks.js'
 export type {
   AcceptedChange,
   AcceptedChangeListener,
+  AcceptedChangeRecord,
   DocumentSnapshot,
   DocumentTransaction,
   ApplyResult,

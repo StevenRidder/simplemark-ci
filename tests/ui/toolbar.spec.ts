@@ -621,10 +621,13 @@ test('the quiet gutter drag reorders document blocks through the editor transact
   }).toBe(true)
 })
 
-test('workspace controls are enabled while agent participation stays gated', async ({ page }) => {
+test('workspace controls are enabled, and Work with AI now is too', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Search' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'New note' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Document list' })).toBeEnabled()
-  await expect(page.getByRole('button', { name: 'Work with AI' })).toBeDisabled()
+  // Was asserted disabled while its tooltip read "not in this build; the
+  // live-agent deliverable delivers it". APP-32 and AGENT-9 are that
+  // deliverable, so the placeholder is now the agent conversation's control.
+  await expect(page.getByRole('button', { name: 'Work with AI' })).toBeEnabled()
   await expect(page.getByLabel('Styles bar').getByRole('button', { name: 'Insert image or link file' })).toBeEnabled()
 })

@@ -71,8 +71,14 @@ export {
 } from './clipboard/formats.js'
 export { CONTEXT_LENGTH, buildAnchor, locateAnchor, matchAnchor } from './notes/anchor.js'
 export type { Anchor, AnchorLocation } from './notes/anchor.js'
-export { detachThread, resolveThread } from './notes/thread.js'
-export type { Thread } from './notes/thread.js'
+export {
+  appendReply,
+  detachThread,
+  hasAgentTurn,
+  resolveThread,
+  threadTurns,
+} from './notes/thread.js'
+export type { Thread, ThreadMessage } from './notes/thread.js'
 export { mayApply } from './fences/may-apply.js'
 export type { AgentRun, RunStatus } from './fences/may-apply.js'
 export { emptyScopes, grantScope, noteIdFor } from './scopes/scope-token.js'

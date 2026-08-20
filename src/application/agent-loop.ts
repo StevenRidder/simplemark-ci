@@ -48,6 +48,22 @@ function ellipsis(quote: string): string {
 }
 
 /**
+ * What the Activity timeline calls one accepted agent change.
+ *
+ * Built from the instruction, because that is the only thing on hand that says
+ * what the change was *for*. The alternative — asking the model to name its own
+ * transaction — spends a turn and can be wrong; the instruction cannot be wrong
+ * about what was asked.
+ */
+export function transactionNameFor(instruction: string, target: InstructionTarget): string {
+  const asked = instruction.trim().replace(/\s+/g, ' ')
+  const short = asked === '' ? 'Agent edit' : ellipsis(asked)
+  if (target.kind === 'append') return `${short} (added at the end)`
+  if (target.kind === 'passage') return `${short} — “${ellipsis(target.quote)}”`
+  return short
+}
+
+/**
  * The scope argument every note-bound tool must echo.
  *
  * Declared rather than described in prose: the authority rejects a call whose
@@ -316,7 +332,10 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   const maxTurns = input.maxTurns ?? DEFAULT_MAX_TURNS
 
   let writes = 0
-  let lastRange: StepDocumentRange | undefined
+  // The scope from the outset, not only after the first write: the surface that
+  // shows *where* an agent is working needs it while it is still thinking, which
+  // is exactly when a reader is wondering.
+  let lastRange: StepDocumentRange | undefined = range
   const report = (detail: string): void => {
     input.onActivity?.({
       status: control.status,
@@ -436,6 +455,10 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       capability,
       inviter,
       openPolicy,
+      // Named from the work, not the tool. A timeline of rows all reading
+      // "Agent edit" is a timeline nobody opens (COLLABORATION.md §5.3: an
+      // agent edit is grouped and named, not 70 operations).
+      transactionName: transactionNameFor(control.instruction, currentTarget),
     })
     if (tool.kind === 'consent_pending') return tool
     if (tool.kind === 'ok' && WRITE_TOOLS.has(providerTurn.name)) {
@@ -478,6 +501,8 @@ function dispatchTool(input: {
   readonly capability: Capability
   readonly inviter: Capability
   readonly openPolicy: AgentMayOpenNotes
+  /** What the timeline will call this change. */
+  readonly transactionName: string
 }): ToolOutcome {
   const args = asRecord(input.args) ?? {}
 
@@ -529,7 +554,7 @@ function dispatchTool(input: {
         : { from: input.range.from, to: input.range.from }
     const applied = input.session.applyMarkdown({
       actorId: input.actorId,
-      name: 'Agent edit',
+      name: input.transactionName,
       baseVersion: current.revision,
       markdown,
       ...(range === undefined ? {} : { range }),

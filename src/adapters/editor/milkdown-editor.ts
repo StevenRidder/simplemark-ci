@@ -90,7 +90,14 @@ import {
   notesPlugin,
   replaceText,
   setThreads,
+  documentRangeAt,
 } from './note-decorations.js'
+import {
+  attributionKey,
+  attributionPlugin,
+  currentAttribution,
+  type AttributionMeta,
+} from './attribution-decorations.js'
 import { installNoteCapture, anchorFromView } from './note-capture.js'
 import type { NoteCapture, NoteCaptureDeps } from './note-capture.js'
 import { calloutRemark, calloutSchema } from './callout.js'
@@ -300,7 +307,7 @@ export class MilkdownEditor {
    * Returns `false` without dispatching when any step cannot apply, so the
    * caller can re-render from the session instead of throwing.
    */
-  applyRemoteSteps(steps: StepBatch): boolean {
+  applyRemoteSteps(steps: StepBatch, actorId = 'agent'): boolean {
     if (steps.length === 0) return true
     return this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
@@ -312,6 +319,9 @@ export class MilkdownEditor {
         }
         transaction.setMeta('addToHistory', false)
         transaction.setMeta(REMOTE_STEPS_META, true)
+        // Names the participant the margin chip credits. Remote-ness alone
+        // would collapse every non-human writer into one anonymous "agent".
+        transaction.setMeta(attributionKey, { actorId } satisfies AttributionMeta)
         view.dispatch(transaction)
         const markdown = this.preparedMarkdown.restoreMarkdown(
           ctx.get(serializerCtx)(view.state.doc),
@@ -663,6 +673,9 @@ export class MilkdownEditor {
       .use(codeHighlightPlugin(options.renderer.languages))
       .use(findPlugin)
       .use(notesPlugin)
+      // Margin attribution (APP-32). Inert until an agent writes, and derived
+      // from the transactions rather than recorded beside them.
+      .use(attributionPlugin(REMOTE_STEPS_META))
       .use(mathRemark)
       .use(inlineMathSchema)
       .use(mathBlockSchema)
@@ -1993,10 +2006,32 @@ export class MilkdownEditor {
     setThreads(view, threads)
   }
 
+  /**
+   * Document positions for a text span, in the offsets `noteDocumentText` uses.
+   *
+   * The seam an agent's passage target crosses: it is matched in text offsets
+   * and has to be applied in document positions.
+   */
+  documentRangeAt(offset: number, length: number): { readonly from: number; readonly to: number } | undefined {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    return documentRangeAt(view.state, offset, length)
+  }
+
   /** Plain text the note matcher uses — the same offsets as the decorations. */
   noteDocumentText(): string {
     const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
     return noteDocumentText(view.state)
+  }
+
+  /**
+   * Who has edited each block, most recent first (COLLABORATION.md §5.7).
+   *
+   * Empty until an agent has written: a document one person edited alone has
+   * one answer everywhere, and chips on every block would say nothing.
+   */
+  blockAttribution(): ReadonlyArray<{ readonly from: number; readonly actors: readonly string[] }> {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    return currentAttribution(view.state)
   }
 
   /** Fresh anchors from each live decoration — the derivation NOTES-10 will persist. */
@@ -2044,6 +2079,16 @@ export class MilkdownEditor {
       if (empty || from === to) return undefined
       return { from, to }
     })
+  }
+
+  /**
+   * Brings a document position into view.
+   *
+   * Public because Follow needs it, and only Follow calls it: an agent edit
+   * never scrolls the page on its own (COLLABORATION.md §6.4).
+   */
+  reveal(pos: number): void {
+    this.revealAndScrollTo(pos)
   }
 
   /** Restores a range captured by `selectionRange` so capture() sees it. */

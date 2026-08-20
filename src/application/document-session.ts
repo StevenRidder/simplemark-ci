@@ -91,6 +91,24 @@ export type SaveResult =
   | { readonly ok: true; readonly revision: number }
   | { readonly ok: false; readonly reason: string }
 
+/**
+ * One accepted change, announced to whoever needs to mirror it (ADR-0006).
+ *
+ * The authority accepts a change in exactly one place, so everything that has
+ * to react — the live editor view, margin attribution, the note-row tally,
+ * Follow — reads the same event rather than each adapter guessing from a
+ * different hook. `steps` is absent for a whole-document barrier, which is what
+ * makes a barrier visibly un-mirrorable rather than silently mis-mirrored.
+ */
+export interface AcceptedChange {
+  readonly revision: number
+  readonly actorId: string
+  readonly name: string
+  readonly steps?: StepBatch
+}
+
+export type AcceptedChangeListener = (change: AcceptedChange) => void
+
 export type RevertResult =
   | { readonly ok: true; readonly revision: number }
   | {
@@ -102,7 +120,7 @@ function cloneStepBatch(batch: StepBatch): StepBatch {
   return structuredClone(batch)
 }
 
-type AcceptedChange =
+type LoggedChange =
   | {
       readonly kind: 'steps'
       readonly actorId: string
@@ -123,7 +141,7 @@ export class DocumentSession {
   /** Document text at version zero and after every accepted change. */
   readonly #documents: string[]
   /** Change at index n advances the document from version n to n + 1. */
-  readonly #changes: AcceptedChange[] = []
+  readonly #changes: LoggedChange[] = []
   /**
    * The document's bytes as last read from or written to disk.
    *
@@ -133,6 +151,7 @@ export class DocumentSession {
    * own baseline and preserve nothing.
    */
   #baseline: string
+  readonly #listeners = new Set<AcceptedChangeListener>()
 
   private constructor(
     private readonly port: FilePort,
@@ -178,6 +197,31 @@ export class DocumentSession {
     return { revision: this.#revision, markdown: this.markdown, dirty: this.#dirty }
   }
 
+  /**
+   * Subscribes to every accepted change. Returns the unsubscribe.
+   *
+   * Announced after the document, revision and log have all moved, so a
+   * listener that reads `snapshot()` sees the change it was told about.
+   */
+  onAccepted(listener: AcceptedChangeListener): () => void {
+    this.#listeners.add(listener)
+    return () => {
+      this.#listeners.delete(listener)
+    }
+  }
+
+  #announce(change: AcceptedChange): void {
+    // A listener that throws must not roll back an accepted change or stop the
+    // other listeners: the change already happened.
+    for (const listener of [...this.#listeners]) {
+      try {
+        listener(change)
+      } catch {
+        // Nothing here can un-accept the change. Mirroring is best-effort.
+      }
+    }
+  }
+
   /** Opaque platform identity used only when another port resolves a link. */
   documentHandle(): string {
     return this.handle
@@ -199,6 +243,11 @@ export class DocumentSession {
     this.#documents.push(this.markdown)
     this.#changes.push({
       kind: 'barrier',
+      actorId: transaction.actorId,
+      name: transaction.name,
+    })
+    this.#announce({
+      revision: this.#revision,
       actorId: transaction.actorId,
       name: transaction.name,
     })
@@ -242,6 +291,12 @@ export class DocumentSession {
       name: transaction.name,
       steps: acceptedSteps,
       inverse: null,
+    })
+    this.#announce({
+      revision: this.#revision,
+      actorId: transaction.actorId,
+      name: transaction.name,
+      steps: cloneStepBatch(acceptedSteps),
     })
     return {
       ok: true,
@@ -425,6 +480,12 @@ export class DocumentSession {
       name,
       steps: cloneStepBatch(acceptedSteps),
       inverse: inverse === null ? null : cloneStepBatch(inverse),
+    })
+    this.#announce({
+      revision: this.#revision,
+      actorId,
+      name,
+      steps: cloneStepBatch(acceptedSteps),
     })
   }
 

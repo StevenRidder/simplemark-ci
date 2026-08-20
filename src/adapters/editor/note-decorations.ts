@@ -178,6 +178,27 @@ export function currentAnchors(view: EditorView): Map<string, Anchor> {
   return result
 }
 
+/**
+ * Document positions for a span of `documentText`.
+ *
+ * The inverse of the offsets `matchAnchor` works in. Note anchors already rely
+ * on this mapping through `posAt`; an agent's passage target needs the same one,
+ * because a text offset used as a document position is off by the block
+ * boundaries between them.
+ */
+export function documentRangeAt(
+  state: EditorState,
+  offset: number,
+  length: number,
+): { readonly from: number; readonly to: number } | undefined {
+  if (length <= 0) return undefined
+  const indexed = indexDocumentText(state.doc)
+  const from = indexed.posAt(offset)
+  const last = indexed.posAt(offset + length - 1)
+  if (from === undefined || last === undefined || last < from) return undefined
+  return { from, to: last + 1 }
+}
+
 /** Replaces the first occurrence of `from` with `to` so a test can reword a quote. */
 export function replaceText(view: EditorView, from: string, to: string): void {
   if (from === '') return

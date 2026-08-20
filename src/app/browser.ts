@@ -20,6 +20,10 @@ import type { AppComposition } from './bootstrap.js'
 import { SAMPLE_DOCUMENTS } from './sample-documents.js'
 import type { SampleDocument } from './sample-documents.js'
 import { loadAiSettings } from './ai-settings.js'
+import { isAgentConfigured, loadAgentConnection } from './agent-settings.js'
+import { createAgentEditTally } from './agent-edit-overlay.js'
+import { OpenAiCompatibleAgentPort } from '../adapters/ai/openai-compatible-agent.js'
+import type { AgentCompletionTransport } from '../adapters/ai/openai-compatible-agent.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
 import { NoteWalk } from './note-walk.js'
 import { VisitHistory } from './workspace-history.js'
@@ -163,6 +167,8 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
         ? 'Demo workspace · open a file to work with your own Markdown'
         : 'Samples · changes reset when SimpleMark restarts · open a file to use your own Markdown',
       workspace: workspaceSnapshot(),
+      // The demo rows are keyed by fixture id; the port answers `fixture:<name>`.
+      noteRowId: () => activeId,
     })
   }
 
@@ -250,6 +256,14 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   return current!
 }
 
+/**
+ * Agent edits per note, for the browser shell's own note rows.
+ *
+ * Module scope, not mount scope: opening a real file re-runs `mount` and
+ * discards the composition, and this marker has to survive that.
+ */
+const agentEdits = createAgentEditTally()
+
 function workspaceOptions(
   activeNoteId: string,
   onSelectNote: (id: string) => void,
@@ -285,6 +299,9 @@ function workspaceOptions(
       updatedAt: DEMO_EPOCH - note.modifiedHoursAgo * HOUR,
       createdAt: DEMO_EPOCH - note.createdHoursAgo * HOUR,
       pinned: note.pinned,
+      ...(agentEdits.all().get(note.id) === undefined
+        ? {}
+        : { agentChanges: agentEdits.all().get(note.id)! }),
     })),
   }
 }
@@ -306,6 +323,8 @@ async function mount(
     autosaveMs?: number
     saveSuccessMessage?: string
     workspace?: WorkspaceOptions
+    /** Row id for the open note, when the list keys rows by something else. */
+    noteRowId?: () => string
   },
 ): Promise<AppComposition> {
   const canWriteOriginal = BrowserFilePort.isSupported()
@@ -319,6 +338,26 @@ async function mount(
     if (!response.ok) throw new Error(`${baseUrl}/chat/completions returned ${response.status}: ${text}`)
     return text
   }
+  /**
+   * The agent's own transport. Separate from the diagram one because the body
+   * carries `tools` and `tool_choice`, which the diagram transport rebuilds
+   * away.
+   */
+  const agentCompletionTransport: AgentCompletionTransport = async (baseUrl, apiKey, _model, body) => {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const text = await response.text()
+    if (!response.ok) throw new Error(`${baseUrl}/chat/completions returned ${response.status}: ${text}`)
+    return text
+  }
+  const agentPort = new OpenAiCompatibleAgentPort(
+    agentCompletionTransport,
+    () => loadAgentConnection(window.localStorage),
+  )
+
   let app: AppComposition
   app = await composeApp({
     ports: {
@@ -355,6 +394,11 @@ async function mount(
     // original path for writing.
     onOpenFile: () => void openRealFile(root, app, canWriteOriginal),
     onPrint: () => window.print(),
+    // Read per run, not captured: credentials are entered while the app runs.
+    agentProvider: () =>
+      isAgentConfigured(loadAgentConnection(window.localStorage)) ? agentPort : undefined,
+    agentEdits,
+    ...(options.noteRowId === undefined ? {} : { noteRowId: options.noteRowId }),
   })
 
   root.replaceChildren(app.element)

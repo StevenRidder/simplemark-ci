@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest'
 
 import { DocumentSession, runAgentLoop } from '../../src/application/index.js'
 import type {
+  AgentActivity,
+  AgentRunControl,
   AgentProviderPort,
   AgentProviderTurn,
   FilePort,
@@ -338,5 +340,359 @@ describe('runAgentLoop', () => {
       handle: 'fixture:other',
     })
     expect(provider.calls).toBe(1)
+  })
+})
+
+describe('runAgentLoop observers (APP-32)', () => {
+  test('Pause taken from onStart lands before the first write', async () => {
+    const session = await openSession()
+    const provider = scriptedProvider([
+      {
+        kind: 'tool',
+        id: 'call-1',
+        name: 'apply_transaction',
+        args: { markdown: 'Starlink revenue', scope: 'pending' },
+      },
+      { kind: 'text', text: 'Resumed and finished.' },
+    ])
+
+    let control: AgentRunControl | undefined
+    const loop = runAgentLoop({
+      session,
+      provider,
+      instruction: 'tighten "Starlink business"',
+      noteId: 'note-1',
+      actorId: 'agent',
+      onStart: (started) => {
+        control = started
+        // The press a reader can physically make while the model is being
+        // asked. Before onStart existed there was no handle to receive it.
+        started.pause()
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(provider.calls).toBe(0)
+    expect(session.snapshot().markdown).toBe(document)
+    expect(control?.status).toBe('paused')
+    // Pause is not Stop: the generation is untouched, so resuming lands.
+    expect(control?.generation).toBe(0)
+
+    control?.resume()
+    await expect(loop).resolves.toEqual({
+      kind: 'text',
+      text: 'Resumed and finished.',
+      generation: 0,
+    })
+    expect(session.snapshot().markdown).toBe('alpha Starlink revenue omega')
+  })
+
+  test('activity names the document work, not the tool, and counts writes', async () => {
+    const session = await openSession()
+    const provider = scriptedProvider([
+      { kind: 'tool', id: 'call-1', name: 'read_note', args: { scope: 'pending' } },
+      {
+        kind: 'tool',
+        id: 'call-2',
+        name: 'apply_transaction',
+        args: { markdown: 'Starlink revenue', scope: 'pending' },
+      },
+      { kind: 'text', text: 'done' },
+    ])
+
+    const seen: AgentActivity[] = []
+    await runAgentLoop({
+      session,
+      provider,
+      instruction: 'tighten "Starlink business"',
+      noteId: 'note-1',
+      actorId: 'agent',
+      onActivity: (activity) => seen.push(activity),
+    })
+
+    const details = seen.map((activity) => activity.detail)
+    expect(details).toContain('Reading the note')
+    expect(details).toContain('Rewriting “Starlink business”')
+    expect(details).not.toContain('apply_transaction')
+    expect(details.at(-1)).toBe('Finished')
+    // read_note is not a write; only the transaction counts.
+    expect(seen.at(-1)?.writes).toBe(1)
+    expect(seen.at(-1)?.status).toBe('completed')
+  })
+
+  test('a selection is named as the selection, and the write reports its range', async () => {
+    const session = await openSession()
+    const provider = scriptedProvider([
+      {
+        kind: 'tool',
+        id: 'call-1',
+        name: 'apply_transaction',
+        args: { markdown: 'replacement', scope: 'pending' },
+      },
+      { kind: 'text', text: 'done' },
+    ])
+
+    const seen: AgentActivity[] = []
+    await runAgentLoop({
+      session,
+      provider,
+      instruction: 'tighten this',
+      noteId: 'note-1',
+      actorId: 'agent',
+      selection: { from: 6, to: 24 },
+      onActivity: (activity) => seen.push(activity),
+    })
+
+    expect(seen.map((activity) => activity.detail)).toContain('Rewriting the selected passage')
+    expect(seen.at(-1)?.range).toEqual({ from: 6, to: 24 })
+  })
+
+  test('a transport failure reports failed rather than going quiet', async () => {
+    const session = await openSession()
+    const provider: AgentProviderPort = {
+      async complete() {
+        throw new Error('socket closed')
+      },
+    }
+
+    const seen: AgentActivity[] = []
+    await runAgentLoop({
+      session,
+      provider,
+      instruction: 'tighten "Starlink business"',
+      noteId: 'note-1',
+      actorId: 'agent',
+      onActivity: (activity) => seen.push(activity),
+    })
+
+    expect(seen.at(-1)).toMatchObject({ status: 'failed', detail: 'Could not finish' })
+  })
+})
+
+describe('runAgentLoop coordinate spaces (APP-32)', () => {
+  /**
+   * A port that records the range it was handed, because the defect these
+   * cover is not a wrong result but a wrong *number* — one that the stub port
+   * above cannot expose, since it treats the Markdown string as the document
+   * and so makes the two coordinate spaces coincide.
+   */
+  function rangeRecordingSteps(): StepDocumentPort & {
+    ranges: Array<{ from: number; to: number } | undefined>
+  } {
+    const base = recordingSteps()
+    const ranges: Array<{ from: number; to: number } | undefined> = []
+    return {
+      ...base,
+      ranges,
+      markdownToSteps: (markdown, replacement, range) => {
+        ranges.push(range === undefined ? undefined : { from: range.from, to: range.to })
+        return base.markdownToSteps(markdown, replacement, range)
+      },
+    }
+  }
+
+  test('a passage range is mapped out of text offsets, never used raw', async () => {
+    const steps = rangeRecordingSteps()
+    const session = await DocumentSession.open(filePort(document), undefined, steps)
+    const provider = scriptedProvider([
+      {
+        kind: 'tool',
+        id: 'call-1',
+        name: 'apply_transaction',
+        args: { markdown: 'replacement', scope: 'pending' },
+      },
+      { kind: 'text', text: 'done' },
+    ])
+
+    const asked: Array<{ offset: number; length: number }> = []
+    await runAgentLoop({
+      session,
+      provider,
+      instruction: 'tighten "Starlink business"',
+      noteId: 'note-1',
+      actorId: 'agent',
+      textTarget: {
+        text: () => document,
+        rangeAt: (offset, length) => {
+          asked.push({ offset, length })
+          // A real editor's positions differ from text offsets by the block
+          // boundaries between them. Shifting by one here proves the mapped
+          // value is what gets applied, rather than the raw offset.
+          return { from: offset - 1, to: offset - 1 + length }
+        },
+      },
+    })
+
+    expect(asked).toEqual([{ offset: 6, length: 'Starlink business'.length }])
+    expect(steps.ranges).toEqual([{ from: 5, to: 5 + 'Starlink business'.length }])
+  })
+
+  test('an append passes no range at all rather than a Markdown length', async () => {
+    const steps = rangeRecordingSteps()
+    const session = await DocumentSession.open(filePort(document), undefined, steps)
+    const provider = scriptedProvider([
+      {
+        kind: 'tool',
+        id: 'call-1',
+        name: 'insert_markdown',
+        args: { markdown: '\n\nAppended.', scope: 'pending' },
+      },
+      { kind: 'text', text: 'done' },
+    ])
+
+    await runAgentLoop({
+      session,
+      provider,
+      // Nothing in this instruction points at existing text, so the target is
+      // an append and there is no position to give.
+      instruction: 'add a closing line',
+      noteId: 'note-1',
+      actorId: 'agent',
+      textTarget: { text: () => document, rangeAt: () => undefined },
+    })
+
+    // `undefined`, not `document.length`: the port owns the end of the document
+    // it parsed, and a character count is not a position in it.
+    expect(steps.ranges).toEqual([undefined])
+    expect(session.snapshot().markdown).toContain('Appended.')
+  })
+
+  test('Pause during the provider call holds the write it implied', async () => {
+    const session = await openSession()
+    const provider = scriptedProvider([
+      {
+        kind: 'tool',
+        id: 'call-1',
+        name: 'apply_transaction',
+        args: { markdown: 'Starlink revenue', scope: 'pending' },
+      },
+      { kind: 'text', text: 'done' },
+    ])
+
+    let control: AgentRunControl | undefined
+    const loop = runAgentLoop({
+      session,
+      provider,
+      instruction: 'tighten "Starlink business"',
+      noteId: 'note-1',
+      actorId: 'agent',
+      onStart: (started) => {
+        control = started
+        started.pause()
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(session.snapshot().markdown).toBe(document)
+    control?.resume()
+    await loop
+    expect(session.snapshot().markdown).toBe('alpha Starlink revenue omega')
+  })
+
+  test('Stop while paused ends the run instead of writing on release', async () => {
+    const session = await openSession()
+    const provider = scriptedProvider([
+      {
+        kind: 'tool',
+        id: 'call-1',
+        name: 'apply_transaction',
+        args: { markdown: 'should never land', scope: 'pending' },
+      },
+      { kind: 'text', text: 'done' },
+    ])
+
+    let control: AgentRunControl | undefined
+    const loop = runAgentLoop({
+      session,
+      provider,
+      instruction: 'tighten "Starlink business"',
+      noteId: 'note-1',
+      actorId: 'agent',
+      onStart: (started) => {
+        control = started
+        started.pause()
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    control?.stop()
+    await expect(loop).resolves.toEqual({ kind: 'stopped' })
+    expect(session.snapshot().markdown).toBe(document)
+  })
+})
+
+describe('runAgentLoop redirect (APP-32)', () => {
+  test('a redirect replaces the work instead of ending the run', async () => {
+    const session = await openSession()
+    const provider = scriptedProvider([
+      {
+        kind: 'tool',
+        id: 'call-1',
+        name: 'apply_transaction',
+        args: { markdown: 'from the abandoned run', scope: 'pending' },
+      },
+      {
+        kind: 'tool',
+        id: 'call-2',
+        name: 'apply_transaction',
+        args: { markdown: 'from the replacement run', scope: 'pending' },
+      },
+      { kind: 'text', text: 'Replaced.' },
+    ])
+
+    let control: AgentRunControl | undefined
+    const seen: string[] = []
+    const loop = runAgentLoop({
+      session,
+      provider,
+      instruction: 'tighten "Starlink business"',
+      noteId: 'note-1',
+      actorId: 'agent',
+      onStart: (started) => {
+        control = started
+      },
+      afterUnit: () => {},
+      onActivity: (activity) => seen.push(activity.status),
+    })
+
+    // Redirect before the first turn's result can land.
+    control?.redirect('replace "Starlink business"')
+    const result = await loop
+
+    // Not `stopped`: the run continued and did the replacement work. Ending it
+    // here would make Redirect a differently-spelled Stop.
+    expect(result).toEqual({ kind: 'text', text: 'Replaced.', generation: 1 })
+    expect(session.snapshot().markdown).toContain('from the replacement run')
+    expect(session.snapshot().markdown).not.toContain('from the abandoned run')
+    expect(seen).not.toContain('cancelled')
+  })
+
+  test('a stop still ends the run, unlike a redirect', async () => {
+    const session = await openSession()
+    const provider = scriptedProvider([
+      {
+        kind: 'tool',
+        id: 'call-1',
+        name: 'apply_transaction',
+        args: { markdown: 'should never land', scope: 'pending' },
+      },
+      { kind: 'text', text: 'unreachable' },
+    ])
+
+    let control: AgentRunControl | undefined
+    const loop = runAgentLoop({
+      session,
+      provider,
+      instruction: 'tighten "Starlink business"',
+      noteId: 'note-1',
+      actorId: 'agent',
+      onStart: (started) => {
+        control = started
+      },
+    })
+
+    control?.stop()
+    await expect(loop).resolves.toEqual({ kind: 'stopped' })
+    expect(session.snapshot().markdown).toBe(document)
   })
 })

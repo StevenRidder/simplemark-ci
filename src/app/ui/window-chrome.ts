@@ -46,6 +46,7 @@ import type {
   PreviewDensity,
   UiPreferences,
 } from '../ui-preferences.js'
+import { agentEditLabel } from '../agent-edit-overlay.js'
 import type { AppIconChoice, AppIconId } from '../app-icons.js'
 import { createAppIconSettings } from './app-icon-settings.js'
 
@@ -128,6 +129,14 @@ export interface WindowChromeOptions {
    * additionally gates the styles bar's Add Note button, which needs a
    * non-empty selection rather than a caret position.
    */
+  /**
+   * Toggles the app-level agent conversation (ADR-0012).
+   *
+   * Absent leaves no control at all, which is the correct shell for a build
+   * with no agent capability: the decision's whole constraint is that a person
+   * asks for the panel, so a shell that cannot host one shows no way to ask.
+   */
+  readonly onToggleAgent?: (() => void) | undefined
   readonly getSelectionShape?: () => {
     readonly inTable: boolean
     readonly inCode: boolean
@@ -197,6 +206,13 @@ export interface WorkspaceNote {
    */
   readonly updatedAt?: number
   readonly createdAt?: number
+  /**
+   * Accepted agent transactions on this note this session (APP-32).
+   *
+   * Absent rather than zero. An app-level conversation can edit a note nobody
+   * is looking at, and this row is the only place that becomes visible.
+   */
+  readonly agentChanges?: number
 }
 
 /** One explicitly adopted local folder shown in the library sidebar. */
@@ -310,6 +326,8 @@ export interface WindowChrome {
    * echoing would be a loop.
    */
   setPreferences(next: ReaderPreferences): void
+  /** Reflects whether the agent conversation is open on its control. */
+  setAgentOpen(open: boolean): void
   toggleHistoryNavigation(): void
   historyNavigationVisible(): boolean
   /**
@@ -336,6 +354,8 @@ export interface WindowChrome {
   applyNoteSummary(handle: string, summary: string): void
   /** Adds an extracted preview without reordering the visible list. */
   applyNotePreview(handle: string, preview: string): void
+  /** Marks a row as agent-edited, in place, without reordering the list. */
+  applyAgentEdits(handle: string, changes: number): void
   setNotesSort(sort: NotesSort): void
   notesSort(): NotesSort
   toggleNewestOnTop(): void
@@ -1299,7 +1319,23 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     event.preventDefault()
     options.onSave()
   })
-  left.append(saveButton)
+  // ---- agent conversation (ADR-0012) ----
+  // A control, not a panel: nothing is added to the layout until it is pressed.
+  const agentButton = document.createElement('button')
+  agentButton.type = 'button'
+  agentButton.className = 'tool agent'
+  agentButton.dataset['action'] = 'toggle-agent'
+  agentButton.setAttribute('aria-label', 'Agent conversation')
+  agentButton.setAttribute('aria-expanded', 'false')
+  agentButton.title = 'Agent conversation'
+  agentButton.innerHTML = tablerIcon('sparkles')
+  if (options.onToggleAgent === undefined) {
+    agentButton.hidden = true
+  } else {
+    agentButton.addEventListener('click', () => options.onToggleAgent?.())
+  }
+
+  left.append(saveButton, agentButton)
 
   // ---- document information (EDITOR-3, widened for APP-2) ----
   // Contents and statistics share one temporary panel rather than each growing
@@ -1910,6 +1946,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // branch publish the one operation the outside needs, without hoisting its
   // state or exposing the DOM.
   let applySummaryToRow: (handle: string, summary: string) => void = () => {}
+  let applyAgentEditsToRow: (handle: string, changes: number) => void = () => {}
 
   if (options.workspace === undefined) {
     windowEl.append(titlebar, documentSurface)
@@ -1926,6 +1963,37 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         span.textContent = summary
         ;(span as HTMLElement).title = summary
       }
+    }
+    /**
+     * Marks a row as agent-edited without repainting the list (APP-32).
+     *
+     * The count is written back onto `workspaceNotes` as well as into the DOM,
+     * because a later repaint rebuilds every row from that array — patching
+     * only the element would show the marker until the next reconcile and then
+     * silently lose it, which is exactly how note summaries broke.
+     */
+    applyAgentEditsToRow = (handle, changes) => {
+      const note = workspaceNotes.find((candidate) => candidate.id === handle)
+      if (note === undefined) return
+      Object.assign(note, { agentChanges: changes })
+      const row = noteItems.querySelector(`.note-item[data-note-id="${CSS.escape(handle)}"]`)
+      const time = row?.querySelector('.note-select time')
+      if (time === null || time === undefined) return
+      const label = agentEditLabel(changes)
+      let mark = time.querySelector<HTMLElement>('.note-agent-status')
+      if (mark === null) {
+        mark = document.createElement('span')
+        mark.className = 'note-agent-status'
+        mark.setAttribute('role', 'img')
+        mark.innerHTML = tablerIcon('sparkles')
+        mark.append(document.createElement('small'))
+        time.prepend(mark)
+      }
+      mark.dataset['agentChanges'] = String(changes)
+      mark.setAttribute('aria-label', label)
+      mark.title = label
+      const count = mark.querySelector('small')
+      if (count !== null) count.textContent = String(changes)
     }
     let pinOrder = new Map(workspaceNotes.filter((note) => note.pinned).map((note) => [note.id, 0]))
     let pinSequence = 0
@@ -2581,6 +2649,22 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
           pinStatus.innerHTML = tablerIcon('pin')
           updated.prepend(pinStatus)
         }
+        if (note.agentChanges !== undefined && note.agentChanges > 0) {
+          // Durable row state like the pin, not a hover affordance: the whole
+          // point is that it is visible for a note nobody has opened.
+          const agentMark = document.createElement('span')
+          agentMark.className = 'note-agent-status'
+          agentMark.dataset['agentChanges'] = String(note.agentChanges)
+          const label = agentEditLabel(note.agentChanges)
+          agentMark.setAttribute('role', 'img')
+          agentMark.setAttribute('aria-label', label)
+          agentMark.title = label
+          agentMark.innerHTML = tablerIcon('sparkles')
+          const count = document.createElement('small')
+          count.textContent = String(note.agentChanges)
+          agentMark.append(count)
+          updated.prepend(agentMark)
+        }
         select.append(title, preview, updated)
         if (workspace.onSelectNote !== undefined) {
           select.addEventListener('click', () => {
@@ -3210,6 +3294,10 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
       paintPreferenceUi()
     },
     setUpdateStatus: showUpdate,
+    setAgentOpen: (open: boolean) => {
+      agentButton.setAttribute('aria-expanded', String(open))
+      agentButton.classList.toggle('active', open)
+    },
     toggleHistoryNavigation,
     historyNavigationVisible: () => !historyNavigation.hidden,
     stepNote: (delta) => stepNote(delta),
@@ -3235,6 +3323,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     },
     applyNotePreview(handle: string, preview: string): void {
       applySummaryToRow(handle, preview)
+    },
+    applyAgentEdits(handle: string, changes: number): void {
+      applyAgentEditsToRow(handle, changes)
     },
     setNotesSort(sort) {
       notesSort = sort

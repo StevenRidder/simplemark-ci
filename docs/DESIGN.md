@@ -288,6 +288,14 @@ note index (title, one-line preview, modified time, and a quiet pin); the right 
 derived from the Markdown folder, never a second source of truth. Both panes can collapse into a
 single-document focus view. There is no permanent activity, chat, agent, or inspector rail.
 
+> **Amended by [`ADR-0012`](decisions/0012-conversation-is-app-level-and-hidden.md).**
+> One app-level agent conversation surface exists and spans notes, because an
+> instruction may name a note nobody has open — behaviour `MCP-SERVER.md` §10.2
+> already accepts, and which no per-passage thread can host. It is measured
+> against the same **permanent** test as the rail below: closed, it is absent
+> from the layout rather than present and empty, only a person opens it, and it
+> never takes focus or becomes the primary surface.
+
 **Permanent** is the operative word, and it is what the anchored-notes rail
 ([`ADR-0007`](decisions/0007-annotation-before-participation.md)) is measured against. That rail
 exists only while a note in this document is unresolved: no open threads, no rail — absent from the
@@ -420,7 +428,10 @@ by explicit product choice: it contains only real, everyday document commands (h
 emphasis, lists, checklist, table, link, and technical-block insertion). It is not a second pane,
 mode switcher, or an excuse to expose every implementation capability.
 
-There is no agent pane, activity sidebar, model picker, or chat panel.
+There is no agent pane, activity sidebar, or model picker. The one app-level
+conversation panel [`ADR-0012`](decisions/0012-conversation-is-app-level-and-hidden.md)
+admits is not one of them: it does not exist until a person opens it, and this
+sentence still governs everything a person did not ask for.
 The first integration is the watched file: an external agent changes it and the rendered document
 updates calmly. A quiet update marker may identify changed content temporarily, but it may not turn
 ordinary refresh into a review queue.

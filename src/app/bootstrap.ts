@@ -25,12 +25,24 @@ import { createStepDocumentPort } from '../adapters/editor/step-document-port.js
 import { createWindowChrome } from './ui/window-chrome.js'
 import { createFindBar } from './ui/find-bar.js'
 import { renderNoteRail, renderNoteStack } from './ui/note-rail.js'
+import { createAgentPanel } from './ui/agent-panel.js'
+import { createAgentStatusLine } from './ui/agent-status-line.js'
+import { AgentConversation } from './agent-conversation.js'
+import type { ComposerMode } from './agent-conversation.js'
+import { createAgentController } from './agent-controller.js'
+import { createAgentEditTally } from './agent-edit-overlay.js'
+import type { AgentEditTally } from './agent-edit-overlay.js'
 import { NEED_SELECTION } from '../adapters/editor/note-capture.js'
 import { LocalThreadStore } from '../adapters/filesystem/local-thread-store.js'
 import { noteKeyForPath } from '../adapters/filesystem/tauri-thread-store.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import { COMMANDS } from '../application/index.js'
-import type { BlockBoundaryPort, DocumentCommandId, StepDocumentPort } from '../application/index.js'
+import type {
+  AgentProviderPort,
+  BlockBoundaryPort,
+  DocumentCommandId,
+  StepDocumentPort,
+} from '../application/index.js'
 import type { WindowChrome } from './ui/window-chrome.js'
 import type { SaveState } from './ui/window-chrome.js'
 import type { WorkspaceOptions } from './ui/window-chrome.js'
@@ -115,6 +127,37 @@ export interface AppComposition {
     currentAnchorsForTest(): Record<string, Anchor>
     /** Re-lists threads from the store (another device wrote them) and repaints. */
     reload(): Promise<void>
+  }
+  /**
+   * The app-level agent conversation and its live run (ADR-0012, APP-32).
+   *
+   * The composition owns this rather than an entrypoint because both shells
+   * need the identical surface, and because the write path has to stay behind
+   * the one document authority in either.
+   */
+  readonly agent: {
+    /** Opens or closes the panel. The only thing that may open it is a person. */
+    toggle(): void
+    isPanelOpen(): boolean
+    /** Sends a composer message in the given mode. */
+    send(mode: ComposerMode, markdown: string): void
+    pause(): void
+    resume(): void
+    stop(): void
+    isRunning(): boolean
+    /** Whether the reader has opted into following the agent. */
+    isFollowing(): boolean
+    /**
+     * Replaces the provider for a test.
+     *
+     * A test double in the same spirit as `notes.setThreadsForTest`: the six
+     * exit behaviours are about the fence, the target resolver and the
+     * surfaces, and a live model cannot be scripted into being ambiguous on
+     * demand. The real provider path is covered by the adapter's own tests.
+     */
+    setProviderForTest(provider: AgentProviderPort | undefined): void
+    /** Agent changes counted against each note this session. */
+    editsForTest(): Readonly<Record<string, number>>
   }
   /** Tears down the editor and presentation observers before remounting. */
   destroy(): Promise<void>
@@ -249,6 +292,33 @@ export interface ComposeOptions {
    * own commands running (final review Finding 1).
    */
   readonly onSelectionChange?: () => void
+  /**
+   * The configured document agent, read fresh per run (APP-32).
+   *
+   * A function, not a value: credentials are entered in Settings while the app
+   * is running, and a provider captured at composition time would stay
+   * unconfigured for the rest of the session. Returning undefined is the honest
+   * "no agent here", which the panel states rather than hides.
+   */
+  readonly agentProvider?: () => AgentProviderPort | undefined
+  /** Opens the platform's Settings surface from the panel's own prompt. */
+  readonly onOpenSettings?: () => void
+  /**
+   * Agent-edit counts per note, owned by the entrypoint so they survive the
+   * remount that every note open performs. Absent gets a per-mount tally, which
+   * is only correct for a shell that does not remount.
+   */
+  readonly agentEdits?: AgentEditTally
+  /**
+   * The id the note list uses for the open note, when it is not the handle.
+   *
+   * Row identity belongs to the shell. The native shell keys rows by the
+   * canonical path, which is also the document handle, so it passes nothing. The
+   * browser shell keys its demo rows by a fixture id while the port answers
+   * `fixture:<name>` — counting against the handle there files every agent edit
+   * under a key no row has, and the marker never appears.
+   */
+  readonly noteRowId?: () => string
 }
 
 const STYLES_BAR_KEY = 'simplemark.styles-bar-visible'
@@ -750,6 +820,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 
   chrome = createWindowChrome({
     chromeMode: options.chromeMode ?? 'web',
+    // Only a person opens the conversation (ADR-0012). A shell with no agent
+    // capability gets no control, rather than a control that does nothing.
+    ...(options.agentProvider === undefined ? {} : {
+      onToggleAgent: () => {
+        agentPanel.toggle()
+        chrome.setAgentOpen(agentPanel.isOpen())
+      },
+    }),
     fileName: session.name,
     filePath: options.filePath,
     onOpenFile: options.onOpenFile,
@@ -947,6 +1025,64 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   noteStackHost.className = 'sm-note-stack-host'
   const documentSurface = chrome.editorHost.closest('.document-surface')
   documentSurface?.append(noteRailHost, noteStackHost)
+
+  // ---- the agent in the document (APP-32) ----
+  // The status line sits on the document surface, and the panel beside it, so a
+  // reader with the panel closed still sees a run — which is the whole reason
+  // ADR-0012 keeps the two surfaces separate rather than folding the status
+  // into the conversation.
+  let agentProvider = options.agentProvider
+  // Owned by the entrypoint, because a mount does not live long enough: opening
+  // a note rebuilds this whole composition, and the marker's whole job is to
+  // report an edit to a note the reader is not looking at.
+  const agentEdits = options.agentEdits ?? createAgentEditTally()
+  const conversation = new AgentConversation()
+
+  const agentStatus = createAgentStatusLine({
+    pause: () => agentController.pause(),
+    resume: () => agentController.resume(),
+    stop: () => agentController.stop(),
+    follow: (range) => editor?.reveal(range.from),
+  })
+  documentSurface?.prepend(agentStatus.host)
+
+  const agentPanel = createAgentPanel({
+    conversation,
+    renderMarkdown: (markdown) => stepAdapter.renderMarkdown(markdown),
+    onSend: (mode, markdown) => agentController.send(mode, markdown),
+    onAnswerQuestion: (occurrence) => agentController.answerQuestion(occurrence),
+    isConfigured: () => agentProvider?.() !== undefined,
+    onOpenSettings: () => options.onOpenSettings?.(),
+  })
+  // Inside the document pane, not the window: `position: absolute` with no
+  // positioned ancestor resolves against the viewport, and the panel escaped the
+  // app window's own frame — overhanging its right edge and running past its
+  // rounded bottom. `.document-surface` is the positioned ancestor that also
+  // scopes it to the surface it belongs beside.
+  documentSurface?.append(agentPanel.host)
+
+  const agentController = createAgentController({
+    session,
+    editor: {
+      applyRemoteSteps: (steps, actorId) => editor?.applyRemoteSteps(steps, actorId) ?? false,
+      selectionRange: () => editor?.selectionRange(),
+      reveal: (range) => editor?.reveal(range.from),
+      documentText: () => editor?.noteDocumentText() ?? session.snapshot().markdown,
+      documentRangeAt: (offset, length) => editor?.documentRangeAt(offset, length),
+    },
+    panel: agentPanel,
+    status: agentStatus,
+    conversation,
+    provider: () => agentProvider?.(),
+    noteHandle: () => options.noteRowId?.() ?? session.documentHandle(),
+    onAgentEdit: (handle) => {
+      // Two writes, both needed. The tally is the durable one the next render
+      // reads from; patching the row is only so the marker appears now, without
+      // a repaint that would re-run the sort and reorder the list.
+      const changes = agentEdits.record(handle)
+      if (changes > 0) chrome.applyAgentEdits(handle, changes)
+    },
+  })
 
   let waitingReattachId: string | undefined
 
@@ -1305,8 +1441,27 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     editor,
     steps: stepAdapter.port,
     notes,
+    agent: {
+      toggle: () => {
+        agentPanel.toggle()
+        chrome.setAgentOpen(agentPanel.isOpen())
+      },
+      isPanelOpen: () => agentPanel.isOpen(),
+      send: (mode: ComposerMode, markdown: string) => agentController.send(mode, markdown),
+      pause: () => agentController.pause(),
+      resume: () => agentController.resume(),
+      stop: () => agentController.stop(),
+      isRunning: () => agentController.isRunning(),
+      isFollowing: () => agentStatus.isFollowing(),
+      setProviderForTest: (provider) => {
+        agentProvider = provider === undefined ? undefined : () => provider
+        agentPanel.repaint()
+      },
+      editsForTest: () => Object.fromEntries(agentEdits.all()),
+    },
     async destroy() {
       clearTimeout(saveTimer)
+      agentController.dispose()
       await persistDerivedAnchors()
       noteCapture.destroy()
       chrome.element.ownerDocument.removeEventListener('keydown', onNotesEscape)

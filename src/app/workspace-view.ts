@@ -57,6 +57,9 @@ export function noteRows(
     // answer with 1970 instead, which sorts but lies.
     ...(note.modifiedMs === 0 ? {} : { updatedAt: note.modifiedMs }),
     ...(note.createdMs === 0 ? {} : { createdAt: note.createdMs }),
+    ...(note.agentChanges === undefined || note.agentChanges <= 0
+      ? {}
+      : { agentChanges: note.agentChanges }),
     pinned: isPinned(note.handle),
   }))
   return options.draft === true ? [draftRow(), ...rows] : rows

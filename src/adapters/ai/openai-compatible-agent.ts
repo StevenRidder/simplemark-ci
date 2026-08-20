@@ -6,6 +6,16 @@ import type {
 } from '../../application/index.js'
 import { isAgentConfigured } from '../../application/index.js'
 
+/**
+ * One chat-completion round trip, given the whole request body.
+ *
+ * The body is opaque to the transport on purpose. The agent request carries
+ * `tools` and `tool_choice`, so a transport that rebuilt the body from
+ * `{model, messages}` — as the diagram-fix one does — would silently drop the
+ * tool declarations and the model would answer in prose instead of calling
+ * anything. Passing the body through is what keeps the packaged app's Rust hop
+ * a transport rather than a second, lossy copy of the request shape.
+ */
 export type AgentCompletionTransport = (
   baseUrl: string,
   apiKey: string,
@@ -97,20 +107,44 @@ export class OpenAiCompatibleAgentPort implements AgentProviderPort {
         messages: [
           {
             role: 'system',
-            content:
-              'You edit one local Markdown note through tools. The scope token is the where. You supply the Markdown that changes. Never invent a range.',
+            // The token is stated, not alluded to. The authority refuses any
+            // call whose scope is not the current one, so a model that has to
+            // guess this value cannot make a single valid call — which is what
+            // an earlier prompt saying only "the scope token is the where"
+            // asked it to do.
+            content: [
+              'You edit one local Markdown note through tools.',
+              `The scope token for this run is exactly: ${input.scope}`,
+              'Pass that token as the `scope` argument of every tool that takes one.',
+              'You supply the Markdown that changes. The authority owns the range —',
+              'never invent, compute, or send a position, offset, or range.',
+              'When the work is done, reply with plain text and call no further tool.',
+            ].join(' '),
           },
+          { role: 'user', content: `The note currently reads:\n\n${input.noteMarkdown}` },
           ...input.messages.map((message) => ({
             role: message.role,
             content: message.content,
             ...(message.toolCallId === undefined ? {} : { tool_call_id: message.toolCallId }),
           })),
         ],
+        // The declared parameters come from the application's own tool
+        // contract. Declaring `{type:'object'}` here instead would hide every
+        // required argument from the model.
         tools: input.tools.map((tool) => ({
           type: 'function',
-          function: { name: tool.name, description: tool.description, parameters: { type: 'object' } },
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+          },
         })),
         tool_choice: 'auto',
+        // Omitted entirely at `default`, so an endpoint with no such parameter
+        // is unaffected. A level it rejects comes back as its own error rather
+        // than being dropped — a run that quietly thought less than it was
+        // asked to is worse than one that says the setting is unsupported.
+        ...(settings.reasoning === 'default' ? {} : { reasoning_effort: settings.reasoning }),
       })
       return parseAgentCompletion(responseText)
     } catch (error) {

@@ -11,7 +11,7 @@ import {
 import { Clock, Container, Ctx, type MilkdownPlugin } from '@milkdown/kit/ctx'
 import { gfm } from '@milkdown/kit/preset/gfm'
 import { commonmark, paragraphSchema } from '@milkdown/kit/preset/commonmark'
-import { Slice, type Node as ProseNode, type Schema } from '@milkdown/kit/prose/model'
+import { DOMSerializer, Slice, type Node as ProseNode, type Schema } from '@milkdown/kit/prose/model'
 import { Mapping, Step, Transform } from '@milkdown/kit/prose/transform'
 import type { Editor } from '@milkdown/kit/core'
 
@@ -35,6 +35,21 @@ import { wikiLinkSchema, wikiRemark } from './wiki-link.js'
 /** A lifecycle-owning editor adapter with the application-only port it supplies. */
 export interface StepDocumentAdapter {
   readonly port: StepDocumentPort
+  /**
+   * Markdown as DOM, through the document's own parser and schema (ADR-0012 §5).
+   *
+   * Deliberately not on `StepDocumentPort`: that is an application port, and
+   * application code may not touch the DOM. It is on the adapter, which the
+   * composition root already holds.
+   *
+   * "The document's own pipeline" is meant literally — the same `parserCtx` and
+   * the same schema the editor serialises through, so a table, a callout or an
+   * inline maths span in a conversation message renders exactly as it would in
+   * the note. A second Markdown renderer would drift from the first, and a
+   * message that renders differently from the document is a lie about what the
+   * agent was asked to write.
+   */
+  renderMarkdown(markdown: string): DocumentFragment
   destroy(): Promise<void>
 }
 
@@ -345,8 +360,29 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
  */
 export async function createStepDocumentPort(): Promise<StepDocumentAdapter> {
   const milkdown = await createHeadlessMilkdown()
+  const parse = milkdown.ctx.get(parserCtx)
+  const serializer = DOMSerializer.fromSchema(milkdown.schema)
   return {
     port: new MilkdownStepDocumentPort(milkdown),
+    renderMarkdown: (markdown) => {
+      const doc = parse(markdown)
+      // An unparseable body still has to appear. Showing the raw Markdown is
+      // honest and readable; showing nothing loses the message.
+      if (!validDocument(doc)) {
+        const fallback = document.createDocumentFragment()
+        const paragraph = document.createElement('p')
+        paragraph.textContent = markdown
+        fallback.append(paragraph)
+        return fallback
+      }
+      // serializeFragment can return an element when a `toDOM` asks for one;
+      // the caller only ever appends, so normalise to a fragment.
+      const rendered = serializer.serializeFragment(doc.content)
+      if (rendered instanceof DocumentFragment) return rendered
+      const wrapped = document.createDocumentFragment()
+      wrapped.append(rendered)
+      return wrapped
+    },
     destroy: () => milkdown.destroy(),
   }
 }

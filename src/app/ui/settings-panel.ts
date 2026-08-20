@@ -1,7 +1,9 @@
 import type { ModelListTransport } from '../../adapters/ai/openai-compatible-diagram-fix.js'
 import { listModels } from '../../adapters/ai/openai-compatible-diagram-fix.js'
 import {
-  loadAgentConnection,
+  AGENT_MODEL_PRESETS,
+  AGENT_REASONING_LEVELS,
+  loadStoredAgentConnection,
   normaliseAgentConnection,
   saveAgentConnection,
 } from '../agent-settings.js'
@@ -152,10 +154,152 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
   const agentHint = document.createElement('p')
   agentHint.className = 'settings-hint'
   agentHint.textContent =
-    'Used when an agent edits the open note. Stored separately from diagram fix, locally on this device.'
+    'Used when an agent edits the open note. Shares the key above by default — the separate record exists so this job can use a different model.'
+
+  // Sharing is a visible, stored choice. Reaching into the diagram settings
+  // without saying so would be exactly the invisible behaviour this app's rules
+  // forbid, however convenient it looks.
+  const agentShareRow = document.createElement('label')
+  agentShareRow.className = 'settings-field settings-field-check'
+  const agentShare = document.createElement('input')
+  agentShare.type = 'checkbox'
+  agentShare.dataset['field'] = 'agent-share'
+  const agentShareLabel = document.createElement('span')
+  agentShareLabel.className = 'settings-field-label'
+  agentShareLabel.textContent = 'Use the same key and base URL as above'
+  agentShareRow.append(agentShare, agentShareLabel)
+
   const agentKeyField = field('API key', 'password', 'sk-…')
   const agentUrlField = field('Base URL', 'text', 'https://api.openai.com/v1')
   const agentModelField = field('Model', 'text', 'e.g. gpt-4o')
+  agentModelField.input.dataset['field'] = 'agent-model'
+
+  // Named tiers, because "Sol / Terra / Luna" is how a person thinks about this
+  // and `gpt-5.6-terra` is not. The field remains free text underneath, and
+  // Load models still lists whatever the endpoint actually offers.
+  const agentPresetRow = document.createElement('div')
+  agentPresetRow.className = 'settings-model-presets'
+  agentPresetRow.setAttribute('role', 'group')
+  agentPresetRow.setAttribute('aria-label', 'Model tiers')
+  const agentPresetButtons = AGENT_MODEL_PRESETS.map((preset) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.dataset['preset'] = preset.id
+    button.textContent = preset.label
+    button.title = `${preset.id} — ${preset.hint}`
+    button.addEventListener('click', () => {
+      agentModelField.input.value = preset.id
+      refreshAgentPresets()
+    })
+    agentPresetRow.append(button)
+    return button
+  })
+
+  /** Marks the tier the current model id is, when it is one of them. */
+  function refreshAgentPresets(): void {
+    const current = agentModelField.input.value.trim()
+    for (const button of agentPresetButtons) {
+      button.setAttribute('aria-pressed', String(button.dataset['preset'] === current))
+    }
+  }
+  agentModelField.input.addEventListener('input', refreshAgentPresets)
+
+  const agentModelRow = document.createElement('div')
+  agentModelRow.className = 'settings-model-row'
+  const agentLoadModels = document.createElement('button')
+  agentLoadModels.type = 'button'
+  agentLoadModels.className = 'settings-load-models'
+  agentLoadModels.dataset['action'] = 'agent-load-models'
+  agentLoadModels.textContent = 'Load models'
+  agentModelRow.append(agentLoadModels)
+
+  const agentModelSelect = document.createElement('select')
+  agentModelSelect.className = 'settings-model-select'
+  agentModelSelect.dataset['field'] = 'agent-model-select'
+  agentModelSelect.hidden = true
+  const agentModelError = document.createElement('p')
+  agentModelError.className = 'settings-model-error'
+  agentModelError.hidden = true
+
+  const agentReasoningRow = document.createElement('label')
+  agentReasoningRow.className = 'settings-field'
+  const agentReasoningLabel = document.createElement('span')
+  agentReasoningLabel.className = 'settings-field-label'
+  agentReasoningLabel.textContent = 'Reasoning'
+  const agentReasoning = document.createElement('select')
+  agentReasoning.dataset['field'] = 'agent-reasoning'
+  for (const level of AGENT_REASONING_LEVELS) {
+    const option = document.createElement('option')
+    option.value = level
+    // `default` sends no reasoning parameter at all, which is the only honest
+    // label for an endpoint that may not have one.
+    option.textContent = level === 'default' ? 'Endpoint default' : level
+    agentReasoning.append(option)
+  }
+  agentReasoningRow.append(agentReasoningLabel, agentReasoning)
+
+  /** Which key and endpoint the agent's own model list should be fetched with. */
+  const agentCredentials = (): { apiKey: string; baseUrl: string } =>
+    agentShare.checked
+      ? { apiKey: apiKeyField.input.value, baseUrl: baseUrlField.input.value }
+      : { apiKey: agentKeyField.input.value, baseUrl: agentUrlField.input.value }
+
+  function refreshAgentFields(): void {
+    // Disabled rather than hidden: a reader can see what sharing is standing in
+    // for instead of wondering where the fields went.
+    agentKeyField.input.disabled = agentShare.checked
+    agentUrlField.input.disabled = agentShare.checked
+    const credentials = agentCredentials()
+    agentLoadModels.disabled =
+      credentials.apiKey.trim() === '' || credentials.baseUrl.trim() === ''
+  }
+  agentShare.addEventListener('change', refreshAgentFields)
+  for (const input of [apiKeyField.input, baseUrlField.input, agentKeyField.input, agentUrlField.input]) {
+    input.addEventListener('input', refreshAgentFields)
+  }
+
+  async function handleLoadAgentModels(): Promise<void> {
+    const credentials = agentCredentials()
+    agentModelError.hidden = true
+    agentModelSelect.hidden = true
+    agentLoadModels.disabled = true
+    agentLoadModels.textContent = 'Loading…'
+    const result = await listModels(
+      options.listModels,
+      credentials.baseUrl.trim().replace(/\/+$/, ''),
+      credentials.apiKey.trim(),
+    )
+    agentLoadModels.textContent = 'Load models'
+    refreshAgentFields()
+
+    if (!result.ok) {
+      agentModelError.textContent = `Couldn't load models — ${result.message}. You can still type one.`
+      agentModelError.hidden = false
+      return
+    }
+    agentModelSelect.replaceChildren()
+    const placeholder = document.createElement('option')
+    placeholder.value = ''
+    placeholder.textContent = `Pick from ${result.models.length} model${result.models.length === 1 ? '' : 's'}…`
+    placeholder.disabled = true
+    placeholder.selected = true
+    agentModelSelect.append(placeholder, ...result.models.map((id) => {
+      const option = document.createElement('option')
+      option.value = id
+      option.textContent = id
+      return option
+    }))
+    agentModelSelect.hidden = false
+  }
+  agentLoadModels.addEventListener('click', (event) => {
+    event.preventDefault()
+    void handleLoadAgentModels()
+  })
+  agentModelSelect.addEventListener('change', () => {
+    if (agentModelSelect.value === '') return
+    agentModelField.input.value = agentModelSelect.value
+    refreshAgentPresets()
+  })
 
   const actions = document.createElement('div')
   actions.className = 'settings-actions'
@@ -177,6 +321,8 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
         apiKey: agentKeyField.input.value,
         baseUrl: agentUrlField.input.value,
         model: agentModelField.input.value,
+        reasoning: agentReasoning.value,
+        shareCredentials: agentShare.checked,
       }),
     )
     closePanel()
@@ -194,9 +340,15 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     modelError,
     agentTitle,
     agentHint,
+    agentShareRow,
     agentKeyField.row,
     agentUrlField.row,
     agentModelField.row,
+    agentPresetRow,
+    agentModelRow,
+    agentModelSelect,
+    agentModelError,
+    agentReasoningRow,
     actions,
   )
   panel.append(header, body)
@@ -215,10 +367,21 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     apiKeyField.input.value = current.apiKey
     baseUrlField.input.value = current.baseUrl
     modelField.input.value = current.model
-    const agent = loadAgentConnection(options.storage)
+    // The stored record, not the resolved one: the panel edits what is saved,
+    // and showing the shared key here would put the diagram key in a box whose
+    // own value is empty.
+    const agent = loadStoredAgentConnection(options.storage)
+    agentShare.checked = agent.shareCredentials
     agentKeyField.input.value = agent.apiKey
     agentUrlField.input.value = agent.baseUrl
     agentModelField.input.value = agent.model
+    agentReasoning.value = agent.reasoning
+    agentModelSelect.hidden = true
+    agentModelSelect.replaceChildren()
+    agentModelError.hidden = true
+    agentLoadModels.textContent = 'Load models'
+    refreshAgentFields()
+    refreshAgentPresets()
     modelSelect.hidden = true
     modelSelect.replaceChildren()
     modelError.hidden = true

@@ -16,6 +16,11 @@ import { KatexRenderer } from '../adapters/renderers/katex-renderer.js'
 import { BrowserAssetReferencePort } from '../adapters/filesystem/browser-asset-reference-port.js'
 import { BrowserClipboardPort } from '../adapters/clipboard/browser-clipboard-port.js'
 import { OpenAiCompatibleDiagramFixPort } from '../adapters/ai/openai-compatible-diagram-fix.js'
+import { OpenAiCompatibleAgentPort } from '../adapters/ai/openai-compatible-agent.js'
+import type { AgentCompletionTransport } from '../adapters/ai/openai-compatible-agent.js'
+import { isAgentConfigured, loadAgentConnection } from './agent-settings.js'
+import { applyAgentEditsToCatalog, createAgentEditTally } from './agent-edit-overlay.js'
+import type { AgentEditTally } from './agent-edit-overlay.js'
 import type { ChatCompletionTransport, ModelListTransport } from '../adapters/ai/openai-compatible-diagram-fix.js'
 import { loadAiSettings } from './ai-settings.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
@@ -282,12 +287,20 @@ async function startNative(
    */
   const arrivedSummaries = new Map<string, string>()
   const arrivedPreviews = new Map<string, string>()
+  /**
+   * Agent edits per note, held out here for the same reason the summaries are:
+   * `mount` runs once per opened note and each run discards everything it owns.
+   */
+  const agentEdits = createAgentEditTally()
 
   /** The catalog as the note list should show it: AI summaries beat previews. */
   const withSummaries = (catalog: WorkspaceCatalog): WorkspaceCatalog =>
-    applySummariesToCatalog(
-      applyPreviewsToCatalog(catalog, arrivedPreviews),
-      arrivedSummaries,
+    applyAgentEditsToCatalog(
+      applySummariesToCatalog(
+        applyPreviewsToCatalog(catalog, arrivedPreviews),
+        arrivedSummaries,
+      ),
+      agentEdits.all(),
     )
 
   await listen<WorkspacePreview>('workspace-note-preview', ({ payload }) => {
@@ -478,6 +491,7 @@ async function startNative(
       filePath: opened.handle,
       pageZoom,
       settingsPanel,
+      agentEdits,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
       onOpenFolder: addFolder,
@@ -706,6 +720,7 @@ async function startNative(
         filePath: 'Not saved',
         pageZoom,
         settingsPanel,
+        agentEdits,
         menuTarget: () => current,
         onOpenFile: openFromPicker,
         onOpenFolder: addFolder,
@@ -867,6 +882,7 @@ async function startNative(
       filePath: 'No note selected',
       pageZoom,
       settingsPanel,
+      agentEdits,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
       onOpenFolder: addFolder,
@@ -948,6 +964,7 @@ async function startNative(
       filePath: 'Samples · changes reset when SimpleMark restarts · open a file to use your own Markdown',
       pageZoom,
       settingsPanel,
+      agentEdits,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
       onOpenFolder: addFolder,
@@ -1178,12 +1195,32 @@ async function mount(
     menuTarget?: () => AppComposition | undefined
     /** The one Settings panel for this process — created in `start()`, survives every remount. */
     settingsPanel: SettingsPanel
+    /**
+     * Agent edits per note. Created in `startNative` for the same reason the
+     * Settings panel is: `mount` reruns on every note switch and discards
+     * everything it owns, and this marker has to outlive that.
+     */
+    agentEdits: AgentEditTally
   },
 ): Promise<AppComposition> {
   let app: AppComposition
   const appIcon = normaliseAppIconId(await invoke<string>('get_app_icon'))
   const chatCompletionTransport: ChatCompletionTransport = (baseUrl, apiKey, model, messages) =>
     invoke('ai_chat_completion', { baseUrl, apiKey, model, messages })
+  /**
+   * The agent's transport, through its own native command (APP-32).
+   *
+   * `ai_chat_completion` rebuilds the request from `{model, messages}`, so it
+   * silently drops `tools` and `tool_choice` and the model answers in prose
+   * instead of calling anything. The packaged app's CSP blocks a frontend
+   * `fetch` outright, so this hop is not optional either.
+   */
+  const agentCompletionTransport: AgentCompletionTransport = (baseUrl, apiKey, _model, body) =>
+    invoke('ai_chat_completion_json', { baseUrl, apiKey, body })
+  const agentPort = new OpenAiCompatibleAgentPort(
+    agentCompletionTransport,
+    () => loadAgentConnection(window.localStorage),
+  )
 
   // Final review Finding 1: the native menubar's Format → Diagram ids only
   // ever repainted from inside a menu action's own `activate` — a bare
@@ -1312,6 +1349,11 @@ async function mount(
       void invoke('set_native_context_menu_shape', { shape })
     },
     onSelectionChange: scheduleMenuRepaint,
+    // Read per run, not captured: credentials are entered while the app runs.
+    agentProvider: () =>
+      isAgentConfigured(loadAgentConnection(window.localStorage)) ? agentPort : undefined,
+    onOpenSettings: () => options.settingsPanel.open(),
+    agentEdits: options.agentEdits,
     // Phase 1 hands over the documented install rather than performing it
     // (docs/UPDATE-NOTIFICATION.md §6). One-click needs a signing key, a
     // published feed, and notarization; none of them exist, and an app that

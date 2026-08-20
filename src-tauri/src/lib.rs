@@ -246,6 +246,45 @@ async fn ai_chat_completion(
     Ok(text)
 }
 
+/// The agent tool loop's one network call (APP-32).
+///
+/// Same thin-transport contract as `ai_chat_completion`, with one deliberate
+/// difference: the request body arrives already built and is forwarded
+/// untouched. The agent request carries `tools` and `tool_choice`, and
+/// `ai_chat_completion` rebuilds the body from `{model, messages}` — so routing
+/// the agent through it silently dropped every tool declaration and the model
+/// answered in prose instead of calling anything. Rebuilding a body this crate
+/// does not understand is exactly the drift the module doc forbids.
+///
+/// Going through Rust is not optional here either: the packaged app's CSP
+/// (`connect-src 'self' ipc: http://ipc.localhost`, tauri.conf.json) silently
+/// blocks a frontend `fetch` to any external host.
+#[tauri::command]
+async fn ai_chat_completion_json(
+    base_url: String,
+    api_key: String,
+    body: serde_json::Value,
+) -> Result<String, String> {
+    let client = http_client();
+    let url = chat_completion_url(&base_url);
+    let response = client
+        .post(&url)
+        .bearer_auth(&api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach {url}: {error}"))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| format!("Could not read the response from {url}: {error}"))?;
+    if !status.is_success() {
+        return Err(format!("{url} returned {status}: {text}"));
+    }
+    Ok(text)
+}
+
 fn models_url(base_url: &str) -> String {
     format!("{}/models", base_url.trim_end_matches('/'))
 }
@@ -2348,6 +2387,7 @@ pub fn run() {
             build_provenance,
             host_platform,
             ai_chat_completion,
+            ai_chat_completion_json,
             ai_list_models,
             enable_page_magnification,
             set_page_magnification,
@@ -2676,6 +2716,34 @@ mod tests {
         assert_eq!(body["model"], "gpt-4o");
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["messages"][0]["content"], "fix it");
+    }
+
+    /// The agent transport must not rebuild the body (APP-32).
+    ///
+    /// `chat_completion_body` drops anything that is not `model` or `messages`,
+    /// which is why the agent needs its own command: routed through the
+    /// rebuilt body, `tools` and `tool_choice` vanish and the model answers in
+    /// prose instead of calling a tool. This asserts the loss, so nobody
+    /// "simplifies" the two commands back into one.
+    #[test]
+    fn rebuilding_the_body_would_drop_the_agent_tool_declarations() {
+        let messages = vec![ChatMessage {
+            role: "user".to_string(),
+            content: "tighten the intro".to_string(),
+        }];
+        let rebuilt = chat_completion_body("a-model", &messages);
+        assert!(rebuilt.get("tools").is_none());
+        assert!(rebuilt.get("tool_choice").is_none());
+
+        // The agent command forwards the caller's body untouched instead.
+        let forwarded = serde_json::json!({
+            "model": "a-model",
+            "messages": messages,
+            "tools": [{ "type": "function", "function": { "name": "apply_transaction" } }],
+            "tool_choice": "auto",
+        });
+        assert_eq!(forwarded["tools"][0]["function"]["name"], "apply_transaction");
+        assert_eq!(forwarded["tool_choice"], "auto");
     }
 
     /// Chart data resolves exactly the way a Markdown link does — same

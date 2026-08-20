@@ -51,6 +51,13 @@ export interface WorkspaceCatalogEntry {
   readonly createdMs: number
   /** The note's own lead sentence, when it has one. */
   readonly preview?: string
+  /**
+   * Accepted agent transactions on this note this session (APP-32).
+   *
+   * Absent, never zero: a note no agent has written to carries no marker, so
+   * the list looks exactly as it did before an agent was in the room.
+   */
+  readonly agentChanges?: number
 }
 
 /** A non-recursive local folder whose Markdown files form the visible catalog. */
@@ -423,7 +430,51 @@ export interface AgentConnection {
   readonly apiKey: string
   readonly baseUrl: string
   readonly model: string
+  /**
+   * How hard the model should think, for endpoints that expose it.
+   *
+   * `default` sends nothing at all rather than a guess, so an endpoint with no
+   * such parameter is unaffected. A level the endpoint rejects surfaces as the
+   * provider error it is — the field is not quietly dropped on failure, because
+   * a run that silently thought less than asked is a worse answer than one that
+   * says the setting is unsupported.
+   */
+  readonly reasoning: AgentReasoning
 }
+
+/**
+ * `reasoning_effort` on an OpenAI-compatible chat completion, plus `default`.
+ *
+ * The documented value set for `/chat/completions` is
+ * `none | minimal | low | medium | high | xhigh | max`, and which of them a
+ * given model accepts is model-dependent — so this is the full set and the
+ * endpoint is left to refuse one it does not support, visibly.
+ *
+ * `default` is ours, not the API's: it means send no `reasoning_effort` at all,
+ * so a model with its own default (or no such parameter) is untouched. The
+ * Responses API spells the same thing `reasoning: { effort }`; the flat name
+ * here is the chat-completions one, which is the endpoint this app calls.
+ */
+export type AgentReasoning =
+  | 'default'
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
+
+export const AGENT_REASONING_LEVELS: readonly AgentReasoning[] = [
+  'default',
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]
 
 export function isAgentConfigured(settings: AgentConnection): boolean {
   return settings.apiKey !== '' && settings.baseUrl !== '' && settings.model !== ''
@@ -434,6 +485,16 @@ export type AgentMayOpenNotes = 'ask' | 'allow' | 'deny'
 export interface AgentToolSpec {
   readonly name: string
   readonly description: string
+  /**
+   * JSON Schema for the call's arguments.
+   *
+   * Part of the contract, not the transport's business. A provider adapter
+   * translates this to whatever wire shape its API wants; it must not invent
+   * the shape, because the authority validates the arguments it actually
+   * receives and a tool declared without its parameters is a tool no model can
+   * call correctly.
+   */
+  readonly parameters: Readonly<Record<string, unknown>>
 }
 
 export interface AgentMessage {

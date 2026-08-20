@@ -41,6 +41,7 @@ export type {
   NoteIdentity,
   ThreadStore,
   AgentConnection,
+  AgentReasoning,
   AgentMayOpenNotes,
   AgentToolSpec,
   AgentMessage,
@@ -48,14 +49,23 @@ export type {
   AgentProviderTurn,
   AgentProviderPort,
 } from './ports.js'
-export { isAiConfigured, isAgentConfigured } from './ports.js'
+export { isAiConfigured, isAgentConfigured, AGENT_REASONING_LEVELS } from './ports.js'
 export { DocumentSession } from './document-session.js'
 export { runAgentLoop } from './agent-loop.js'
-export type { AgentLoopInput, AgentLoopResult, AgentRunControl } from './agent-loop.js'
+export type {
+  AgentActivity,
+  AgentLoopInput,
+  AgentLoopResult,
+  AgentRunControl,
+  AgentRunStatus,
+  TextTargetResolver,
+} from './agent-loop.js'
 export { resolveInstructionTarget } from './instruction-target.js'
 export type { InstructionTarget, InstructionTargetInput } from './instruction-target.js'
 export { dirtyBlocks } from './dirty-blocks.js'
 export type {
+  AcceptedChange,
+  AcceptedChangeListener,
   DocumentSnapshot,
   DocumentTransaction,
   ApplyResult,

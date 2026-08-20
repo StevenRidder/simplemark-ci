@@ -4923,3 +4923,539 @@ section.editor::-webkit-scrollbar {
     padding-bottom: calc(90px + env(safe-area-inset-bottom));
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * The agent in the document (APP-32, ADR-0012)
+ *
+ * The panel is a side surface with a hard maximum width and no maximise: it
+ * may never become the primary surface, and the document keeps the reading
+ * column. Its host collapses when empty, the same way the notes rail's does,
+ * so a closed panel occupies no layout at all.
+ * ------------------------------------------------------------------------- */
+
+.sm-agent-panel-host:empty {
+  display: none;
+}
+
+/*
+ * One width for the panel and for the space the document yields to it.
+ *
+ * Two separate numbers drifted apart immediately: a fixed 376px panel against a
+ * document pane that is only ~513px with all three panes open left about 105px
+ * of reading column, and the heading wrapped one letter per line. Proportional
+ * with a floor and a ceiling keeps the document the larger surface at every
+ * width, which is the actual rule (ADR-0012 §3).
+ */
+.document-surface {
+  --sm-agent-panel-width: clamp(220px, 38%, 360px);
+}
+
+.sm-agent-panel {
+  position: absolute;
+  /*
+   * Above the floating styles bar (z-index 60), which otherwise covered the
+   * composer's Send button: the bar is a movable palette that happens to sit at
+   * the bottom of the surface, and the panel is a surface a person just asked
+   * for. An unclickable primary action is not a stacking preference.
+   */
+  z-index: 70;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* A ceiling, not a preference. The document is the primary surface. */
+  width: var(--sm-agent-panel-width);
+  padding: 12px;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(32, 29, 24, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+/*
+ * An open panel narrows the reading column instead of covering it.
+ *
+ * The document stays the primary surface (ADR-0012 §3), and a panel laid over
+ * the text fails that in the plainest way: the sentence the agent just wrote
+ * was half hidden behind it. The column is centred, so padding the scroller
+ * moves it out from under the panel rather than resizing the page.
+ */
+.document-surface:has(.sm-agent-panel) .editor {
+  /* The panel's own width plus its inset, so the column clears it exactly. */
+  padding-right: calc(var(--sm-agent-panel-width) + 16px);
+}
+
+.sm-agent-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sm-agent-panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.sm-agent-panel-close {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.sm-agent-panel-close:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.sm-agent-panel-close svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.sm-agent-messages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sm-agent-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.sm-agent-message {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.sm-agent-message[data-author='agent'] {
+  background: color-mix(in srgb, var(--accent-soft) 60%, var(--paper));
+}
+
+.sm-agent-message-byline {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.sm-agent-message-mode,
+.sm-agent-message-edited {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.sm-agent-message-body {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.sm-agent-message-body > :first-child {
+  margin-top: 4px;
+}
+
+.sm-agent-message-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* Wide content in a narrow panel scrolls itself rather than the page. */
+.sm-agent-message-body pre {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/*
+ * A table in a message has to look like a table.
+ *
+ * ADR-0012 §5 promises messages render through the document's own pipeline, and
+ * they do — but the panel is outside `.page`, so none of the document's own
+ * table rules reached it and a real `<table>` collapsed into a run of loose
+ * words. Rendering it correctly and then styling it as prose is a lie about
+ * what the agent wrote.
+ */
+.sm-agent-message-body table {
+  display: table;
+  width: 100%;
+  margin: 6px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.sm-agent-message-body th,
+.sm-agent-message-body td {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.sm-agent-message-body th {
+  background: color-mix(in srgb, var(--line) 40%, transparent);
+  font-weight: 600;
+}
+
+.sm-agent-message-body :is(ul, ol) {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.sm-agent-message-body :is(h1, h2, h3, h4, h5, h6) {
+  margin: 6px 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sm-agent-message-body blockquote {
+  margin: 6px 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+  color: var(--ink-2);
+}
+
+.sm-agent-message-body code {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--line) 45%, transparent);
+  font-size: 12px;
+}
+
+/* The panel is a scroll container of its own; wide tables scroll inside it. */
+.sm-agent-message-body {
+  overflow-x: auto;
+}
+
+.sm-agent-message-edit {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.sm-agent-message-edit:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.sm-agent-message-input,
+.sm-agent-composer-input {
+  width: 100%;
+  min-height: 60px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.sm-agent-message-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sm-agent-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sm-agent-modes {
+  display: flex;
+  gap: 4px;
+}
+
+.sm-agent-modes button {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sm-agent-modes button[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.sm-agent-mode-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.sm-agent-send {
+  padding: 6px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sm-agent-send:disabled {
+  border-color: var(--line);
+  background: var(--line);
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.sm-agent-unconfigured {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.sm-agent-unconfigured button {
+  margin-left: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sm-agent-question {
+  padding: 8px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+
+.sm-agent-question-text {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.sm-agent-question-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sm-agent-question-choices button {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ---- the compact status line ---- */
+
+.sm-agent-status-host:empty {
+  display: none;
+}
+
+.sm-agent-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent-soft) 45%, var(--paper));
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.sm-agent-status[data-status='paused'] {
+  background: color-mix(in srgb, var(--line) 55%, var(--paper));
+}
+
+.sm-agent-status-detail {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sm-agent-status-writes {
+  color: var(--ink-3);
+}
+
+.sm-agent-status button {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sm-agent-status button + button {
+  margin-left: 0;
+}
+
+.sm-agent-follow[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+/* ---- margin attribution chips ---- */
+
+.sm-margin-chips {
+  position: absolute;
+  left: -0.25rem;
+  transform: translateX(-100%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  user-select: none;
+  pointer-events: none;
+}
+
+.milkdown .ProseMirror .sm-attributed {
+  position: relative;
+}
+
+.sm-margin-chip {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 10px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* Most recent first: the leading chip is the one that reads as current. */
+.sm-margin-chip:first-child {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink-2);
+}
+
+/*
+ * A narrow reading column has no margin to put chips in. They move inline
+ * above the block rather than disappearing: losing the attribution would be
+ * losing the answer to "who wrote this".
+ */
+@media (max-width: 900px) {
+  .sm-margin-chips {
+    position: static;
+    transform: none;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+  }
+}
+
+/* ---- the note-row marker ---- */
+
+.note-agent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--accent);
+}
+
+.note-agent-status svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.note-agent-status small {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.tool.agent.active {
+  color: var(--accent);
+}
+
+/* The Document agent's shared-credential checkbox sits inline, not stacked. */
+.settings-field-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-field-check .settings-field-label {
+  margin: 0;
+}
+
+.settings-field input:disabled,
+.settings-field select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* The GPT-5.6 tier presets under the Document agent's Model field. */
+.settings-model-presets {
+  display: flex;
+  gap: 6px;
+  margin: -4px 0 0;
+}
+
+.settings-model-presets button {
+  flex: 1;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-model-presets button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 600;
+}

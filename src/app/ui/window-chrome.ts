@@ -3190,8 +3190,13 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         ? target.parentElement
         : null
     // Whether there is a selection at all is a property of the editor, not of
-    // the hovered block, so it comes from the same source in both branches.
-    const hasSelection = options.getSelectionShape?.().hasSelection ?? false
+    // the hovered block — and it is the cheap question. `getSelectionShape`
+    // serializes the selection to Markdown to answer inTable/inCode, and
+    // reading `.hasSelection` off it here put that serialization on the hover
+    // path (BUG-11). The dedicated callback answers without serializing.
+    const hasSelection = options.hasSelection?.()
+      ?? options.getSelectionShape?.().hasSelection
+      ?? false
     // A context menu belongs to the block under the pointer. The editor
     // selection may still describe the previously focused table or code block
     // for a render tick, so using `target || selection` leaks stale commands
@@ -3243,6 +3248,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
 
   let lastNativeContext = ''
   let lastNativeContextBlock: Element | null = null
+  let capturedByPointerdown = false
   const captureNativeSelection = (target?: EventTarget | null): void => {
     const element = target instanceof Element
       ? target
@@ -3251,25 +3257,34 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         : null
     options.onNativeSelection?.(element)
   }
-  const updateNativeContext = (target?: EventTarget | null): void => {
+  const updateNativeContext = (target?: EventTarget | null, force = false): void => {
     const element = target instanceof Element
       ? target
       : target instanceof Node
         ? target.parentElement
         : null
+    const block = element?.closest('.ProseMirror > *') ?? element
+    // The IPC shape carries inTable and inCode — properties of the block, not
+    // of the pointer's position inside it. Computing the shape before this
+    // check serialized the selection to Markdown on every mousemove in the
+    // packaged shell (BUG-11): quadratic during a drag, and a stall right as
+    // AppKit opened the menu. Right-click forces past the gate because a
+    // stationary pointer can still have changed the selection under itself.
+    if (!force && block === lastNativeContextBlock) return
     const shape = selectionShapeForTarget(target)
     const key = `${shape.inTable}:${shape.inCode}`
-    const block = element?.closest('.ProseMirror > *') ?? element
     if (key === lastNativeContext && block === lastNativeContextBlock) return
     lastNativeContext = key
     lastNativeContextBlock = block
     options.onNativeContextMenu?.(shape, element)
   }
 
-  // Hover arrives well before WebKit constructs its menu. Keep only shape
-  // transitions, so ordinary pointer movement does not become an IPC stream.
+  // Hover arrives well before WebKit constructs its menu. Keep only block
+  // transitions, so ordinary pointer movement does not become an IPC stream —
+  // and skip held-button movement entirely: nobody can right-click mid-drag,
+  // and a drag is exactly when the selection is changing under every move.
   page.addEventListener('pointermove', (event) => {
-    if (hasNativeContextMenu) updateNativeContext(event.target)
+    if (hasNativeContextMenu && event.buttons === 0) updateNativeContext(event.target)
   }, true)
 
   // Pointerdown is the final refresh for a stationary mouse. The earlier hover
@@ -3279,15 +3294,20 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   page.addEventListener('pointerdown', (event) => {
     if (hasNativeContextMenu && event.button === 2) {
       captureNativeSelection(event.target)
-      updateNativeContext(event.target)
+      capturedByPointerdown = true
+      updateNativeContext(event.target, true)
     }
   }, true)
 
   page.addEventListener('contextmenu', (event) => {
     if (options.onClipboardExport === undefined) return
     if (hasNativeContextMenu && options.onNativeContextMenu !== undefined) {
-      captureNativeSelection(event.target)
-      updateNativeContext(event.target)
+      // The pointerdown a breath ago already captured this gesture; capturing
+      // again would serialize the block twice at the moment the menu opens.
+      // A keyboard-invoked menu has no pointerdown and still captures here.
+      if (!capturedByPointerdown) captureNativeSelection(event.target)
+      capturedByPointerdown = false
+      updateNativeContext(event.target, true)
       return
     }
     event.preventDefault()

@@ -386,6 +386,14 @@ async function mount(
       ]),
     },
     filePath: options.filePath,
+    // `?chrome=macos` mounts the native chrome in the browser shell. The macOS
+    // context-menu path (hover pre-arm, shape IPC seam, native titlebar) is
+    // otherwise unreachable outside the packaged app — which is how a
+    // per-pointermove serialization shipped invisibly (BUG-11). Test surface,
+    // deliberately committed: probes and specs need the real listener.
+    ...(new URLSearchParams(window.location.search).get('chrome') === 'macos'
+      ? { chromeMode: 'macos' as const }
+      : {}),
     ...(options.workspace === undefined ? {} : { workspace: options.workspace }),
     ...(options.autosaveMs === undefined ? {} : { autosaveMs: options.autosaveMs }),
     ...(options.saveSuccessMessage === undefined ? {} : { saveSuccessMessage: options.saveSuccessMessage }),

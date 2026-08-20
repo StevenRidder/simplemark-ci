@@ -904,7 +904,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     // typing moves the selection) — unlike `getSelectionShape`, which
     // serializes the selection to Markdown and is reserved for menus.
     hasSelection: () => editor?.selectionRange() !== undefined,
-    ...(options.onNativeContextMenu === undefined
+    // Wired for the macOS chrome even when the platform IPC callback is
+    // absent — the `?chrome=macos` browser override mounts the real listener
+    // path, and a capture that silently does not run there is a path no test
+    // can see (BUG-11 shipped through exactly that blindness).
+    ...(options.onNativeContextMenu === undefined && options.chromeMode !== 'macos'
       ? {}
       : {
           onNativeSelection: (target: Node | null) => {
@@ -913,9 +917,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
           },
           onNativeContextMenu: (
             shape: { readonly inTable: boolean; readonly inCode: boolean },
-            target: Node | null,
+            _target: Node | null,
           ) => {
-            nativeContextSelection = editor?.contextSelection(target)
+            // Shape only. This also captured the selection, which put a
+            // block's markdown+HTML serialization on every block the pointer
+            // crossed (BUG-11); the right-click gesture itself captures via
+            // `onNativeSelection`, before AppKit opens the menu.
             options.onNativeContextMenu?.(shape)
           },
         }),

@@ -66,11 +66,17 @@ describe('the ordinary copy path is untouched', () => {
   it('captures the live selection on every macOS right-click, even when the Copy As shape did not change', () => {
     const chrome = readFileSync('src/app/ui/window-chrome.ts', 'utf8')
     expect(chrome).toContain('options.onNativeSelection?.(element)')
+    // The right-click gesture always captures, and forces the shape refresh
+    // past the block-transition gate — a stationary pointer can still have
+    // changed the selection under itself (BUG-11 kept the capture and moved
+    // the expense off the hover path).
     expect(chrome).toMatch(
-      /if \(hasNativeContextMenu && event\.button === 2\) \{[\s\S]*?captureNativeSelection\(event\.target\)[\s\S]*?updateNativeContext\(event\.target\)/,
+      /if \(hasNativeContextMenu && event\.button === 2\) \{[\s\S]*?captureNativeSelection\(event\.target\)[\s\S]*?updateNativeContext\(event\.target, true\)/,
     )
+    // The contextmenu event still captures when no pointerdown preceded it
+    // (keyboard-invoked menus), and never twice for one gesture.
     expect(chrome).toMatch(
-      /if \(hasNativeContextMenu && options\.onNativeContextMenu !== undefined\) \{[\s\S]*?captureNativeSelection\(event\.target\)[\s\S]*?updateNativeContext\(event\.target\)[\s\S]*?return/,
+      /if \(hasNativeContextMenu && options\.onNativeContextMenu !== undefined\) \{[\s\S]*?if \(!capturedByPointerdown\) captureNativeSelection\(event\.target\)[\s\S]*?updateNativeContext\(event\.target, true\)[\s\S]*?return/,
     )
   })
 

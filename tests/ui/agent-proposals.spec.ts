@@ -72,7 +72,7 @@ test('a proposed edit is drawn, not applied — and Accept lands it', async ({ p
   expect(await markdown(page)).toContain(PASSAGE)
   expect(await markdown(page)).not.toContain('Beta, split by region.')
 
-  await page.locator('[data-action="accept-proposal"]').click()
+  await page.locator('.sm-proposal-ins [data-action="accept-proposal"]').click()
   await expect.poll(() => markdown(page)).toContain('Beta, split by region.')
   expect(await markdown(page)).not.toContain(PASSAGE)
   await expect(page.locator('.sm-proposal-ins')).toHaveCount(0)
@@ -92,7 +92,7 @@ test('Reject forgets the proposal and leaves the document untouched', async ({ p
   await expect(page.locator('.sm-proposal-ins')).toHaveCount(1)
   const before = await markdown(page)
 
-  await page.locator('[data-action="reject-proposal"]').click()
+  await page.locator('.sm-proposal-ins [data-action="reject-proposal"]').click()
   await expect(page.locator('.sm-proposal-ins')).toHaveCount(0)
   expect(await markdown(page)).toBe(before)
   await expect(page.locator('.sm-activity-row[data-actor="agent"]')).toHaveCount(0)
@@ -112,7 +112,7 @@ test('typing elsewhere before accepting still lands the proposal on its passage'
   await page.keyboard.type(' Indeed.')
   await page.evaluate(() => window.simplemark!.flushPendingChanges())
 
-  await page.locator('[data-action="accept-proposal"]').click()
+  await page.locator('.sm-proposal-ins [data-action="accept-proposal"]').click()
   await expect.poll(() => markdown(page)).toContain('Beta, split by region.')
   expect(await markdown(page)).toContain('Alpha holds the opening claim. Indeed.')
   expect(await markdown(page)).not.toContain(PASSAGE)

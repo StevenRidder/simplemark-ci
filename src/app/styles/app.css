@@ -5827,6 +5827,14 @@ section.editor::-webkit-scrollbar {
 .sm-agent-scope-menu button:hover { background: color-mix(in srgb, var(--line) 40%, transparent); }
 
 /* Turn bylines (APP-41): who said it, and when. */
+/* The change a note asked for, while it is pending (APP-50). */
+.sm-note-rail-proposal { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 2px; padding: 6px 8px; border: 1px solid color-mix(in srgb, #3e7a4e 35%, var(--line)); border-radius: 6px; background: color-mix(in srgb, #3e7a4e 7%, transparent); }
+.sm-note-rail-proposal-name { flex: 1 1 100%; font: 500 10px/1.3 ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in srgb, #3e7a4e 80%, CanvasText 20%); }
+.sm-note-rail-proposal button { font: 500 11px/1 ui-monospace, monospace; padding: 3px 7px; border-radius: 4px; border: 1px solid var(--line); background: var(--paper, Canvas); cursor: pointer; }
+.sm-note-rail-proposal [data-action="accept-proposal"] { color: #3e7a4e; border-color: color-mix(in srgb, #3e7a4e 55%, transparent); }
+.sm-note-rail-proposal [data-action="reject-proposal"] { color: #b5372b; border-color: color-mix(in srgb, #b5372b 45%, transparent); }
+.sm-note-rail article[data-collapsed="true"] .sm-note-rail-proposal { display: none; }
+
 /* Folded cards (APP-48): the opening turn's first two lines, a count of
    what is held back, nothing else — so a long agent reply never buries the
    cards below it. The toggle sits in the card's top-right corner. */

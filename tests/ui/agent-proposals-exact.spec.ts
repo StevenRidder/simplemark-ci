@@ -72,7 +72,7 @@ test('a one-word rewrite strikes one word and inserts one word; Accept lands it'
   await expect(page.locator('.sm-proposal-ins-text')).toBeHidden()
   await page.locator('[data-action="proposal-markup"]').selectOption('all')
 
-  await page.locator('[data-action="accept-proposal"]').click()
+  await page.locator('.sm-proposal-ins [data-action="accept-proposal"]').click()
   await expect(page.locator('.sm-proposal-ins-text')).toHaveCount(0)
   const after = await markdown(page)
   expect(after).toContain('Beta carries the argument that needs polish.')

@@ -52,6 +52,8 @@ export interface NoteRailOptions {
    * state.
    */
   readonly onHide?: () => void
+  /** The pending proposal each thread asked for, by thread id (APP-50). */
+  readonly proposals?: ReadonlyMap<string, { readonly id: string; readonly name: string }>
   /** Threads shown folded to their opening lines (APP-48). */
   readonly collapsed?: ReadonlySet<string>
   /** Folds or unfolds one card. Absent leaves no control. */
@@ -187,6 +189,34 @@ export function renderNoteRail(
     // conversation. Redirect appears only once there is an agent to redirect.
     if (actions.sendTurn !== undefined) {
       row.append(threadComposer(thread.id, actions.sendTurn, conversational))
+    }
+
+    // The change this note asked for, while it is pending (APP-50): the way to
+    // it, and the two answers, on the card itself. The buttons carry the same
+    // actions the bar and the widget use; one delegated handler serves all.
+    const pending = options.proposals?.get(thread.id)
+    if (pending !== undefined) {
+      const proposal = document.createElement('div')
+      proposal.className = 'sm-note-rail-proposal'
+      proposal.dataset['proposal'] = pending.id
+      const label = document.createElement('span')
+      label.className = 'sm-note-rail-proposal-name'
+      label.textContent = `Proposed change · ${pending.name}`
+      proposal.append(label)
+      for (const [action, text, title] of [
+        ['show-proposal', 'Show', 'Show the change in the document'],
+        ['accept-proposal', 'Accept', 'Put this change into the document and resolve this note'],
+        ['reject-proposal', 'Reject', 'Drop this proposal; the note stays open'],
+      ] as const) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.dataset['action'] = action
+        button.dataset['proposal'] = pending.id
+        button.textContent = text
+        button.title = title
+        proposal.append(button)
+      }
+      row.append(proposal)
     }
 
     const buttons = document.createElement('div')

@@ -1517,6 +1517,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     activityTimeline.repaint()
     paintNotes()
     paintProposals()
+    // The note that asked hears the answer and is resolved by it (APP-50).
+    if (proposal.threadId !== undefined) {
+      await recordThreadReply(proposal.threadId, 'agent', `Accepted: ${proposal.name}`)
+      noteActions.resolve(proposal.threadId)
+    }
     // An accept is never invisible (BUG-27): the reader is taken to where
     // the change landed and told what happened — and that ⌘Z takes it back.
     const landedAt = range?.from ?? (() => {
@@ -1557,6 +1562,10 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     const proposal = proposals.remove(id)
     if (proposal === undefined) return
     conversation.post({ author: 'agent', markdown: `Rejected: ${proposal.name}` })
+    if (proposal.threadId !== undefined) {
+      // Said in the note too; the thread stays open for the next instruction.
+      void recordThreadReply(proposal.threadId, 'agent', `Rejected: ${proposal.name}`).then(() => paintNotes())
+    }
     agentPanel.repaint()
     paintProposals()
   }
@@ -1612,8 +1621,13 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       loadAgentEditMode(storage) === 'propose'
         ? {
             propose: (change) => {
-              proposals.add(change)
+              proposals.add({
+                ...change,
+                ...(proposingForThreadId === undefined ? {} : { threadId: proposingForThreadId }),
+              })
               paintProposals()
+              // The note that asked now shows its change (APP-50).
+              paintNotes()
               // Say where it went: an appended section is off-screen in any
               // note longer than the window (BUG-27).
               chrome.setStatus('saved', `${describeProposalPlace(change, editor?.noteDocumentText() ?? '')} — Show on the bar, Accept or Reject when ready`)
@@ -1638,6 +1652,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   let waitingReattachId: string | undefined
   /** The thread whose passage the agent is working on, for the rail's own line. */
   let agentBusyThreadId: string | undefined
+  /** The thread a running Ask agent proposes for, so its proposals carry the link (APP-50). */
+  let proposingForThreadId: string | undefined
   /**
    * Whether the reader has hidden the notes rail.
    *
@@ -1830,6 +1846,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       waitingReattachId = undefined
       const thread = noteThreads.find((candidate) => candidate.id === id)
       if (thread === undefined) return
+      // A change this note asked for is still pending: resolving would leave
+      // it orphaned in the bar. Say so; Accept or Reject on the card is the
+      // way through (APP-50).
+      const pending = proposals.list().find((proposal) => proposal.threadId === id)
+      if (pending !== undefined) {
+        chrome.setStatus('error', `This note has a proposed change (“${pending.name}”) — accept or reject it first.`)
+        return
+      }
       void store.save(resolveThread(thread)).then(() => paintNotes()).catch(notesPersistFailed('Resolving the note'))
     },
     reopen: (id: string): void => {
@@ -1914,6 +1938,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         noteRailHidden = true
         noteRailHost.replaceChildren()
       },
+      proposals: new Map(
+        proposals
+          .list()
+          .filter((proposal) => proposal.threadId !== undefined)
+          .map((proposal) => [proposal.threadId!, { id: proposal.id, name: proposal.name }]),
+      ),
       collapsed: collapsedCards,
       onToggleCollapsed: (id) => {
         if (collapsedCards.has(id)) collapsedCards.delete(id)
@@ -1970,6 +2000,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 
     agentBusyThreadId = thread.id
     paintNotes()
+    // Proposals staged by this run carry the note's thread (APP-50).
+    proposingForThreadId = thread.id
     try {
       const answer = await agentController.runForPassage(instruction, range)
       await recordThreadReply(id, 'agent', answer)
@@ -1981,6 +2013,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       await recordThreadReply(id, 'agent', `Could not run — ${message}`)
     } finally {
       agentBusyThreadId = undefined
+      proposingForThreadId = undefined
       paintNotes()
     }
   }

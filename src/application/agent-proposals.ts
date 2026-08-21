@@ -29,6 +29,12 @@ export interface ProposedChange {
   readonly offset: number
   /** The replacement (or appended) Markdown. */
   readonly markdown: string
+  /**
+   * The note thread that asked for this change, when one did (APP-50,
+   * ADR-0016): the card shows its change, accepting resolves the thread,
+   * and a thread with a change pending cannot be resolved past it.
+   */
+  readonly threadId?: string
 }
 
 export interface AgentProposal extends ProposedChange {

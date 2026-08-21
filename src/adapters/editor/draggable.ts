@@ -14,7 +14,7 @@
  */
 
 /** Where a drag must not start: controls keep working, text stays selectable. */
-const UNDRAGGABLE = 'button, a, input, textarea, select, [contenteditable="true"], p, blockquote, pre'
+const UNDRAGGABLE = 'button, a, input, textarea, select, [contenteditable="true"], p, blockquote, pre, ul, ol, li, h1, h2, h3, h4, h5, h6, table, code'
 
 const EDGE_MARGIN = 8
 /** How much of the panel must remain reachable inside the host. */

@@ -4967,6 +4967,9 @@ section.editor::-webkit-scrollbar {
   gap: 8px;
   /* A ceiling, not a preference. The document is the primary surface. */
   width: var(--sm-agent-panel-width);
+  /* Bounded by the window, not by whatever the surface happens to measure:
+     a surface taller than the viewport once put the composer off-screen. */
+  max-height: calc(100vh - var(--sm-surface-top, 0px) - 16px);
   padding: 12px;
   background: color-mix(in srgb, var(--paper) 96%, transparent);
   border: 1px solid var(--line);
@@ -4983,10 +4986,34 @@ section.editor::-webkit-scrollbar {
  * was half hidden behind it. The column is centred, so padding the scroller
  * moves it out from under the panel rather than resizing the page.
  */
-.document-surface:has(.sm-agent-panel) .editor {
+/*
+ * The outer column only. Milkdown's root also carries `.editor`, and a rule on
+ * bare `.editor` padded both — the panel's strip was yielded twice and the
+ * reading column collapsed to a ribbon (BUG-25).
+ */
+.document-surface:has(.sm-agent-panel:not([data-moved="true"])) .editor:not(.ProseMirror) {
   /* The panel's own width plus its inset, so the column clears it exactly. */
   padding-right: calc(var(--sm-agent-panel-width) + 16px);
 }
+
+/*
+ * The panel and the notes share the right edge (BUG-25). Docked, the panel
+ * takes the outer strip and the notes — the stacked rail or the margin column
+ * — sit between the document and it, never underneath it. Moved by hand, the
+ * panel is a floating window: the column and the notes come back.
+ */
+.document-surface:has(.sm-agent-panel:not([data-moved="true"])) .sm-note-rail {
+  right: calc(var(--sm-agent-panel-width) + 26px);
+}
+.document-surface:has(.sm-agent-panel:not([data-moved="true"])) .sm-note-rail-host[data-layout="margin"] .sm-note-rail {
+  right: calc(var(--sm-agent-panel-width) + 16px);
+}
+.sm-agent-panel[data-moved="true"] {
+  right: auto;
+  bottom: auto;
+  height: min(720px, calc(100vh - var(--sm-surface-top, 0px) - 16px));
+}
+.sm-agent-panel > .sm-drag-grip { flex: 0 0 auto; }
 
 .sm-agent-panel-header {
   display: flex;

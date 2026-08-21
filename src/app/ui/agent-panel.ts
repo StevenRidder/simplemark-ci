@@ -1,3 +1,4 @@
+import { makeDraggable } from '../../adapters/editor/draggable.js'
 import type { AgentConversation, ComposerMode, ConversationMessage } from '../agent-conversation.js'
 import { tablerIcon } from './tabler-icons.js'
 
@@ -397,6 +398,10 @@ export function createAgentPanel(options: AgentPanelOptions): AgentPanel {
     close.innerHTML = tablerIcon('x')
     close.addEventListener('click', () => closePanel())
     header.append(title, close)
+    // Every surface over the document accepts a drag (BUG-15 rule). A moved
+    // panel becomes a floating window: app.css returns the column and the
+    // notes to their docked places when `data-moved` is set.
+    makeDraggable(panel)
 
     const list = document.createElement('div')
     list.className = 'sm-agent-messages'

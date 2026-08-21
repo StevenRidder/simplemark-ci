@@ -2069,11 +2069,30 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
    * on paint, scroll, and resize, and reapplies the focused classes that a
    * decoration repaint would otherwise wipe.
    */
+  /** The window width at which the notes earn a margin column (APP-42). */
+  const MARGIN_MIN_WINDOW = 1080
+  /** Width a docked agent panel takes from the surface; a moved panel floats and takes none. */
+  const panelReserve = (): number => {
+    const panel = documentSurface instanceof HTMLElement
+      ? documentSurface.querySelector<HTMLElement>('.sm-agent-panel:not([data-moved="true"])')
+      : null
+    return panel === null ? 0 : panel.offsetWidth + 16
+  }
+  // The window less the strip a docked agent panel takes first (BUG-25): with
+  // the panel open, a window that just earned its margin no longer has one,
+  // and the notes stack in the rail beside the panel instead of under it.
   const marginLayout = (): boolean =>
-    documentSurface instanceof HTMLElement && window.innerWidth >= 1080
+    documentSurface instanceof HTMLElement && window.innerWidth - panelReserve() >= MARGIN_MIN_WINDOW
 
   const alignNoteCards = (): void => {
     if (!(documentSurface instanceof HTMLElement)) return
+    // Where the surface starts on screen, for surfaces that size against the
+    // window (the agent panel's ceiling). Read here because this pass already
+    // runs on every resize and scroll.
+    documentSurface.style.setProperty(
+      '--sm-surface-top',
+      `${Math.max(0, Math.round(documentSurface.getBoundingClientRect().top))}px`,
+    )
     const layout = marginLayout() ? 'margin' : 'stack'
     noteRailHost.dataset['layout'] = layout
     // The margin claims real column space: the document shoves left rather
@@ -2175,7 +2194,13 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const surfaceResize = typeof ResizeObserver === 'undefined'
     ? undefined
     : new ResizeObserver(scheduleAlign)
-  if (documentSurface instanceof HTMLElement) surfaceResize?.observe(documentSurface)
+  if (documentSurface instanceof HTMLElement) {
+    surfaceResize?.observe(documentSurface)
+    // The column's content box changes when the agent panel docks or leaves
+    // (its padding yields the strip), and the margin decides itself from that.
+    const editorColumn = documentSurface.querySelector('.editor:not(.ProseMirror)')
+    if (editorColumn instanceof HTMLElement) surfaceResize?.observe(editorColumn)
+  }
 
   // Card → passage: click a card, land on its passage. Buttons, inputs, and
   // the composer keep their own meanings.

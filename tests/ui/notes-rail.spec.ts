@@ -122,6 +122,9 @@ test('Escape cancels reattach and leaves the note orphaned', async ({ page }) =>
 })
 
 test('clicking a stacked tint opens every note on that passage', async ({ page }) => {
+  // The tint popup is the narrow layout's surface; wide surfaces focus the
+  // margin card instead (APP-42).
+  await page.setViewportSize({ width: 720, height: 800 })
   await page.evaluate((quote) => window.simplemark!.notes.setThreadsForTest([
     { id: 't1', noteKey: 'n', author: 'local', createdAt: '', body: 'first stacked note',
       anchor: { quote, prefix: '', suffix: '', blockIndex: 0 }, state: 'open' },
@@ -139,6 +142,9 @@ test('clicking a stacked tint opens every note on that passage', async ({ page }
 })
 
 test('clicking a single tint shows that note', async ({ page }) => {
+  // The tint popup is the narrow layout's surface; wide surfaces focus the
+  // margin card instead (APP-42).
+  await page.setViewportSize({ width: 720, height: 800 })
   await page.evaluate((quote) => window.simplemark!.notes.setThreadsForTest([
     { id: 't1', noteKey: 'n', author: 'local', createdAt: '', body: 'only this note',
       anchor: { quote, prefix: '', suffix: '', blockIndex: 0 }, state: 'open' },

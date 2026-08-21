@@ -97,7 +97,12 @@ export function documentText(state: EditorState): string {
  * Recomputed when the thread list is set. In-session edits map the resulting
  * decorations forward so `currentAnchors` can re-derive the quote.
  */
-function decorate(state: EditorState, threads: readonly Thread[]): DecorationSet {
+interface NotesMeta {
+  readonly threads: readonly Thread[]
+  readonly focusedId?: string
+}
+
+function decorate(state: EditorState, threads: readonly Thread[], focusedId?: string): DecorationSet {
   const indexed = indexDocumentText(state.doc)
   const byOffset = new Map<number, { to: number; ids: string[] }>()
 
@@ -119,12 +124,21 @@ function decorate(state: EditorState, threads: readonly Thread[]): DecorationSet
     const from = indexed.posAt(fromOffset)
     const last = indexed.posAt(toOffset - 1)
     if (from === undefined || last === undefined || last < from) continue
+    // Focus lives in the decoration, not painted on afterwards: ProseMirror
+    // redraws these spans whenever the caret lands in one, and a class added
+    // from outside dies with the redraw (APP-42).
+    const focused = focusedId !== undefined && ids.includes(focusedId)
+    const classes = [
+      'sm-note-anchor',
+      ...(ids.length > 1 ? ['sm-note-anchor-stacked'] : []),
+      ...(focused ? ['sm-note-anchor-focused'] : []),
+    ]
     decorations.push(
       Decoration.inline(
         from,
         last + 1,
         {
-          class: ids.length > 1 ? 'sm-note-anchor sm-note-anchor-stacked' : 'sm-note-anchor',
+          class: classes.join(' '),
           'data-count': String(ids.length),
           'data-threads': ids.join(' '),
         },
@@ -211,8 +225,9 @@ export function replaceText(view: EditorView, from: string, to: string): void {
   view.dispatch(view.state.tr.insertText(to, start, last + 1))
 }
 
-export function setThreads(view: EditorView, threads: readonly Thread[]): void {
-  view.dispatch(view.state.tr.setMeta(notesKey, threads))
+export function setThreads(view: EditorView, threads: readonly Thread[], focusedId?: string): void {
+  const meta: NotesMeta = { threads, ...(focusedId === undefined ? {} : { focusedId }) }
+  view.dispatch(view.state.tr.setMeta(notesKey, meta))
 }
 
 function notesProsePlugin(): Plugin<NotesState> {
@@ -221,9 +236,9 @@ function notesProsePlugin(): Plugin<NotesState> {
     state: {
       init: () => ({ threads: [], decorations: DecorationSet.empty }),
       apply: (tr: Transaction, value: NotesState, _oldState, newState) => {
-        const meta = tr.getMeta(notesKey) as readonly Thread[] | undefined
+        const meta = tr.getMeta(notesKey) as NotesMeta | undefined
         if (meta !== undefined) {
-          return { threads: meta, decorations: decorate(newState, meta) }
+          return { threads: meta.threads, decorations: decorate(newState, meta.threads, meta.focusedId) }
         }
         if (tr.docChanged) {
           return { ...value, decorations: value.decorations.map(tr.mapping, tr.doc) }

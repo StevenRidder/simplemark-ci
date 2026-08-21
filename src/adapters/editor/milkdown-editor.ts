@@ -2005,9 +2005,9 @@ export class MilkdownEditor {
   }
 
   /** Replaces the open-note set the decoration plugin tints. */
-  setNoteThreads(threads: readonly Thread[]): void {
+  setNoteThreads(threads: readonly Thread[], focusedId?: string): void {
     const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
-    setThreads(view, threads)
+    setThreads(view, threads, focusedId)
   }
 
   /**

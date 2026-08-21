@@ -1360,6 +1360,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   // Notes are a layer over the document, so a store that cannot answer costs
   // exactly the notes: the document still opens, and the shell says why.
   let noteThreads: readonly Thread[] = []
+  /** The note whose card and tint read as active (APP-42). */
+  let focusedThreadId: string | undefined
   let notesLoadError: string | undefined
   try {
     noteThreads = await persist.list(await noteKeyForOpenDocument())
@@ -1416,7 +1418,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       return next === undefined ? thread : { ...thread, anchor: next }
     })
     const text = editor.noteDocumentText()
-    editor.setNoteThreads(noteThreads)
+    editor.setNoteThreads(noteThreads, focusedThreadId)
     if (noteRailHidden) {
       // Hiding hides the rail, and nothing else. Returning before this point
       // skipped `setNoteThreads` as well, so a dismissal also stopped painting
@@ -1669,6 +1671,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       return
     }
     const ids = (tint.getAttribute('data-threads') ?? '').split(/\s+/).filter((id) => id !== '')
+    // Wide surfaces have margin cards: the passage's card takes focus, and
+    // nothing floats over the text (APP-42). The stack remains the narrow
+    // layout's answer, where there is no margin to align into.
+    if (marginLayout()) {
+      const first = ids[0]
+      if (first !== undefined) focusNoteThread(first)
+      return
+    }
     const stacked = ids.flatMap((id) => noteThreads.filter((thread) => thread.id === id))
     renderNoteStack(noteStackHost, stacked, tint.getBoundingClientRect())
   }
@@ -1676,6 +1686,124 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   chrome.editorHost.addEventListener('keyup', onEditorSelectionSettled)
   chrome.element.ownerDocument.addEventListener('click', onDocumentClick)
   chrome.element.ownerDocument.addEventListener('keydown', onNotesEscape)
+
+  /**
+   * Margin-aligned note cards (APP-42, SimpleMark Margins W1).
+   *
+   * On a wide surface each card sits at its passage's height — the layout that
+   * makes a margin a margin. The tints the decorations already render carry
+   * their thread ids, so alignment reads real pixels from the DOM instead of
+   * growing a second coordinate pipeline. Cards that crowd push down, Google
+   * Docs style; orphans without a passage queue after the last placed card.
+   *
+   * The pass is cheap (a handful of rect reads) and self-healing: it re-runs
+   * on paint, scroll, and resize, and reapplies the focused classes that a
+   * decoration repaint would otherwise wipe.
+   */
+  const marginLayout = (): boolean =>
+    documentSurface instanceof HTMLElement && window.innerWidth >= 1080
+
+  const alignNoteCards = (): void => {
+    if (!(documentSurface instanceof HTMLElement)) return
+    const layout = marginLayout() ? 'margin' : 'stack'
+    noteRailHost.dataset['layout'] = layout
+    // The margin claims real column space: the document shoves left rather
+    // than having cards float over its text — but only while there are cards
+    // to hold, so an empty rail costs no width.
+    const hasCards = noteRailHost.querySelector('.sm-note-rail article[data-thread]') !== null
+    documentSurface.dataset['notesMargin'] = String(layout === 'margin' && hasCards)
+
+    if (layout !== 'margin') return
+
+    const surfaceBox = documentSurface.getBoundingClientRect()
+    const cards = [...noteRailHost.querySelectorAll<HTMLElement>('.sm-note-rail article[data-thread]')]
+    const placed: { card: HTMLElement; y: number }[] = []
+    const orphans: HTMLElement[] = []
+    for (const card of cards) {
+      const id = card.dataset['thread'] ?? ''
+      const tint = documentSurface.querySelector(`.sm-note-anchor[data-threads~="${CSS.escape(id)}"]`)
+      if (tint === null) {
+        orphans.push(card)
+        continue
+      }
+      placed.push({ card, y: tint.getBoundingClientRect().top - surfaceBox.top })
+      card.classList.toggle('sm-note-card-focused', id === focusedThreadId)
+    }
+    placed.sort((a, b) => a.y - b.y)
+    // Cards follow their passages even off-screen — the surface clips what
+    // scrolled away, exactly as the text itself does. Only crowding pushes a
+    // card off its passage's height.
+    let nextTop = Number.NEGATIVE_INFINITY
+    for (const { card, y } of placed) {
+      const top = Math.max(y, nextTop)
+      card.style.top = `${top}px`
+      nextTop = top + card.offsetHeight + 10
+    }
+    let orphanTop = Math.max(nextTop, 8)
+    for (const card of orphans) {
+      card.style.top = `${orphanTop}px`
+      orphanTop += card.offsetHeight + 10
+      card.classList.remove('sm-note-card-focused')
+    }
+    // The resolved history queues after the last card — pinned to the column's
+    // bottom it sat under the styles bar, which ate its clicks.
+    const resolvedSection = noteRailHost.querySelector<HTMLElement>('.sm-note-rail-resolved')
+    if (resolvedSection !== null) resolvedSection.style.top = `${orphanTop}px`
+  }
+
+  const focusNoteThread = (id: string | undefined): void => {
+    focusedThreadId = id
+    // Through the paint, not around it: the tint's focus lives in the
+    // decorations, and only a repaint reaches them.
+    paintNotes()
+  }
+
+  let alignFrame: number | undefined
+  const scheduleAlign = (): void => {
+    if (alignFrame !== undefined) return
+    alignFrame = requestAnimationFrame(() => {
+      alignFrame = undefined
+      alignNoteCards()
+    })
+  }
+  // Scroll does not bubble, but it does capture — one listener hears every
+  // scroller inside the surface, including the editor's own.
+  documentSurface?.addEventListener('scroll', scheduleAlign, true)
+  const surfaceResize = typeof ResizeObserver === 'undefined'
+    ? undefined
+    : new ResizeObserver(scheduleAlign)
+  if (documentSurface instanceof HTMLElement) surfaceResize?.observe(documentSurface)
+
+  // Card → passage: click a card, land on its passage. Buttons, inputs, and
+  // the composer keep their own meanings.
+  // Every repaint of the rail re-aligns the margin — the paint replaces the
+  // card elements, and cards without tops pile at the column's origin.
+  {
+    const paintedNotes = paintNotes
+    paintNotes = (): void => {
+      paintedNotes()
+      alignNoteCards()
+    }
+  }
+  scheduleAlign()
+
+  noteRailHost.addEventListener('click', (event) => {
+    if (!marginLayout()) return
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (target.closest('button, textarea, a, form, details') !== null) return
+    const card = target.closest<HTMLElement>('article[data-thread]')
+    if (card === null) return
+    const id = card.dataset['thread'] ?? ''
+    focusNoteThread(id)
+    const thread = noteThreads.find((candidate) => candidate.id === id)
+    if (thread?.anchor === undefined || editor === undefined) return
+    const text = editor.noteDocumentText()
+    const offset = matchAnchor(thread.anchor, text)
+    if (offset === undefined) return
+    const range = editor.documentRangeAt(offset, thread.anchor.quote.length)
+    if (range !== undefined) editor.reveal(range.from)
+  })
 
   /**
    * Moving between notes on ⌘⌥ plus an arrow.

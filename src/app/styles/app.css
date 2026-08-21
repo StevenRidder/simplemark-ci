@@ -5796,3 +5796,65 @@ section.editor::-webkit-scrollbar {
 .sm-note-rail-byline { margin: 8px 0 2px; font: 500 10px/1.2 ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in srgb, var(--ink, CanvasText) 48%, transparent); }
 .sm-note-rail-byline[data-author="agent"] { color: color-mix(in srgb, #4a5b8c 78%, CanvasText 22%); }
 .sm-note-rail-byline:first-child, article > .sm-note-rail-byline:first-of-type { margin-top: 0; }
+
+/* Margin-aligned note cards (APP-42): on a wide surface the rail is a real
+   margin — a transparent column whose cards sit beside their passages. The
+   boxed, stacked rail remains the narrow layout. */
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail {
+  top: 0;
+  right: 8px;
+  bottom: 0;
+  width: 280px;
+  max-height: none;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  overflow: visible;
+  pointer-events: none;
+}
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail article {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 2px 10px rgba(32, 29, 24, 0.10);
+  transition: top 160ms ease;
+  cursor: pointer;
+}
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail article + article { border-top: 1px solid var(--line); }
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail article.sm-note-card-focused {
+  border-color: color-mix(in srgb, var(--accent, #b58a2a) 65%, var(--line));
+  box-shadow: 0 6px 20px rgba(32, 29, 24, 0.18);
+  z-index: 3;
+}
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail-hide {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  z-index: 6;
+  pointer-events: auto;
+}
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail-resolved {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.sm-note-anchor-focused {
+  background: color-mix(in srgb, #efd37f 72%, transparent) !important;
+  outline: 1px solid color-mix(in srgb, #b58a2a 55%, transparent);
+}
+
+/* The margin claims column space while it holds cards (APP-42). */
+.document-surface[data-notes-margin="true"] { padding-right: 296px; }

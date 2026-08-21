@@ -62,6 +62,9 @@ test('a drag cannot lose the composer outside the document surface', async ({ pa
 })
 
 test('the note stack on a passage follows a drag', async ({ page }) => {
+  // The stack popup is the narrow layout's surface (APP-42); wide surfaces
+  // focus the margin card, which needs no dragging at all.
+  await page.setViewportSize({ width: 720, height: 800 })
   await page.evaluate((quote) => window.simplemark!.notes.selectTextForTest(quote), QUOTE)
   await page.keyboard.press('Meta+Shift+M')
   await page.keyboard.type('a note to reopen')

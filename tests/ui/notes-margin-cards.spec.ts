@@ -80,3 +80,33 @@ test('a narrow surface keeps the stacked rail and the tint popup', async ({ page
   await page.locator('.sm-note-anchor').first().click()
   await expect(page.locator('.sm-note-stack')).toBeVisible()
 })
+
+test('a long reply scrolls inside its card instead of growing past the viewport', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await expect(page.locator(editor)).toBeVisible()
+  await page.evaluate(() => window.simplemark!.notes.selectTextForTest('This document is the demo.'))
+  await page.keyboard.press('Meta+Shift+M')
+  await page.keyboard.type('price this out')
+  await page.keyboard.press('Enter')
+
+  // A reply the size of a real agent pricing answer.
+  const long = Array.from({ length: 40 }, (_, i) => `- consideration ${i}: a line of pricing rationale`).join('\n')
+  await page.evaluate((body) => {
+    const row = document.querySelector('.sm-note-rail article textarea') as HTMLTextAreaElement
+    row.value = body
+    row.dispatchEvent(new Event('input', { bubbles: true }))
+  }, long)
+  await page.locator('.sm-note-rail [data-action="leave-note"]').click()
+  await expect(page.locator('.sm-note-rail article')).toContainText('consideration 39')
+
+  const card = page.locator('.sm-note-rail article[data-thread]').first()
+  const sizes = await card.evaluate((node) => ({
+    client: node.clientHeight,
+    scroll: node.scrollHeight,
+    viewport: window.innerHeight,
+  }))
+  // Clamped to the viewport, with the overflow reachable inside the card.
+  expect(sizes.client).toBeLessThanOrEqual(Math.min(sizes.viewport * 0.62, 545))
+  expect(sizes.scroll).toBeGreaterThan(sizes.client)
+})

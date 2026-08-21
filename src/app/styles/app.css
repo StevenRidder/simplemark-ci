@@ -5858,3 +5858,12 @@ section.editor::-webkit-scrollbar {
 
 /* The margin claims column space while it holds cards (APP-42). */
 .document-surface[data-notes-margin="true"] { padding-right: 296px; }
+
+/* A long card scrolls inside itself (BUG-17): reading a long agent reply must
+   never require scrolling the page away from the passage the card sits by.
+   overscroll-behavior keeps an in-card wheel from chaining to the document. */
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail article {
+  max-height: min(60vh, 540px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

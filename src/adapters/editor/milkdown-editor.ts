@@ -2028,6 +2028,30 @@ export class MilkdownEditor {
   }
 
   /**
+   * The document's headings with their section ranges (APP-40).
+   *
+   * A section runs from its heading to the next heading of any level, or the
+   * end of the document — the span a person means by "this section". Ranges
+   * are live document positions, so they are read when needed, never cached.
+   */
+  documentHeadings(): readonly { readonly label: string; readonly from: number; readonly to: number }[] {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    const doc = view.state.doc
+    const starts: { label: string; from: number }[] = []
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'heading' && node.textContent.trim() !== '') {
+        starts.push({ label: node.textContent.trim(), from: pos })
+      }
+      return node.isBlock
+    })
+    return starts.map((heading, index) => ({
+      label: heading.label,
+      from: heading.from,
+      to: starts[index + 1]?.from ?? doc.content.size,
+    }))
+  }
+
+  /**
    * Who has edited each block, most recent first (COLLABORATION.md §5.7).
    *
    * Empty until an agent has written: a document one person edited alone has

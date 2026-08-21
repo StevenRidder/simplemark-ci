@@ -45,6 +45,15 @@ export interface AgentPanelOptions {
   /** Whether a provider is configured. False shows why, and disables Send. */
   readonly isConfigured: () => boolean
   readonly onOpenSettings: () => void
+  /**
+   * What a send would touch right now (APP-40). The rule was always
+   * selection-or-chat; the chip is the rule made visible before the press.
+   */
+  readonly scopeState?: () => { readonly label: string; readonly kind: 'selection' | 'pinned' | 'document' }
+  /** The document's headings, for aiming an ask without leaving the panel. */
+  readonly headings?: () => readonly { readonly label: string }[]
+  /** Pins a heading's section as the scope (by index), or clears the pin. */
+  readonly onPinScope?: (index: number | undefined) => void
 }
 
 export interface AgentPanel {
@@ -58,6 +67,8 @@ export interface AgentPanel {
   repaint(): void
   /** Shows or clears "which passage did you mean?". Never opens the panel. */
   setQuestion(question: AgentQuestion | undefined): void
+  /** Updates only the scope chip — selection changes must not rebuild a composer someone is typing into. */
+  refreshScope(): void
 }
 
 const MODE_LABEL: Record<ComposerMode, string> = {
@@ -89,6 +100,8 @@ export function createAgentPanel(options: AgentPanelOptions): AgentPanel {
   /** Whether the correction box has already been given focus this time round. */
   let editorFocused = false
   let question: AgentQuestion | undefined
+  /** Repaints just the chip; undefined while the composer is not built. */
+  let scopeChipPaint: (() => void) | undefined
 
   function messageElement(message: ConversationMessage): HTMLElement {
     const article = document.createElement('article')
@@ -232,6 +245,60 @@ export function createAgentPanel(options: AgentPanelOptions): AgentPanel {
     const composer = document.createElement('form')
     composer.className = 'sm-agent-composer'
     composer.dataset['mode'] = mode
+
+    if (options.scopeState !== undefined) {
+      const scopeRow = document.createElement('div')
+      scopeRow.className = 'sm-agent-scope'
+      const chip = document.createElement('button')
+      chip.type = 'button'
+      chip.className = 'sm-agent-scope-chip'
+      chip.dataset['action'] = 'scope-chip'
+      const paint = (): void => {
+        const state = options.scopeState!()
+        chip.dataset['kind'] = state.kind
+        chip.textContent = state.label
+        chip.title = state.kind === 'document'
+          ? 'Nothing is selected: sending chats about the whole document and edits nothing. Click to aim at a section.'
+          : 'This is what a send will act on. Click to aim at a section instead.'
+      }
+      paint()
+      scopeChipPaint = paint
+      const menu = document.createElement('div')
+      menu.className = 'sm-agent-scope-menu'
+      menu.hidden = true
+      chip.addEventListener('click', () => {
+        if (!menu.hidden) {
+          menu.hidden = true
+          return
+        }
+        menu.replaceChildren()
+        const clear = document.createElement('button')
+        clear.type = 'button'
+        clear.dataset['action'] = 'scope-clear'
+        clear.textContent = 'Whole document (chat only)'
+        clear.addEventListener('click', () => {
+          options.onPinScope?.(undefined)
+          menu.hidden = true
+          paint()
+        })
+        menu.append(clear)
+        for (const [index, heading] of (options.headings?.() ?? []).entries()) {
+          const item = document.createElement('button')
+          item.type = 'button'
+          item.dataset['action'] = 'scope-heading'
+          item.textContent = heading.label
+          item.addEventListener('click', () => {
+            options.onPinScope?.(index)
+            menu.hidden = true
+            paint()
+          })
+          menu.append(item)
+        }
+        menu.hidden = false
+      })
+      scopeRow.append(chip, menu)
+      composer.append(scopeRow)
+    }
 
     const modes = document.createElement('div')
     modes.className = 'sm-agent-modes'
@@ -393,6 +460,9 @@ export function createAgentPanel(options: AgentPanelOptions): AgentPanel {
     toggle: () => (open ? closePanel() : openPanel()),
     isOpen: () => open,
     repaint,
+    refreshScope: () => {
+      if (open) scopeChipPaint?.()
+    },
     setQuestion: (next) => {
       question = next
       repaint()

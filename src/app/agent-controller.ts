@@ -75,7 +75,7 @@ export interface AgentControllerOptions {
 
 export interface AgentController {
   /** Sends a composer message. `note` posts and returns; `redirect` runs. */
-  send(mode: ComposerMode, markdown: string): void
+  send(mode: ComposerMode, markdown: string, scope?: { readonly from: number; readonly to: number }): void
   pause(): void
   resume(): void
   stop(): void
@@ -228,7 +228,7 @@ export function createAgentController(options: AgentControllerOptions): AgentCon
   }
 
   return {
-    send(mode, markdown) {
+    send(mode, markdown, scope) {
       options.conversation.post({ author: 'you', markdown, mode })
       options.panel.repaint()
 
@@ -244,7 +244,9 @@ export function createAgentController(options: AgentControllerOptions): AgentCon
         control.redirect(markdown)
         return
       }
-      void run(markdown, options.editor.selectionRange())
+      // An explicitly aimed scope (the panel's chip) beats the live selection —
+      // it is what the chip PROMISED the send would touch (APP-40).
+      void run(markdown, scope ?? options.editor.selectionRange())
     },
     async runForPassage(instruction, range) {
       const outcome = await run(instruction, { from: range.from, to: range.to })

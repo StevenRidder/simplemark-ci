@@ -5783,3 +5783,11 @@ section.editor::-webkit-scrollbar {
 /* Editing a note in place: the body swaps for a small form. */
 .sm-note-rail-edit { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 6px; }
 .sm-note-rail-edit textarea { flex: 1; min-height: 48px; font: inherit; font-size: 12px; }
+
+/* The scope chip (APP-40): what a send will touch, stated before the press. */
+.sm-agent-scope { position: relative; margin-bottom: 8px; }
+.sm-agent-scope-chip { font: 500 11px/1.3 ui-monospace, monospace; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted-ink, inherit); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-agent-scope-chip[data-kind="selection"], .sm-agent-scope-chip[data-kind="pinned"] { border-color: color-mix(in srgb, var(--accent, #4a5b8c) 55%, transparent); color: var(--accent, inherit); }
+.sm-agent-scope-menu { position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; right: 0; max-height: 220px; overflow: auto; background: var(--paper, Canvas); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.14); display: flex; flex-direction: column; }
+.sm-agent-scope-menu button { text-align: left; font-size: 12px; padding: 7px 10px; border: 0; background: transparent; cursor: pointer; }
+.sm-agent-scope-menu button:hover { background: color-mix(in srgb, var(--line) 40%, transparent); }

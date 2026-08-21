@@ -1172,15 +1172,60 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   })
   documentSurface?.prepend(agentStatus.host)
 
+  /**
+   * The chip's pinned aim (APP-40): a heading picked in the panel, held by
+   * label and resolved to positions at send time — the document may have
+   * changed since the pick, and a stale range would edit the wrong text.
+   * One-shot: a send consumes it.
+   */
+  let pinnedScopeLabel: string | undefined
+  const pinnedScopeRange = (): { from: number; to: number } | undefined => {
+    if (pinnedScopeLabel === undefined) return undefined
+    const heading = editor?.documentHeadings().find((candidate) => candidate.label === pinnedScopeLabel)
+    return heading === undefined ? undefined : { from: heading.from, to: heading.to }
+  }
+  const scopeSnippet = (): string | undefined => {
+    // The controller reads `selectionRange()` at send time; the chip's label
+    // only has to be recognizable, so the DOM selection's own text serves.
+    const range = editor?.selectionRange()
+    if (range === undefined || range.to - range.from === 0) return undefined
+    const quote = window.getSelection()?.toString().trim() ?? ''
+    if (quote === '') return undefined
+    return quote.length > 42 ? `${quote.slice(0, 42)}…` : quote
+  }
+
   const agentPanel = createAgentPanel({
     onClosed: () => chrome.setAgentOpen(false),
     conversation,
     renderMarkdown: (markdown) => stepAdapter.renderMarkdown(markdown),
-    onSend: (mode, markdown) => agentController.send(mode, markdown),
+    onSend: (mode, markdown) => {
+      const pinned = pinnedScopeRange()
+      pinnedScopeLabel = undefined
+      agentController.send(mode, markdown, pinned)
+      agentPanel.refreshScope()
+    },
     onAnswerQuestion: (occurrence) => agentController.answerQuestion(occurrence),
     isConfigured: () => agentProvider?.() !== undefined,
     onOpenSettings: () => options.onOpenSettings?.(),
+    scopeState: () => {
+      if (pinnedScopeLabel !== undefined) {
+        return { label: `Section: ${pinnedScopeLabel}`, kind: 'pinned' }
+      }
+      const snippet = scopeSnippet()
+      return snippet === undefined
+        ? { label: 'Whole document · chat only', kind: 'document' }
+        : { label: `Selection: “${snippet}”`, kind: 'selection' }
+    },
+    headings: () => (editor?.documentHeadings() ?? []).map(({ label }) => ({ label })),
+    onPinScope: (index) => {
+      pinnedScopeLabel = index === undefined
+        ? undefined
+        : editor?.documentHeadings()[index]?.label
+    },
   })
+  // The chip mirrors the live selection; a full repaint would rebuild the
+  // composer mid-typing, so only the chip refreshes.
+  document.addEventListener('selectionchange', () => agentPanel.refreshScope())
   // Inside the document pane, not the window: `position: absolute` with no
   // positioned ancestor resolves against the viewport, and the panel escaped the
   // app window's own frame — overhanging its right edge and running past its

@@ -20,7 +20,16 @@ const EDGE_MARGIN = 8
 /** How much of the panel must remain reachable inside the host. */
 const KEEP_VISIBLE = 48
 
-export function makeDraggable(panel: HTMLElement): void {
+export interface DraggableOptions {
+  /**
+   * The box the drag is clamped to, when it is wider than the offset parent.
+   * A margin card's offset parent is its 280px column; clamping to that would
+   * let it move up and down but never aside, over the document (BUG-26).
+   */
+  readonly bounds?: HTMLElement
+}
+
+export function makeDraggable(panel: HTMLElement, options: DraggableOptions = {}): void {
   const grip = document.createElement('div')
   grip.className = 'sm-drag-grip'
   grip.setAttribute('aria-hidden', 'true')
@@ -49,12 +58,24 @@ export function makeDraggable(panel: HTMLElement): void {
   panel.addEventListener('pointermove', (event) => {
     if (drag === undefined || event.pointerId !== drag.pointerId) return
     const parent = panel.offsetParent
-    const width = parent instanceof HTMLElement ? parent.clientWidth : window.innerWidth
-    const height = parent instanceof HTMLElement ? parent.clientHeight : window.innerHeight
+    // The allowed range, in the offset parent's coordinates. With `bounds`
+    // given, the range is that box's, shifted by where the parent sits in it.
+    let minLeft = EDGE_MARGIN
+    let minTop = EDGE_MARGIN
+    let maxLeft = (parent instanceof HTMLElement ? parent.clientWidth : window.innerWidth) - KEEP_VISIBLE
+    let maxTop = (parent instanceof HTMLElement ? parent.clientHeight : window.innerHeight) - KEEP_VISIBLE
+    if (options.bounds !== undefined && parent instanceof HTMLElement) {
+      const box = options.bounds.getBoundingClientRect()
+      const origin = parent.getBoundingClientRect()
+      minLeft = box.left - origin.left + EDGE_MARGIN
+      minTop = box.top - origin.top + EDGE_MARGIN
+      maxLeft = box.right - origin.left - KEEP_VISIBLE
+      maxTop = box.bottom - origin.top - KEEP_VISIBLE
+    }
     const left = drag.left + (event.clientX - drag.x)
     const top = drag.top + (event.clientY - drag.y)
-    panel.style.left = `${Math.min(Math.max(left, EDGE_MARGIN), Math.max(EDGE_MARGIN, width - KEEP_VISIBLE))}px`
-    panel.style.top = `${Math.min(Math.max(top, EDGE_MARGIN), Math.max(EDGE_MARGIN, height - KEEP_VISIBLE))}px`
+    panel.style.left = `${Math.min(Math.max(left, minLeft), Math.max(minLeft, maxLeft))}px`
+    panel.style.top = `${Math.min(Math.max(top, minTop), Math.max(minTop, maxTop))}px`
     // The popup is now where the person put it; placement heuristics that
     // reposition on repaint would fight the hand that moved it.
     panel.dataset['moved'] = 'true'

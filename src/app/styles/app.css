@@ -5890,9 +5890,28 @@ section.editor::-webkit-scrollbar {
    never require scrolling the page away from the passage the card sits by.
    overscroll-behavior keeps an in-card wheel from chaining to the document. */
 .sm-note-rail-host[data-layout="margin"] .sm-note-rail article {
-  max-height: min(60vh, 540px);
+  /* Compact (BUG-26): a card holding a long agent reply used to take 540px
+     and shove the next card off the window. Long turns scroll inside. */
+  max-height: min(36vh, 320px);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+/* A card a person has dragged is a small window: it leaves the column,
+   keeps its width, sits above its siblings, and the align pass leaves it
+   where the hand put it (BUG-26). */
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail article[data-moved="true"] {
+  right: auto;
+  width: 280px;
+  z-index: 5;
+  box-shadow: 0 8px 28px rgba(32, 29, 24, 0.22);
+}
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail article > .sm-drag-grip { cursor: grab; }
+/* The align pass eases a card to its passage; a hand does not want easing —
+   with the transition on, the box lagged the pointer and the place recorded
+   on release was mid-flight. */
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail article.sm-dragging,
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail article[data-moved="true"] {
+  transition: none;
 }
 
 /* Agent proposals (ADR-0013): Track Changes with the roles reversed. */

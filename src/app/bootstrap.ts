@@ -51,6 +51,7 @@ import { NEED_SELECTION } from '../adapters/editor/note-capture.js'
 import { LocalThreadStore } from '../adapters/filesystem/local-thread-store.js'
 import { LocalSnapshotStore } from '../adapters/filesystem/local-snapshot-store.js'
 import { noteKeyForPath } from '../adapters/filesystem/tauri-thread-store.js'
+import { makeDraggable } from '../adapters/editor/draggable.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import { COMMANDS } from '../application/index.js'
 import type {
@@ -1634,6 +1635,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   let noteThreads: readonly Thread[] = []
   /** The note whose card and tint read as active (APP-42). */
   let focusedThreadId: string | undefined
+  /**
+   * Where a person dragged a margin card to, by thread id (BUG-26). Paint
+   * rebuilds every card element, so the place has to outlive the element;
+   * the align pass leaves these where the hand put them.
+   */
+  const movedCards = new Map<string, { readonly left: string; readonly top: string }>()
   let notesLoadError: string | undefined
   try {
     noteThreads = await persist.list(await noteKeyForOpenDocument())
@@ -2109,6 +2116,37 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     const orphans: HTMLElement[] = []
     for (const card of cards) {
       const id = card.dataset['thread'] ?? ''
+      // Every card accepts a drag, bounded by the surface so it can leave its
+      // column and sit over the document (BUG-26). Once per element: paint
+      // rebuilds the elements, and the place survives in `movedCards`.
+      if (card.dataset['draggable'] !== 'true') {
+        card.dataset['draggable'] = 'true'
+        makeDraggable(card, { bounds: documentSurface })
+        let grabbed = ''
+        card.addEventListener('pointerdown', () => {
+          grabbed = `${card.style.left}|${card.style.top}`
+        })
+        card.addEventListener('pointerup', () => {
+          if (card.dataset['moved'] !== 'true') return
+          movedCards.set(id, { left: card.style.left, top: card.style.top })
+          // The column just lost a card: the ones it was pushing rise to
+          // their own passages now, not at the next repaint.
+          scheduleAlign()
+        })
+        // A drag is not a click: the jump-to-passage handler on the host must
+        // not fire for a card that just travelled.
+        card.addEventListener('click', (event) => {
+          if (`${card.style.left}|${card.style.top}` !== grabbed) event.stopPropagation()
+        }, true)
+      }
+      const moved = movedCards.get(id)
+      if (moved !== undefined) {
+        card.dataset['moved'] = 'true'
+        card.style.left = moved.left
+        card.style.top = moved.top
+        card.classList.toggle('sm-note-card-focused', id === focusedThreadId)
+        continue
+      }
       const tint = documentSurface.querySelector(`.sm-note-anchor[data-threads~="${CSS.escape(id)}"]`)
       if (tint === null) {
         orphans.push(card)

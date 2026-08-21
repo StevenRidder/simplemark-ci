@@ -42,9 +42,13 @@ test('hover keeps the semantic callout label intact while exposing the drag affo
 
   const callout = page.locator(`${EDITOR} .callout-tip`)
   await callout.hover()
+  // The handle fades in; this waits for the fade to FINISH, not merely to
+  // start. Polling past 0.5 and then asserting 0.58 +/- 0.005 sampled a slow
+  // shard mid-animation (0.544) and failed a merge group that never touched
+  // callouts. The contract is the final value, so that is what is awaited.
   await expect.poll(async () => callout.evaluate((element) =>
     Number.parseFloat(getComputedStyle(element, '::after').opacity),
-  )).toBeGreaterThan(0.5)
+  )).toBeCloseTo(0.58, 2)
   const styles = await callout.evaluate((element) => {
     const label = getComputedStyle(element, '::before')
     const handle = getComputedStyle(element, '::after')

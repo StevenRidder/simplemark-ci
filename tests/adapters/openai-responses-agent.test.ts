@@ -104,6 +104,8 @@ describe('the /v1/responses request', () => {
     // AGENT-12: document edits must be told to use the note's Markdown idiom,
     // or the model bulletpoints its replies while writing prose into the note.
     expect(String(body()['instructions'])).toContain('Markdown idiom')
+    // BUG-27: a question in a note is answered, not acted on.
+    expect(String(body()['instructions'])).toContain('answer it in your reply and change nothing')
   })
 
   it('refuses to call out at all when nothing is configured', async () => {

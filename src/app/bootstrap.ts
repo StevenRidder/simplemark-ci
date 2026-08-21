@@ -1383,6 +1383,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 
   const noteHandleForTally = (): string => options.noteRowId?.() ?? session.documentHandle()
 
+  /** "Proposed: <name> — at the end of the note" / "— at “quote…”". */
+  const describeProposalPlace = (proposal: { readonly name: string; readonly kind: 'append' | 'replace'; readonly quote: string }, text: string): string => {
+    if (proposal.kind === 'append') return `Proposed: ${proposal.name} — at the end of the note`
+    const quote = proposal.quote.length > 40 ? `${proposal.quote.slice(0, 39)}…` : proposal.quote
+    const found = text.includes(proposal.quote) ? '' : ' (passage not found yet)'
+    return `Proposed: ${proposal.name} — at “${quote}”${found}`
+  }
+
   const paintProposals = (): void => {
     const pending = proposals.list()
     if (editor === undefined) return
@@ -1411,9 +1419,17 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     proposalBar.hidden = pending.length === 0
     proposalBar.replaceChildren()
     if (pending.length === 0) return
-    const label = document.createElement('span')
-    label.textContent = pending.length === 1 ? '1 proposed change' : `${pending.length} proposed changes`
-    if (proposalMarkup === 'none') label.textContent += ' · markup hidden'
+    // The count is the way to the change: a proposal appended at the end of
+    // a long note is off-screen, and a bar that only counts it leaves the
+    // reader hunting (BUG-27).
+    const label = document.createElement('button')
+    label.type = 'button'
+    label.dataset['action'] = 'show-proposal'
+    label.dataset['proposal'] = items[0]?.id ?? pending[0]!.id
+    label.title = 'Show the change in the document'
+    label.textContent = (pending.length === 1 ? '1 proposed change' : `${pending.length} proposed changes`)
+      + (proposalMarkup === 'none' ? ' · markup hidden' : '')
+      + (pending.length === 1 ? ' · Show' : ' · Show next')
     const acceptAll = document.createElement('button')
     acceptAll.type = 'button'
     acceptAll.dataset['action'] = 'accept-all-proposals'
@@ -1455,6 +1471,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     }
   }
 
+  /** Revisions a person's own Accept produced: the mirror puts those in the undo history. */
+  const acceptedProposalRevisions = new Set<number>()
   const acceptProposal = async (id: string): Promise<boolean> => {
     const proposal = proposals.get(id)
     if (proposal === undefined || editor === undefined) return false
@@ -1472,6 +1490,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       chrome.setStatus('error', `Could not accept “${proposal.name}” — its passage changed.`)
       return false
     }
+    // The revision this accept produces is the person's own act: the editor
+    // mirror reads this set to put it in their undo history (BUG-27). The
+    // next revision number is known before the call, so the mirror finds it
+    // whether the announce runs inside the call or after it.
+    acceptedProposalRevisions.add(session.snapshot().revision + 1)
     const applied = session.applyMarkdown({
       actorId: proposal.actorId,
       name: proposal.name,
@@ -1480,6 +1503,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       ...(range === undefined ? {} : { range }),
     })
     if (!applied.ok) {
+      acceptedProposalRevisions.delete(session.snapshot().revision + 1)
       chrome.setStatus('error', `Could not accept “${proposal.name}” — ${applied.reason}.`)
       return false
     }
@@ -1488,12 +1512,44 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     const handle = noteHandleForTally()
     const changes = agentEdits.record(handle)
     if (changes > 0) chrome.applyAgentEdits(handle, changes)
-    chrome.setStatus('dirty')
     chrome.refreshStatistics()
     activityTimeline.repaint()
     paintNotes()
     paintProposals()
+    // An accept is never invisible (BUG-27): the reader is taken to where
+    // the change landed and told what happened — and that ⌘Z takes it back.
+    const landedAt = range?.from ?? (() => {
+      const end = editor.documentRangeAt(Math.max(0, text.length - 1), 1)
+      return end?.to
+    })()
+    if (landedAt !== undefined) editor.reveal(landedAt)
+    chrome.setStatus('saved', `Accepted: ${proposal.name} — ${proposal.kind === 'append' ? 'at the end of the note' : 'in place'}. ⌘Z undoes it.`)
     return true
+  }
+
+  /** Scrolls the proposal's place into view and cycles the bar to the next one. */
+  const showProposal = (id: string): void => {
+    if (editor === undefined) return
+    const pending = proposals.list()
+    const proposal = proposals.get(id)
+    if (proposal === undefined) return
+    const located = locateProposal(editor.noteDocumentText(), proposal)
+    if (located === undefined) {
+      chrome.setStatus('error', `“${proposal.name}” is pending but its passage cannot be found — accept or reject it from the bar.`)
+      return
+    }
+    const text = editor.noteDocumentText()
+    const range = located.length === 0
+      ? editor.documentRangeAt(Math.max(0, text.length - 1), 1)
+      : editor.documentRangeAt(located.offset, located.length)
+    if (range === undefined) return
+    editor.reveal(range.from)
+    chrome.setStatus('saved', describeProposalPlace(proposal, text))
+    // Next press shows the next one.
+    const index = pending.findIndex((candidate) => candidate.id === id)
+    const next = pending[(index + 1) % pending.length]
+    const label = proposalBar.querySelector<HTMLElement>('[data-action="show-proposal"]')
+    if (label !== null && next !== undefined) label.dataset['proposal'] = next.id
   }
 
   const rejectProposal = (id: string): void => {
@@ -1507,11 +1563,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   chrome.element.ownerDocument.addEventListener('click', (event) => {
     const target = event.target
     if (!(target instanceof Element)) return
-    const button = target.closest<HTMLElement>('[data-action="accept-proposal"], [data-action="reject-proposal"], [data-action="accept-all-proposals"], [data-action="reject-all-proposals"]')
+    const button = target.closest<HTMLElement>('[data-action="accept-proposal"], [data-action="reject-proposal"], [data-action="accept-all-proposals"], [data-action="reject-all-proposals"], [data-action="show-proposal"]')
     if (button === null) return
     event.preventDefault()
     const action = button.dataset['action']
     const id = button.dataset['proposal']
+    if (action === 'show-proposal' && id !== undefined) showProposal(id)
     if (action === 'accept-proposal' && id !== undefined) void acceptProposal(id)
     if (action === 'reject-proposal' && id !== undefined) rejectProposal(id)
     if (action === 'accept-all-proposals') {
@@ -1531,7 +1588,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const agentController = createAgentController({
     session,
     editor: {
-      applyRemoteSteps: (steps, actorId) => editor?.applyRemoteSteps(steps, actorId) ?? false,
+      applyRemoteSteps: (steps, actorId, options) => editor?.applyRemoteSteps(steps, actorId, options) ?? false,
       selectionRange: () => editor?.selectionRange(),
       reveal: (range) => editor?.reveal(range.from),
       documentText: () => editor?.noteDocumentText() ?? session.snapshot().markdown,
@@ -1556,6 +1613,9 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
             propose: (change) => {
               proposals.add(change)
               paintProposals()
+              // Say where it went: an appended section is off-screen in any
+              // note longer than the window (BUG-27).
+              chrome.setStatus('saved', `${describeProposalPlace(change, editor?.noteDocumentText() ?? '')} — Show on the bar, Accept or Reject when ready`)
             },
             view: (markdown) => virtualMarkdown(markdown, proposals.list()),
           }
@@ -1564,6 +1624,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       agentChangePositions.set(transactionId, from)
       activityTimeline.repaint()
     },
+    undoableChange: (change) => acceptedProposalRevisions.has(change.revision),
     onAgentEdit: (handle) => {
       // Two writes, both needed. The tally is the durable one the next render
       // reads from; patching the row is only so the marker appears now, without

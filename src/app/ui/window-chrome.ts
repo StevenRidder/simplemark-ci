@@ -62,6 +62,13 @@ export type SaveState = 'saved' | 'dirty' | 'error'
  * in the first place. Four seconds clears that with room to read the sentence.
  */
 const ERROR_DWELL_MS = 4000
+/**
+ * How long a status that carries a message stays readable against a bare
+ * state change (BUG-27). "Accepted: … ⌘Z undoes it" was replaced by the
+ * autosave's plain "Saved" within a second — a message nobody could read is
+ * a silent channel. A newer message still replaces an older one at once.
+ */
+const MESSAGE_DWELL_MS = 3000
 
 /** A palette centre expressed inside the document pane, so window resizing is safe. */
 export interface StylesBarPosition {
@@ -1936,6 +1943,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // reason, leaving no trace that the command declined. So a refusal owns the
   // slot for a moment; see `setStatus`.
   let errorHoldUntil = 0
+  let messageHoldUntil = 0
   let deferredStatus: { state: SaveState; message?: string } | undefined
   let deferredStatusTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -3520,18 +3528,23 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
         paintStatus(state, message)
         return
       }
-      if (now < errorHoldUntil) {
+      // A bare state change (the autosave's "Saved") waits while a message is
+      // still being read; a message replaces a message at once.
+      const holdUntil = message === undefined ? Math.max(errorHoldUntil, messageHoldUntil) : errorHoldUntil
+      if (now < holdUntil) {
         // Hold the newest routine status rather than dropping it, so the slot
         // still ends on the truth — just after the refusal has been read.
         deferredStatus = message === undefined ? { state } : { state, message }
         deferredStatusTimer ??= setTimeout(() => {
           deferredStatusTimer = undefined
           errorHoldUntil = 0
+          messageHoldUntil = 0
           if (deferredStatus !== undefined) paintStatus(deferredStatus.state, deferredStatus.message)
           deferredStatus = undefined
-        }, errorHoldUntil - now)
+        }, holdUntil - now)
         return
       }
+      if (message !== undefined) messageHoldUntil = now + MESSAGE_DWELL_MS
       paintStatus(state, message)
     },
   }

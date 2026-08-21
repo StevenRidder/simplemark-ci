@@ -31,7 +31,7 @@ import type { AgentStatusLine } from './ui/agent-status-line.js'
 
 export interface AgentEditorBridge {
   /** Mirrors an accepted batch into the visible view, credited to `actorId`. */
-  applyRemoteSteps(steps: StepBatch, actorId: string): boolean
+  applyRemoteSteps(steps: StepBatch, actorId: string, options?: { readonly undoable?: boolean }): boolean
   /** The live selection, when the reader has one. */
   selectionRange(): { readonly from: number; readonly to: number } | undefined
   /** Brings a range into view. Called only while Follow is on. */
@@ -64,6 +64,11 @@ export interface AgentControllerOptions {
   readonly noteHandle: () => string
   /** Called with the running total of agent changes for that note. */
   readonly onAgentEdit: (handle: string) => void
+  /**
+   * Whether an accepted change entered the document by a person's own act —
+   * accepting a proposal — and so belongs in their undo history (BUG-27).
+   */
+  readonly undoableChange?: (change: AcceptedChange) => boolean
   /**
    * Where an accepted agent change landed, by transaction id.
    *
@@ -140,7 +145,9 @@ export function createAgentController(options: AgentControllerOptions): AgentCon
     // A barrier cannot be mirrored as steps. Re-rendering the whole view is the
     // caller's business; saying nothing and leaving a stale view is not.
     if (change.steps === undefined) return
-    options.editor.applyRemoteSteps(change.steps, actorId)
+    options.editor.applyRemoteSteps(change.steps, actorId, {
+      undoable: options.undoableChange?.(change) === true,
+    })
     if (lastScope !== undefined) {
       options.onAcceptedAt?.(String(change.revision), lastScope.from)
     }

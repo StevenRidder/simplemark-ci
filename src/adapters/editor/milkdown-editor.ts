@@ -326,7 +326,7 @@ export class MilkdownEditor {
    * Returns `false` without dispatching when any step cannot apply, so the
    * caller can re-render from the session instead of throwing.
    */
-  applyRemoteSteps(steps: StepBatch, actorId = 'agent'): boolean {
+  applyRemoteSteps(steps: StepBatch, actorId = 'agent', options: { readonly undoable?: boolean } = {}): boolean {
     if (steps.length === 0) return true
     return this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
@@ -336,7 +336,10 @@ export class MilkdownEditor {
           const step = Step.fromJSON(view.state.schema, json)
           if (transaction.maybeStep(step).failed !== null) return false
         }
-        transaction.setMeta('addToHistory', false)
+        // A remote batch stays out of the person's undo stack — except one a
+        // person accepted (BUG-27): accepting is their act, and ⌘Z takes it
+        // back as it would in Docs. The undo is then an ordinary local edit.
+        if (options.undoable !== true) transaction.setMeta('addToHistory', false)
         transaction.setMeta(REMOTE_STEPS_META, true)
         // Names the participant the margin chip credits. Remote-ness alone
         // would collapse every non-human writer into one anonymous "agent".

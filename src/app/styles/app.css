@@ -4430,6 +4430,7 @@ section.editor::-webkit-scrollbar {
 /* Clear the space the system's own window controls occupy. The native
    entrypoint installs both Tauri's drag marker and its explicit dragging API;
    CSS never pretends to own native window movement. */
+:root[data-shell='native'] .document-surface { --sm-surface-chrome-offset: 72px; }
 :root[data-shell='native'] .titlebar {
   padding: 0 18px;
   user-select: none;
@@ -5942,6 +5943,9 @@ section.editor::-webkit-scrollbar {
 .sm-proposal-bar {
   position: absolute;
   top: 8px;
+  /* The native shell's title row sits over the top of the surface; the
+     notes rail clears it with the same offset (BUG-27). */
+  top: var(--sm-surface-chrome-offset, 8px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 30;

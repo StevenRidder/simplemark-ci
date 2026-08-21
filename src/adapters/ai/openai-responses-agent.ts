@@ -210,6 +210,12 @@ export class OpenAiResponsesAgentPort implements AgentProviderPort {
           'Write in the note’s own Markdown idiom: use headings, bullet',
           'lists, emphasis, and tables where they aid reading — reasons,',
           'steps, and comparisons belong in lists, not paragraphs of prose.',
+          // BUG-27: a note that asks "how do we know this is correct?" got a
+          // new section written into the document. Questions are answered in
+          // the reply; the document changes only when asked to change.
+          'If the instruction asks a question, answer it in your reply and',
+          'change nothing. Edit the note only when the instruction asks for',
+          'a change to the note.',
           'When the work is done, reply with plain text and call no further tool.',
           ...(input.staging === true
             ? [

@@ -60,3 +60,21 @@ the Tiptap/Yjs stack is reconsidered on its merits.
   board, not hidden.
 - The Margins map (the wireframe artifact) carries this as §6 and Phase 5 so
   the plan and the code read from the same decision.
+
+## Finding: APP-51, block handles (2026-08-22)
+
+**No.** Pitter Patter's reordering/resizing lives in `@pitter-patter/shuffle`,
+which depends on `@handlewithcare/react-prosemirror`, `motion` and `animejs`.
+It is React-bound, not a ProseMirror plugin under a React layer, so it cannot
+run inside Milkdown. The collective's React-free packages (`collab-client`,
+`version-history-client`) sit on a Redis-backed commit server — the opposite
+of local-first. No W7 from this; the package is read for ideas only.
+
+Read alongside: Handle with Care's `prosemirror-suggest-changes` (MIT,
+ProseMirror peer deps only, active August 2026) does Docs-style suggestions
+— but as **marks inside the document** (`insertion`, `deletion`,
+`modification`, plus a block-boundary node). Those would serialize into the
+Markdown file, which ADR-0013's decoration-based proposals exist to avoid.
+Not adopted; its apply/revert-in-range commands and block-boundary
+suggestions are worth reading when proposals grow block-level moves.
+

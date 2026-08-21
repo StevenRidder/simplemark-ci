@@ -5915,3 +5915,38 @@ section.editor::-webkit-scrollbar {
 .sm-proposal-bar [data-action="reject-all-proposals"] { color: #b5372b; }
 .sm-proposal-bar[hidden] { display: none; }
 .sm-proposal-bar-note { color: color-mix(in srgb, #b5372b 85%, CanvasText 15%); }
+
+/* Notes overview (APP-43): every note on the document, opened deliberately. */
+.sm-notes-overview-host:empty { display: none; }
+.sm-notes-overview {
+  position: absolute;
+  z-index: 71;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: var(--sm-agent-panel-width);
+  padding: 12px;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(32, 29, 24, 0.18);
+  backdrop-filter: blur(18px);
+}
+.sm-overview-header { display: flex; align-items: center; justify-content: space-between; }
+.sm-overview-title { font-weight: 600; }
+.sm-overview-close { border: 0; background: transparent; cursor: pointer; padding: 2px; }
+.sm-overview-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.sm-overview-filters button { font: 500 11px/1 ui-monospace, monospace; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
+.sm-overview-filters button[aria-selected="true"] { background: color-mix(in srgb, var(--ink, CanvasText) 10%, transparent); }
+.sm-overview-search { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; }
+.sm-overview-rows { overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.sm-overview-row { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.sm-overview-meta { margin: 0 0 4px; font: 500 10px/1.3 ui-monospace, monospace; letter-spacing: .06em; color: color-mix(in srgb, var(--ink, CanvasText) 55%, transparent); }
+.sm-overview-body { margin: 0; font-size: 13px; }
+.sm-overview-replies { margin: 4px 0 0; font-size: 11px; color: color-mix(in srgb, var(--ink, CanvasText) 55%, transparent); }
+.sm-overview-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.sm-overview-actions button { font: 500 11px/1 ui-monospace, monospace; padding: 3px 7px; border-radius: 4px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
+.sm-overview-empty { margin: 8px 0; font-size: 13px; color: color-mix(in srgb, var(--ink, CanvasText) 55%, transparent); }

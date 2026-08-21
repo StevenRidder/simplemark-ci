@@ -143,6 +143,8 @@ export interface WindowChromeOptions {
    * In `right`, like Work with AI, because the macOS titlebar drops `left`.
    */
   readonly onToggleActivity?: (() => void) | undefined
+  /** Opens the notes overview (APP-43). */
+  readonly onToggleNotesOverview?: (() => void) | undefined
   readonly getSelectionShape?: () => {
     readonly inTable: boolean
     readonly inCode: boolean
@@ -336,6 +338,8 @@ export interface WindowChrome {
   setAgentOpen(open: boolean): void
   /** Reflects whether the Activity timeline is open on its control. */
   setActivityOpen(open: boolean): void
+  /** Reflects whether the notes overview is open on its control. */
+  setNotesOverviewOpen(open: boolean): void
   /** Closes the document-information panel, whichever tab it is showing. */
   closeInfoTab(): void
   toggleHistoryNavigation(): void
@@ -1722,6 +1726,22 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     activityButton.addEventListener('click', () => options.onToggleActivity?.())
   }
   right.append(activityButton)
+
+  // Notes overview (APP-43): every note on the document, filters, search.
+  const notesOverviewButton = svgButton(
+    'tool notes-overview',
+    'Notes',
+    '<path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M5 6v.01"/><path d="M5 12v.01"/><path d="M5 18v.01"/>',
+  )
+  notesOverviewButton.dataset['action'] = 'toggle-notes-overview'
+  if (options.onToggleNotesOverview === undefined) {
+    notesOverviewButton.hidden = true
+  } else {
+    notesOverviewButton.disabled = false
+    notesOverviewButton.title = 'Notes — every note on this document, with filters and search'
+    notesOverviewButton.addEventListener('click', () => options.onToggleNotesOverview?.())
+  }
+  right.append(notesOverviewButton)
 
   const infoButton = svgButton(
     'tool document-information',
@@ -3369,6 +3389,10 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     setActivityOpen: (open: boolean) => {
       activityButton.setAttribute('aria-expanded', String(open))
       activityButton.classList.toggle('active', open)
+    },
+    setNotesOverviewOpen: (open: boolean) => {
+      notesOverviewButton.setAttribute('aria-expanded', String(open))
+      notesOverviewButton.classList.toggle('active', open)
     },
     toggleHistoryNavigation,
     historyNavigationVisible: () => !historyNavigation.hidden,

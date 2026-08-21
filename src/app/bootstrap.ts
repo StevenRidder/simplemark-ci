@@ -38,6 +38,7 @@ import { createAgentStatusLine } from './ui/agent-status-line.js'
 import { AgentConversation } from './agent-conversation.js'
 import type { ComposerMode } from './agent-conversation.js'
 import { createAgentController } from './agent-controller.js'
+import { createNotesOverview } from './ui/notes-overview.js'
 import { loadAgentEditMode } from './agent-settings.js'
 import { createAgentEditTally } from './agent-edit-overlay.js'
 import { createWedgeDetector } from './wedge-detector.js'
@@ -129,6 +130,8 @@ export interface AppComposition {
   readonly notes: {
     /** Makes every thread save/remove reject, to prove failures are loud. */
     breakPersistenceForTest(broken: boolean): void
+    /** Opens or closes the notes overview (APP-43). */
+    toggleOverview(): void
     setThreadsForTest(threads: readonly Thread[]): void
     selectTextForTest(quote: string): boolean
     /** Optional NOTES-8 hook. Called after the editor receives the threads. */
@@ -850,6 +853,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       // close button — a box with no visible way out.
       onToggleAgent: () => toggleAgentPanel(),
       onToggleActivity: () => toggleActivityPanel(),
+      onToggleNotesOverview: () => toggleNotesOverview(),
     }),
     fileName: session.name,
     filePath: options.filePath,
@@ -1057,9 +1061,29 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
    * behaved differently depending on which path reached it. A rule that lives in
    * one of two copies is a rule that is already broken.
    */
+  const notesOverview = createNotesOverview({
+    onClosed: () => chrome.setNotesOverviewOpen(false),
+    threads: () => noteThreads,
+    documentText: () => editor?.noteDocumentText() ?? session.snapshot().markdown,
+    jumpTo: (id) => jumpToNote(id),
+    resolve: (id) => noteActions.resolve(id),
+    reopen: (id) => noteActions.reopen(id),
+    remove: (id) => noteActions.remove(id),
+  })
+  const toggleNotesOverview = (): void => {
+    if (!notesOverview.isOpen()) {
+      agentPanel.close()
+      activityTimeline.close()
+      chrome.closeInfoTab()
+    }
+    notesOverview.toggle()
+    chrome.setNotesOverviewOpen(notesOverview.isOpen())
+  }
+
   const toggleAgentPanel = (): void => {
     if (!agentPanel.isOpen()) {
       activityTimeline.close()
+      notesOverview.close()
       // The document-information panel shares the corner too, and it was left
       // out of this rule — which is how Statistics ended up sitting on top of
       // another panel, burying its close control.
@@ -1071,6 +1095,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const toggleActivityPanel = (): void => {
     if (!activityTimeline.isOpen()) {
       agentPanel.close()
+      notesOverview.close()
       chrome.closeInfoTab()
     }
     activityTimeline.toggle()
@@ -1087,6 +1112,11 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
    */
   const onSidePanelEscape = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape') return
+    if (notesOverview.isOpen()) {
+      notesOverview.close()
+      event.stopPropagation()
+      return
+    }
     if (activityTimeline.isOpen()) {
       activityTimeline.close()
       event.stopPropagation()
@@ -1158,7 +1188,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const noteStackHost = document.createElement('div')
   noteStackHost.className = 'sm-note-stack-host'
   const documentSurface = chrome.editorHost.closest('.document-surface')
-  documentSurface?.append(noteRailHost, noteStackHost)
+  documentSurface?.append(noteRailHost, noteStackHost, notesOverview.host)
 
   // ---- the agent in the document (APP-32) ----
   // The status line sits on the document surface, and the panel beside it, so a
@@ -1583,6 +1613,32 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   /** Note ids and turn counts the rail last painted, to notice a real change. */
   let paintedNoteSignature = ''
 
+  /**
+   * One implementation of each note lifecycle action (APP-43): the rail and
+   * the overview both offer Resolve, Reopen and Delete, and a rule that lives
+   * in two copies is a rule that is already broken.
+   */
+  const noteActions = {
+    resolve: (id: string): void => {
+      waitingReattachId = undefined
+      const thread = noteThreads.find((candidate) => candidate.id === id)
+      if (thread === undefined) return
+      void store.save(resolveThread(thread)).then(() => paintNotes()).catch(notesPersistFailed('Resolving the note'))
+    },
+    reopen: (id: string): void => {
+      waitingReattachId = undefined
+      const thread = noteThreads.find((candidate) => candidate.id === id)
+      if (thread === undefined) return
+      void store.save({ ...thread, state: 'open' }).then(() => paintNotes()).catch(notesPersistFailed('Reopening the note'))
+    },
+    remove: (id: string): void => {
+      if (waitingReattachId === id) waitingReattachId = undefined
+      const thread = noteThreads.find((candidate) => candidate.id === id)
+      if (thread === undefined) return
+      void store.remove(thread.noteKey, id).then(() => paintNotes()).catch(notesPersistFailed('Deleting the note'))
+    },
+  }
+
   paintNotes = (): void => {
     if (editor === undefined) return
     // Hiding dismisses what is on screen now. A note arriving, resolving, or
@@ -1614,18 +1670,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       return
     }
     renderNoteRail(noteRailHost, noteThreads, {
-      resolve: (id) => {
-        waitingReattachId = undefined
-        const thread = noteThreads.find((candidate) => candidate.id === id)
-        if (thread === undefined) return
-        void store.save(resolveThread(thread)).then(() => paintNotes()).catch(notesPersistFailed('Resolving the note'))
-      },
-      reopen: (id) => {
-        waitingReattachId = undefined
-        const thread = noteThreads.find((candidate) => candidate.id === id)
-        if (thread === undefined) return
-        void store.save({ ...thread, state: 'open' }).then(() => paintNotes()).catch(notesPersistFailed('Reopening the note'))
-      },
+      resolve: noteActions.resolve,
+      reopen: noteActions.reopen,
       editBody: (id, body) => {
         const thread = noteThreads.find((candidate) => candidate.id === id)
         if (thread === undefined) return
@@ -1637,12 +1683,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         if (thread === undefined) return
         void store.save(detachThread(thread)).then(() => paintNotes()).catch(notesPersistFailed('Keeping the note'))
       },
-      remove: (id) => {
-        if (waitingReattachId === id) waitingReattachId = undefined
-        const thread = noteThreads.find((candidate) => candidate.id === id)
-        if (thread === undefined) return
-        void store.remove(thread.noteKey, id).then(() => paintNotes()).catch(notesPersistFailed('Deleting the note'))
-      },
+      remove: noteActions.remove,
       reattach: (id) => {
         waitingReattachId = id
         paintNotes()
@@ -1788,6 +1829,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     breakPersistenceForTest: (broken: boolean) => {
       persistBrokenForTest = broken
     },
+    toggleOverview: () => toggleNotesOverview(),
     setThreadsForTest: (threads) => {
       waitingReattachId = undefined
       closeNoteStack()
@@ -1949,6 +1991,40 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     paintNotes()
   }
 
+  /** Lands on a note's passage: focus its card, scroll its tint into view. */
+  const jumpToNote = (id: string): void => {
+    const thread = noteThreads.find((candidate) => candidate.id === id)
+    if (thread?.anchor === undefined || editor === undefined) return
+    const text = editor.noteDocumentText()
+    const offset = matchAnchor(thread.anchor, text)
+    if (offset === undefined) return
+    const range = editor.documentRangeAt(offset, thread.anchor.quote.length)
+    if (range !== undefined) editor.reveal(range.from)
+    focusNoteThread(id)
+  }
+
+  /**
+   * The keyboard walk (APP-43): ⌃⌘N and ⌃⌘P hop tint to tint in document
+   * order, focusing the matching card. Distinct from ⌘⌥ arrows, which walk
+   * the note *list*; this walks the passages inside one note.
+   */
+  chrome.element.addEventListener('keydown', (event) => {
+    if (!(event.ctrlKey && event.metaKey) || event.altKey || event.shiftKey) return
+    const key = event.key.toLowerCase()
+    if (key !== 'n' && key !== 'p') return
+    if (!(documentSurface instanceof HTMLElement)) return
+    const tints = [...documentSurface.querySelectorAll<HTMLElement>('.sm-note-anchor')]
+    const ids = tints.map((tint) => (tint.dataset['threads'] ?? '').split(/\s+/)[0] ?? '').filter((id) => id !== '')
+    const unique = ids.filter((id, index) => ids.indexOf(id) === index)
+    if (unique.length === 0) return
+    event.preventDefault()
+    const at = focusedThreadId === undefined ? -1 : unique.indexOf(focusedThreadId)
+    const next = key === 'n'
+      ? unique[(at + 1) % unique.length]
+      : unique[(at - 1 + unique.length) % unique.length]
+    if (next !== undefined) jumpToNote(next)
+  })
+
   let alignFrame: number | undefined
   const scheduleAlign = (): void => {
     if (alignFrame !== undefined) return
@@ -1974,6 +2050,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     paintNotes = (): void => {
       paintedNotes()
       alignNoteCards()
+      notesOverview.repaint()
     }
   }
   scheduleAlign()

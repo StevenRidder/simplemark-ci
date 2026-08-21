@@ -51,6 +51,7 @@ function recordingSteps(): StepDocumentPort {
     },
     invertSteps: () => [],
     revertSteps: (current, inverse) => apply(current, inverse),
+    diffMarkdown: () => [],
     replaceAllSteps: (markdown, replacement) => ({ ok: true, steps: [{ replacement, from: 0, to: markdown.length }] }),
     markdownToSteps: (markdown, replacement, range) => ({
       ok: true,

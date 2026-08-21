@@ -62,8 +62,11 @@ test('a proposed edit is drawn, not applied — and Accept lands it', async ({ p
   await page.locator('.sm-note-rail [data-thread="t1"] [data-action="ask-agent"]').click()
 
   await expect(page.locator('.sm-proposal-ins')).toHaveCount(1)
-  await expect(page.locator('.sm-proposal-ins')).toContainText('Beta, split by region.')
-  await expect(page.locator('.sm-proposal-del')).toContainText(PASSAGE)
+  // Exact spans (ADR-0016): only what changes is struck and inserted — the
+  // shared "Beta" stays plain text.
+  await expect(page.locator('.sm-proposal-ins-text')).toContainText('split by region')
+  await expect(page.locator('.sm-proposal-del').first()).toContainText('carries the argument')
+  await expect(page.locator('.sm-proposal-del')).not.toContainText('Beta')
   await expect(page.locator('.sm-proposal-bar')).toContainText('1 proposed change')
   // The promise: nothing has changed until a person says so.
   expect(await markdown(page)).toContain(PASSAGE)

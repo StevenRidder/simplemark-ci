@@ -1,73 +1,49 @@
+import type { MarkdownDiffToken } from './ports.js'
+
 /**
- * Block-level comparison of two Markdown texts (ADR-0014 §5).
+ * Compare, for presentation (ADR-0014 §5, ADR-0016).
  *
- * Good enough to answer "what moved between then and now": blocks are split on
- * blank lines, matched by a longest common subsequence, and reported in order
- * as kept, added, or removed. Deliberately not a word-level diff engine — the
- * question Compare answers is which paragraphs changed, and a paragraph is
- * the unit a person reads.
+ * The editor's diff answers with a stream of kept / deleted / inserted text.
+ * A reader wants paragraphs: which ones changed, with the changed words
+ * marked inside them, and the unchanged ones left out. This groups the stream
+ * into paragraphs at blank lines and says which carry a change.
  *
- * Pure: strings in, a list out.
+ * Pure: tokens in, paragraphs out.
  */
 
-export type BlockChangeKind = 'same' | 'added' | 'removed'
-
-export interface BlockChange {
-  readonly kind: BlockChangeKind
+export interface DiffSegment {
+  readonly kind: MarkdownDiffToken['kind']
   readonly text: string
 }
 
-function blocksOf(markdown: string): string[] {
-  return markdown
-    .replace(/\r\n?/g, '\n')
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter((block) => block !== '')
+export interface DiffParagraph {
+  readonly segments: readonly DiffSegment[]
+  /** Whether any segment was deleted or inserted. */
+  readonly changed: boolean
 }
 
-/** Longest common subsequence over blocks, then a walk that emits the edit script. */
-export function diffBlocks(before: string, after: string): readonly BlockChange[] {
-  const a = blocksOf(before)
-  const b = blocksOf(after)
-  const rows = a.length + 1
-  const cols = b.length + 1
-  const table = new Uint32Array(rows * cols)
-  for (let i = a.length - 1; i >= 0; i -= 1) {
-    for (let j = b.length - 1; j >= 0; j -= 1) {
-      table[i * cols + j] = a[i] === b[j]
-        ? table[(i + 1) * cols + j + 1]! + 1
-        : Math.max(table[(i + 1) * cols + j]!, table[i * cols + j + 1]!)
-    }
-  }
+const BLOCK = '\n\n'
 
-  const changes: BlockChange[] = []
-  let i = 0
-  let j = 0
-  while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) {
-      changes.push({ kind: 'same', text: a[i]! })
-      i += 1
-      j += 1
-    } else if (table[(i + 1) * cols + j]! >= table[i * cols + j + 1]!) {
-      changes.push({ kind: 'removed', text: a[i]! })
-      i += 1
-    } else {
-      changes.push({ kind: 'added', text: b[j]! })
-      j += 1
-    }
+export function groupDiffTokens(tokens: readonly MarkdownDiffToken[]): readonly DiffParagraph[] {
+  const paragraphs: DiffParagraph[] = []
+  let current: DiffSegment[] = []
+  const close = (): void => {
+    if (current.length === 0) return
+    paragraphs.push({ segments: current, changed: current.some((segment) => segment.kind !== 'same') })
+    current = []
   }
-  while (i < a.length) {
-    changes.push({ kind: 'removed', text: a[i]! })
-    i += 1
+  for (const token of tokens) {
+    const parts = token.text.split(BLOCK)
+    parts.forEach((part, index) => {
+      if (index > 0) close()
+      if (part.length > 0) current.push({ kind: token.kind, text: part })
+    })
   }
-  while (j < b.length) {
-    changes.push({ kind: 'added', text: b[j]! })
-    j += 1
-  }
-  return changes
+  close()
+  return paragraphs
 }
 
-/** How many blocks differ — the number a summary line can say. */
-export function changedBlockCount(changes: readonly BlockChange[]): number {
-  return changes.filter((change) => change.kind !== 'same').length
+/** How many paragraphs differ — the number a summary line can say. */
+export function changedParagraphCount(paragraphs: readonly DiffParagraph[]): number {
+  return paragraphs.filter((paragraph) => paragraph.changed).length
 }

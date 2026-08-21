@@ -250,3 +250,31 @@ describe('front matter stays front matter (BUG-23)', () => {
     expect(rebased.markdown).toContain('One paragraph. Nothing else.')
   })
 })
+
+/** ADR-0016: the port's diff answers with the words that changed, not the paragraphs around them. */
+describe('diffMarkdown (prosemirror-changeset)', () => {
+  it('a one-word change yields that word deleted and the new word inserted, with the rest kept', async () => {
+    const stepPort = await port()
+    const tokens = stepPort.diffMarkdown(
+      'Alpha holds the opening claim.\n\nBeta carries the argument that needs work.\n',
+      'Alpha holds the opening claim.\n\nBeta carries the argument that needs polish.\n',
+    )
+    expect(tokens.map((token) => token.kind)).toEqual(['same', 'deleted', 'inserted', 'same'])
+    expect(tokens[1]).toEqual({ kind: 'deleted', text: 'work' })
+    expect(tokens[2]).toEqual({ kind: 'inserted', text: 'polish' })
+    expect(tokens[0]!.text).toContain('Alpha holds the opening claim.\n\nBeta carries')
+  })
+
+  it('front matter is not part of the comparison', async () => {
+    const stepPort = await port()
+    const tokens = stepPort.diffMarkdown('---\nid: abc\n---\n\nOne.\n', '---\nid: abc\n---\n\nOne.\n')
+    expect(tokens).toEqual([{ kind: 'same', text: 'One.' }])
+  })
+
+  it('an added paragraph is one inserted token', async () => {
+    const stepPort = await port()
+    const tokens = stepPort.diffMarkdown('One.\n', 'One.\n\nTwo.\n')
+    expect(tokens.filter((token) => token.kind === 'inserted').map((token) => token.text.trim())).toEqual(['Two.'])
+    expect(tokens.some((token) => token.kind === 'deleted')).toBe(false)
+  })
+})

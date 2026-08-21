@@ -17,6 +17,7 @@ import type { Editor } from '@milkdown/kit/core'
 
 import type {
   MarkdownStepResult,
+  MarkdownDiffToken,
   StepApplicationResult,
   StepBatch,
   StepDocumentPort,
@@ -24,6 +25,7 @@ import type {
   StepJson,
 } from '../../application/index.js'
 import { splitClosedFrontMatter } from '../../domain/index.js'
+import { diffDocuments } from './changeset-diff.js'
 import { calloutRemark, calloutSchema } from './callout.js'
 import { codeBlockMetaSchema } from './code-fence-meta.js'
 import { highlightRemark, highlightSchema } from './highlight-mark.js'
@@ -486,6 +488,10 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
     } catch {
       return null
     }
+  }
+
+  diffMarkdown(before: string, after: string): readonly MarkdownDiffToken[] {
+    return diffDocuments(this.#parseBody(before).doc, this.#parseBody(after).doc)
   }
 
   replaceAllSteps(markdown: string, replacement: string): MarkdownStepResult {

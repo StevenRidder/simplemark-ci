@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 /**
  * ADR-0014: snapshots beside the document. One is taken before every agent
  * run; a person can name one; Restore is an ordinary named transaction that
- * snapshots first; Compare is block-level.
+ * snapshots first; Compare is word-level (ADR-0016).
  */
 
 const editor = '.milkdown .ProseMirror'
@@ -61,8 +61,10 @@ test('an agent run snapshots first; a snapshot restores and compares', async ({ 
 
   // Compare: the agent's rewrite shows as the removed passage and the added one.
   await auto.locator('[data-action="compare-snapshot"]').click()
-  await expect(page.locator('.sm-snapshot-block[data-kind="removed"]')).toContainText(PASSAGE)
-  await expect(page.locator('.sm-snapshot-block[data-kind="added"]')).toContainText('Beta, split by region.')
+  // Word-level (ADR-0016): what went is struck, what came is inserted, inside the one paragraph that changed.
+  await expect(page.locator('.sm-snapshot-compare-summary')).toContainText('1 paragraph differs')
+  await expect(page.locator('.sm-snapshot-block[data-kind="changed"] .sm-snapshot-del')).toContainText('carries the argument')
+  await expect(page.locator('.sm-snapshot-block[data-kind="changed"] .sm-snapshot-ins')).toContainText('split by region')
 
   // Name one now.
   await page.locator('.sm-snapshots-label').fill('after the agent')

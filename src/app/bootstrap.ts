@@ -10,7 +10,7 @@ import type {
   ThreadStore,
   SnapshotStore,
   SnapshotEntry,
-  BlockChange,
+  DiffParagraph,
 } from '../application/index.js'
 import {
   appendReply,
@@ -28,7 +28,7 @@ import {
   ProposalQueue,
   locateProposal,
   virtualMarkdown,
-  diffBlocks,
+  groupDiffTokens,
 } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import type { DiagramController } from '../adapters/editor/milkdown-editor.js'
@@ -1411,6 +1411,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         from: range.from,
         to: range.to,
         fragment: stepAdapter.renderMarkdown(proposal.markdown),
+        spans: editor.proposalSpans(range.from, range.to, proposal.markdown),
       }]
     })
     editor.setProposals(items)
@@ -1785,9 +1786,10 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     paintNotes()
     activityTimeline.repaint()
   }
-  const compareSnapshot = async (id: string): Promise<readonly BlockChange[]> => {
+  const compareSnapshot = async (id: string): Promise<readonly DiffParagraph[]> => {
     const text = await snapshotStore.read(await noteKeyForOpenDocument(), id)
-    return diffBlocks(text, session.snapshot().markdown)
+    // The editor's own diff (ADR-0016): the word that changed, not the paragraph around it.
+    return groupDiffTokens(stepAdapter.port.diffMarkdown(text, session.snapshot().markdown))
   }
 
   const persistDerivedAnchors = async (): Promise<void> => {

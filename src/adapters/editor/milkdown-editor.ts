@@ -1,4 +1,4 @@
-import { Editor, defaultValueCtx, editorViewCtx, rootCtx, serializerCtx } from '@milkdown/kit/core'
+import { Editor, defaultValueCtx, editorViewCtx, rootCtx, serializerCtx, parserCtx } from '@milkdown/kit/core'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
 import { history, redoCommand, undoCommand } from '@milkdown/kit/plugin/history'
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
@@ -93,6 +93,7 @@ import {
   documentRangeAt,
 } from './note-decorations.js'
 import { proposalsPlugin, setProposals, type ProposalDecorationItem } from './proposal-decorations.js'
+import { proposalSpans, type ProposalSpans } from './changeset-diff.js'
 import {
   agentScopeDecoration,
   attributionKey,
@@ -2060,6 +2061,18 @@ export class MilkdownEditor {
       offset: inside.fromOffset,
       quote: indexed.text.slice(inside.fromOffset, inside.lastOffset + 1),
     }
+  }
+
+  /**
+   * What a proposal would change inside a live range, as exact spans
+   * (ADR-0016): the words that go and the words that come, not the passage.
+   */
+  proposalSpans(from: number, to: number, markdown: string): ProposalSpans {
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const replacement = ctx.get(parserCtx)(markdown)
+      return proposalSpans(view.state.doc, from, to, replacement)
+    })
   }
 
   /** Draws pending proposals over the document (ADR-0013). Empty clears them. */

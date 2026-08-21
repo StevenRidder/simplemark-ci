@@ -24,6 +24,16 @@ export interface ProposalDecorationItem {
   readonly to: number
   /** The proposed Markdown, already rendered. Cloned per paint. */
   readonly fragment: DocumentFragment
+  /**
+   * Exact spans from the editor's diff (ADR-0016). Absent, or a pure
+   * insertion, draws the rendered fragment whole; otherwise only the words
+   * that change are struck and inserted, Word-style.
+   */
+  readonly spans?: {
+    readonly deleted: readonly { readonly from: number; readonly to: number }[]
+    readonly inserted: readonly { readonly at: number; readonly text: string }[]
+    readonly pureInsertion: boolean
+  }
 }
 
 interface ProposalsState {
@@ -33,7 +43,16 @@ interface ProposalsState {
 
 export const proposalsKey = new PluginKey<ProposalsState>('simplemark-proposals')
 
-function widgetFor(item: ProposalDecorationItem): HTMLElement {
+function insertedTextWidget(item: ProposalDecorationItem, text: string): HTMLElement {
+  const ins = document.createElement('ins')
+  ins.className = 'sm-proposal-ins-text'
+  ins.dataset['proposal'] = item.id
+  ins.contentEditable = 'false'
+  ins.textContent = text
+  return ins
+}
+
+function widgetFor(item: ProposalDecorationItem, withBody: boolean): HTMLElement {
   const host = document.createElement('span')
   host.className = 'sm-proposal-ins'
   host.dataset['proposal'] = item.id
@@ -43,7 +62,8 @@ function widgetFor(item: ProposalDecorationItem): HTMLElement {
 
   const body = document.createElement('span')
   body.className = 'sm-proposal-ins-body'
-  body.append(item.fragment.cloneNode(true))
+  if (withBody) body.append(item.fragment.cloneNode(true))
+  else body.hidden = true
 
   const actions = document.createElement('span')
   actions.className = 'sm-proposal-actions'
@@ -67,7 +87,22 @@ function widgetFor(item: ProposalDecorationItem): HTMLElement {
 function decorate(doc: ProseNode, items: readonly ProposalDecorationItem[]): DecorationSet {
   const decorations: Decoration[] = []
   for (const item of items) {
-    if (item.to > item.from) {
+    const fine = item.spans !== undefined && !item.spans.pureInsertion
+    if (fine) {
+      // Exact spans (ADR-0016): strike only what goes, insert only what comes.
+      for (const span of item.spans!.deleted) {
+        decorations.push(Decoration.inline(span.from, span.to, { class: 'sm-proposal-del', 'data-proposal': item.id }))
+      }
+      item.spans!.inserted.forEach((span, index) => {
+        decorations.push(
+          Decoration.widget(span.at, () => insertedTextWidget(item, span.text), {
+            side: 1,
+            key: `proposal-${item.id}-ins-${index}`,
+            ignoreSelection: true,
+          }),
+        )
+      })
+    } else if (item.to > item.from) {
       decorations.push(
         Decoration.inline(item.from, item.to, {
           class: 'sm-proposal-del',
@@ -76,7 +111,7 @@ function decorate(doc: ProseNode, items: readonly ProposalDecorationItem[]): Dec
       )
     }
     decorations.push(
-      Decoration.widget(item.to, () => widgetFor(item), {
+      Decoration.widget(item.to, () => widgetFor(item, !fine), {
         side: 1,
         key: `proposal-${item.id}`,
         ignoreSelection: true,

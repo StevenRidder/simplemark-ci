@@ -1,4 +1,5 @@
-import type { AcceptedChangeRecord, BlockChange, SnapshotEntry } from '../../application/index.js'
+import type { AcceptedChangeRecord, DiffParagraph, SnapshotEntry } from '../../application/index.js'
+import { changedParagraphCount } from '../../application/index.js'
 import { tablerIcon } from './tabler-icons.js'
 
 /**
@@ -39,7 +40,7 @@ export interface SnapshotActions {
   readonly snapshotNow: (label: string) => Promise<void>
   readonly restore: (id: string) => Promise<void>
   /** Blocks that differ between the snapshot and the document as it is now. */
-  readonly compare: (id: string) => Promise<readonly BlockChange[]>
+  readonly compare: (id: string) => Promise<readonly DiffParagraph[]>
 }
 
 export interface ActivityTimeline {
@@ -184,7 +185,7 @@ export function createActivityTimeline(options: ActivityTimelineOptions): Activi
 
   /** Where a snapshot's compare view is open, so a repaint keeps it open. */
   let comparing: string | undefined
-  let compareResult: readonly BlockChange[] | undefined
+  let compareResult: readonly DiffParagraph[] | undefined
 
   function snapshotLabel(entry: SnapshotEntry): string {
     if (entry.label !== undefined) return entry.label
@@ -287,23 +288,47 @@ export function createActivityTimeline(options: ActivityTimelineOptions): Activi
     return section
   }
 
-  /** Block-level compare (ADR-0014 §5): kept, added, removed, in order. */
-  function compareView(changes: readonly BlockChange[]): HTMLElement {
+  /**
+   * Compare (ADR-0014 §5, ADR-0016): the paragraphs that differ, with the
+   * words that changed struck and inserted inside them. Unchanged paragraphs
+   * are left out; a gap between shown paragraphs is marked.
+   */
+  function compareView(paragraphs: readonly DiffParagraph[]): HTMLElement {
     const view = document.createElement('div')
     view.className = 'sm-snapshot-compare'
-    const changed = changes.filter((change) => change.kind !== 'same').length
+    const changed = changedParagraphCount(paragraphs)
     const summary = document.createElement('p')
     summary.className = 'sm-snapshot-compare-summary'
     summary.textContent = changed === 0
       ? 'Identical to the document now.'
-      : changed === 1 ? '1 block differs' : `${changed} blocks differ`
+      : changed === 1 ? '1 paragraph differs' : `${changed} paragraphs differ`
     view.append(summary)
-    for (const change of changes) {
-      if (change.kind === 'same') continue
-      const block = document.createElement('pre')
+    let gap = false
+    for (const paragraph of paragraphs) {
+      if (!paragraph.changed) {
+        gap = view.childElementCount > 1
+        continue
+      }
+      if (gap) {
+        const ellipsis = document.createElement('p')
+        ellipsis.className = 'sm-snapshot-gap'
+        ellipsis.textContent = '⋯'
+        view.append(ellipsis)
+        gap = false
+      }
+      const block = document.createElement('p')
       block.className = 'sm-snapshot-block'
-      block.dataset['kind'] = change.kind
-      block.textContent = change.text
+      block.dataset['kind'] = 'changed'
+      for (const segment of paragraph.segments) {
+        if (segment.kind === 'same') {
+          block.append(segment.text)
+          continue
+        }
+        const mark = document.createElement(segment.kind === 'deleted' ? 'del' : 'ins')
+        mark.className = segment.kind === 'deleted' ? 'sm-snapshot-del' : 'sm-snapshot-ins'
+        mark.textContent = segment.text
+        block.append(mark)
+      }
       view.append(block)
     }
     return view

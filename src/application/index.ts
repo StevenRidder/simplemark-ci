@@ -42,6 +42,7 @@ export type {
   NoteCountEntry,
   NoteCountReport,
   NoteCountSource,
+  MarkdownDiffToken,
   ThreadStore,
   SnapshotStore,
   SnapshotEntry,
@@ -94,5 +95,5 @@ export type {
   MenuSpec,
 } from './commands.js'
 export { MAX_HIDDEN_DIAGRAM_FIX_ATTEMPTS, repairHiddenDiagram } from './repair-hidden-diagram.js'
-export { diffBlocks, changedBlockCount } from './snapshot-diff.js'
-export type { BlockChange, BlockChangeKind } from './snapshot-diff.js'
+export { groupDiffTokens, changedParagraphCount } from './snapshot-diff.js'
+export type { DiffParagraph, DiffSegment } from './snapshot-diff.js'

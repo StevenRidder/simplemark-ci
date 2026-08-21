@@ -67,6 +67,12 @@ export interface WorkspaceCatalogEntry {
   readonly resolvedNotes?: number
 }
 
+/** One run of text in a comparison: kept, deleted from `before`, or inserted in `after`. */
+export interface MarkdownDiffToken {
+  readonly kind: 'same' | 'deleted' | 'inserted'
+  readonly text: string
+}
+
 /** A non-recursive local folder whose Markdown files form the visible catalog. */
 export interface WorkspaceCatalog {
   readonly handle: string
@@ -417,6 +423,12 @@ export interface StepDocumentPort {
    * structure around the text.
    */
   replaceAllSteps(markdown: string, replacement: string): MarkdownStepResult
+  /**
+   * Kept, deleted and inserted text between two Markdown documents, in order
+   * (ADR-0016): exact spans from the editor's own diff, so Compare shows the
+   * word that changed rather than the paragraph around it.
+   */
+  diffMarkdown(before: string, after: string): readonly MarkdownDiffToken[]
   markdownToSteps(
     markdown: string,
     replacement: string,

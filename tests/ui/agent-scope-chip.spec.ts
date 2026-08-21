@@ -10,6 +10,8 @@ import { expect, test, type Page } from '@playwright/test'
 const editor = '.milkdown .ProseMirror'
 
 async function openPanelOnDemo(page: Page): Promise<void> {
+  // Direct application is the mode these specs describe (ADR-0013 default is propose).
+  await page.addInitScript(() => window.localStorage.setItem('simplemark.agent-connection', JSON.stringify({ editMode: 'direct' })))
   await page.goto('/')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await expect(page.locator(editor)).toBeVisible()

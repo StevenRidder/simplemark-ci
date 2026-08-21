@@ -19,10 +19,16 @@ import { loadAiSettings } from './ai-settings.js'
 export type { AgentConnection, AgentReasoning }
 export { isAgentConfigured, AGENT_REASONING_LEVELS }
 
+/** How an agent write reaches the document (ADR-0013). */
+export type AgentEditMode = 'propose' | 'direct'
+export const AGENT_EDIT_MODES: readonly AgentEditMode[] = ['propose', 'direct']
+
 /** What is stored, before the shared-credential resolution is applied. */
 export interface StoredAgentConnection extends AgentConnection {
   /** Take the key and endpoint from the diagram-fix settings. */
   readonly shareCredentials: boolean
+  /** Propose first is the trust gate and the default; direct is for a trusted run. */
+  readonly editMode: AgentEditMode
 }
 
 export const DEFAULT_AGENT_CONNECTION: AgentConnection = {
@@ -37,10 +43,15 @@ export const DEFAULT_STORED_AGENT_CONNECTION: StoredAgentConnection = {
   // On by default so a person who has already configured diagram fix has a
   // working agent without entering the same key twice.
   shareCredentials: true,
+  editMode: 'propose',
 }
 
 function normaliseString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value.trim() : fallback
+}
+
+function normaliseEditMode(value: unknown): AgentEditMode {
+  return AGENT_EDIT_MODES.includes(value as AgentEditMode) ? (value as AgentEditMode) : 'propose'
 }
 
 function normaliseReasoning(value: unknown): AgentReasoning {
@@ -59,7 +70,13 @@ export function normaliseAgentConnection(value: unknown): StoredAgentConnection 
     model: normaliseString(candidate.model, DEFAULT_AGENT_CONNECTION.model),
     reasoning: normaliseReasoning(candidate.reasoning),
     shareCredentials: candidate.shareCredentials !== false,
+    editMode: normaliseEditMode(candidate.editMode),
   }
+}
+
+/** The edit mode alone, for the composition's run-time check. */
+export function loadAgentEditMode(storage: Pick<Storage, 'getItem'>): AgentEditMode {
+  return loadStoredAgentConnection(storage).editMode
 }
 
 /**
@@ -119,7 +136,7 @@ export function loadStoredAgentConnection(
 export function resolveAgentConnection(storage: Pick<Storage, 'getItem'>): AgentConnection {
   const stored = loadStoredAgentConnection(storage)
   if (!stored.shareCredentials) {
-    const { shareCredentials: _shared, ...own } = stored
+    const { shareCredentials: _shared, editMode: _mode, ...own } = stored
     return own
   }
   const shared = loadAiSettings(storage)

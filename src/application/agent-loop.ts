@@ -200,6 +200,26 @@ export interface AgentLoopInput {
    * caller's offsets are taken to be document positions already.
    */
   readonly textTarget?: TextTargetResolver
+  /**
+   * Stages a write instead of applying it (ADR-0013).
+   *
+   * When present, `apply_transaction` and `insert_markdown` hand their
+   * Markdown and text target here and touch nothing. The run's own view of
+   * the note is `staged.view(markdown)` — the note as it would read with the
+   * pending proposals applied — so the model neither redoes an edit nor
+   * believes one failed.
+   */
+  readonly staged?: {
+    propose(change: {
+      readonly name: string
+      readonly actorId: string
+      readonly kind: 'replace' | 'append'
+      readonly quote: string
+      readonly offset: number
+      readonly markdown: string
+    }): void
+    view(markdown: string): string
+  }
 }
 
 class RunControl implements AgentRunControl {
@@ -276,6 +296,29 @@ export interface TextTargetResolver {
   text(): string
   /** Document positions for the `[offset, offset + length)` span of that text. */
   rangeAt(offset: number, length: number): StepDocumentRange | undefined
+  /**
+   * The reverse map, for a selection made in document positions: the text
+   * offset and quote it covers, so a proposal can be relocated by text later
+   * (ADR-0013). Optional — a double whose positions are text offsets already
+   * does not need it.
+   */
+  textAt?(from: number, to: number): { readonly offset: number; readonly quote: string } | undefined
+}
+
+/** A proposal's relocatable target, from whichever way the instruction aimed. */
+function proposalTargetFor(
+  target: InstructionTarget,
+  resolver: TextTargetResolver | undefined,
+  text: string,
+): { readonly text: string; readonly offset: number; readonly quote: string } | undefined {
+  if (target.kind === 'passage') return { text, offset: target.offset, quote: target.quote }
+  if (target.kind !== 'selection') return undefined
+  if (resolver?.textAt !== undefined) {
+    const located = resolver.textAt(target.from, target.to)
+    return located === undefined ? undefined : { text, ...located }
+  }
+  // Positions are text offsets already (a double without an editor).
+  return { text, offset: target.from, quote: text.slice(target.from, target.to) }
 }
 
 function rangeFor(
@@ -386,9 +429,12 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       providerTurn = await input.provider.complete({
         scope: granted.token,
         instruction: control.instruction,
-        noteMarkdown: input.session.snapshot().markdown,
+        noteMarkdown: input.staged === undefined
+          ? input.session.snapshot().markdown
+          : input.staged.view(input.session.snapshot().markdown),
         messages,
         tools: TOOLS,
+        ...(input.staged === undefined ? {} : { staging: true }),
       })
     } catch (error) {
       control.status = 'failed'
@@ -451,6 +497,11 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       book,
       noteId: input.noteId,
       range,
+      ...(input.staged === undefined ? {} : { staged: input.staged }),
+      ...((): { textTarget?: { readonly text: string; readonly offset: number; readonly quote: string } } => {
+        const located = proposalTargetFor(currentTarget, input.textTarget, targetText)
+        return located === undefined ? {} : { textTarget: located }
+      })(),
       actorId: input.actorId,
       capability,
       inviter,
@@ -501,6 +552,9 @@ function dispatchTool(input: {
   readonly book: ScopeBook
   readonly noteId: string
   readonly range: StepDocumentRange | undefined
+  /** The text the range was resolved from, for a proposal's relocatable target. */
+  readonly textTarget?: { readonly text: string; readonly offset: number; readonly quote: string }
+  readonly staged?: AgentLoopInput['staged']
   readonly actorId: string
   readonly capability: Capability
   readonly inviter: Capability
@@ -556,6 +610,21 @@ function dispatchTool(input: {
       : input.range === undefined
         ? undefined
         : { from: input.range.from, to: input.range.from }
+    if (input.staged !== undefined) {
+      // Staged, not applied (ADR-0013). The authority is not consulted; the
+      // proposal carries the passage as text so it can be found again after
+      // the person keeps typing.
+      const append = input.name === 'insert_markdown' || input.textTarget === undefined
+      input.staged.propose({
+        name: input.transactionName,
+        actorId: input.actorId,
+        kind: append ? 'append' : 'replace',
+        quote: append ? '' : input.textTarget!.quote,
+        offset: append ? -1 : input.textTarget!.offset,
+        markdown,
+      })
+      return { kind: 'ok', content: input.staged.view(current.markdown) }
+    }
     const applied = input.session.applyMarkdown({
       actorId: input.actorId,
       name: input.transactionName,

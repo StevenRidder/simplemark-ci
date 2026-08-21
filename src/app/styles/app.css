@@ -5867,3 +5867,51 @@ section.editor::-webkit-scrollbar {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
+/* Agent proposals (ADR-0013): Track Changes with the roles reversed. */
+.sm-proposal-del {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, #b5372b 80%, transparent);
+  background: color-mix(in srgb, #b5372b 10%, transparent);
+}
+.sm-proposal-ins {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: baseline;
+  margin: 0 2px;
+  padding: 2px 6px 2px 8px;
+  border-left: 3px solid color-mix(in srgb, #3e7a4e 75%, transparent);
+  background: color-mix(in srgb, #3e7a4e 9%, transparent);
+  border-radius: 4px;
+  user-select: none;
+}
+.sm-proposal-ins-body { display: inline-block; text-decoration: underline; text-decoration-color: color-mix(in srgb, #3e7a4e 70%, transparent); text-underline-offset: 3px; }
+.sm-proposal-ins-body > p:first-child { margin-top: 0; }
+.sm-proposal-ins-body > p:last-child { margin-bottom: 0; }
+.sm-proposal-actions { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: middle; }
+.sm-proposal-actions button { font: 500 11px/1 ui-monospace, monospace; padding: 3px 7px; border-radius: 4px; border: 1px solid var(--line); background: var(--paper, Canvas); cursor: pointer; }
+.sm-proposal-actions [data-action="accept-proposal"] { color: #3e7a4e; border-color: color-mix(in srgb, #3e7a4e 55%, transparent); }
+.sm-proposal-actions [data-action="reject-proposal"] { color: #b5372b; border-color: color-mix(in srgb, #b5372b 45%, transparent); }
+
+.sm-proposal-bar {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  box-shadow: 0 6px 20px rgba(32, 29, 24, 0.14);
+  backdrop-filter: blur(14px);
+  font-size: 12.5px;
+}
+.sm-proposal-bar button { font: 500 11.5px/1 ui-monospace, monospace; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
+.sm-proposal-bar [data-action="accept-all-proposals"] { color: #3e7a4e; }
+.sm-proposal-bar [data-action="reject-all-proposals"] { color: #b5372b; }
+.sm-proposal-bar[hidden] { display: none; }
+.sm-proposal-bar-note { color: color-mix(in srgb, #b5372b 85%, CanvasText 15%); }

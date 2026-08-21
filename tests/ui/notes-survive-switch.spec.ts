@@ -7,6 +7,8 @@ import { expect, test } from '@playwright/test'
  * report was exactly this loss; the switch path must stay pinned.
  */
 test('note tint and Ask agent survive switching away and back', async ({ page }) => {
+  // Direct application is the mode these specs describe (ADR-0013 default is propose).
+  await page.addInitScript(() => window.localStorage.setItem('simplemark.agent-connection', JSON.stringify({ editMode: 'direct' })))
   await page.goto('/?fixture=legacy')
   await page.evaluate(() => window.localStorage.clear())
   await page.reload()

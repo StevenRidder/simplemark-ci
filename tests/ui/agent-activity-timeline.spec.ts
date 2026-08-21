@@ -19,6 +19,8 @@ declare global {
 }
 
 async function noteOnPassage(page: Page, body: string): Promise<void> {
+  // Direct application is the mode these specs describe (ADR-0013 default is propose).
+  await page.addInitScript(() => window.localStorage.setItem('simplemark.agent-connection', JSON.stringify({ editMode: 'direct' })))
   await page.goto('/')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await expect(page.locator(editor)).toBeVisible()

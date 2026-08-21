@@ -22,6 +22,8 @@ declare global {
 }
 
 async function noteOnPassage(page: Page, body: string): Promise<void> {
+  // Direct application is the mode these specs describe (ADR-0013 default is propose).
+  await page.addInitScript(() => window.localStorage.setItem('simplemark.agent-connection', JSON.stringify({ editMode: 'direct' })))
   await page.goto('/')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await expect(page.locator(editor)).toBeVisible()
@@ -206,6 +208,8 @@ test('an orphaned note refuses to guess a passage', async ({ page }) => {
 })
 
 test('Ask agent on a diagram edits that diagram, not the prose around it', async ({ page }) => {
+  // Direct application is the mode these specs describe (ADR-0013 default is propose).
+  await page.addInitScript(() => window.localStorage.setItem('simplemark.agent-connection', JSON.stringify({ editMode: 'direct' })))
   await page.goto('/')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await expect(page.locator(editor)).toBeVisible()
@@ -281,6 +285,8 @@ test('the agent can turn a paragraph into a chart', async ({ page }) => {
 })
 
 test('Ask agent appears only once the note has been written', async ({ page }) => {
+  // Direct application is the mode these specs describe (ADR-0013 default is propose).
+  await page.addInitScript(() => window.localStorage.setItem('simplemark.agent-connection', JSON.stringify({ editMode: 'direct' })))
   await page.goto('/')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await expect(page.locator(editor)).toBeVisible()
@@ -329,6 +335,8 @@ test('Ask agent appears only once the note has been written', async ({ page }) =
 test('turns carry bylines, and a human reply persists on a plain note', async ({ page }) => {
   // A real note, through the real store — the reload leg needs persistence,
   // which the fixture threads deliberately do not have.
+  // Direct application is the mode these specs describe (ADR-0013 default is propose).
+  await page.addInitScript(() => window.localStorage.setItem('simplemark.agent-connection', JSON.stringify({ editMode: 'direct' })))
   await page.goto('/')
   await page.waitForFunction(() => window.simplemark !== undefined)
   await expect(page.locator(editor)).toBeVisible()

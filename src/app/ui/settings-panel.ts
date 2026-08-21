@@ -273,6 +273,25 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
   }
   agentReasoningRow.append(agentReasoningLabel, agentReasoning)
 
+  // ADR-0013: the trust gate is a setting, and the default is the gate.
+  const agentEditsRow = document.createElement('label')
+  agentEditsRow.className = 'settings-field'
+  const agentEditsLabel = document.createElement('span')
+  agentEditsLabel.className = 'settings-field-label'
+  agentEditsLabel.textContent = 'Edits'
+  const agentEdits = document.createElement('select')
+  agentEdits.dataset['field'] = 'agent-edit-mode'
+  for (const [value, label] of [
+    ['propose', 'Propose first — I accept or reject each change'],
+    ['direct', 'Apply directly — Activity can revert'],
+  ] as const) {
+    const option = document.createElement('option')
+    option.value = value
+    option.textContent = label
+    agentEdits.append(option)
+  }
+  agentEditsRow.append(agentEditsLabel, agentEdits)
+
   /** Which key and endpoint the agent's own model list should be fetched with. */
   const agentCredentials = (): { apiKey: string; baseUrl: string } =>
     agentShare.checked
@@ -344,6 +363,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
         model: agentModelValue(),
         reasoning: agentReasoning.value,
         shareCredentials: agentShare.checked,
+        editMode: agentEdits.value,
       }),
     )
     closePanel()
@@ -369,6 +389,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     agentModelRow,
     agentModelError,
     agentReasoningRow,
+    agentEditsRow,
     actions,
   )
   panel.append(header, body)
@@ -395,6 +416,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): SettingsPane
     agentKeyField.input.value = agent.apiKey
     agentUrlField.input.value = agent.baseUrl
     agentReasoning.value = agent.reasoning
+    agentEdits.value = agent.editMode
     agentLoadedModels = []
     paintAgentModels(agent.model)
     agentModelError.hidden = true

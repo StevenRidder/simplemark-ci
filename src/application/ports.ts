@@ -536,6 +536,11 @@ export interface AgentProviderInput {
   readonly noteMarkdown: string
   readonly messages: readonly AgentMessage[]
   readonly tools: readonly AgentToolSpec[]
+  /**
+   * True when writes are staged as proposals (ADR-0013): the note text shown
+   * may not include the model's own pending edits, and it must not redo them.
+   */
+  readonly staging?: boolean
 }
 
 export type AgentProviderTurn =

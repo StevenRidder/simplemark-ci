@@ -37,6 +37,7 @@ describe('agent connection storage', () => {
       model: 'a-model',
       reasoning: 'high',
       shareCredentials: false,
+      editMode: 'direct',
     })
 
     expect(loadAiSettings(storage)).toEqual({

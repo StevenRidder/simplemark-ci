@@ -92,6 +92,7 @@ import {
   setThreads,
   documentRangeAt,
 } from './note-decorations.js'
+import { proposalsPlugin, setProposals, type ProposalDecorationItem } from './proposal-decorations.js'
 import {
   agentScopeDecoration,
   attributionKey,
@@ -675,6 +676,9 @@ export class MilkdownEditor {
       .use(codeHighlightPlugin(options.renderer.languages))
       .use(findPlugin)
       .use(notesPlugin)
+      // Proposal markup (ADR-0013): an agent's staged edit drawn over the
+      // document without being in it. Decoration-only.
+      .use(proposalsPlugin)
       // Margin attribution (APP-32). Inert until an agent writes, and derived
       // from the transactions rather than recorded beside them.
       .use(attributionPlugin(REMOTE_STEPS_META))
@@ -2025,6 +2029,24 @@ export class MilkdownEditor {
   noteDocumentText(): string {
     const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
     return noteDocumentText(view.state)
+  }
+
+  /** The reverse of `documentRangeAt`: the text offset and quote a selection covers. */
+  textAt(from: number, to: number): { readonly offset: number; readonly quote: string } | undefined {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    const indexed = indexDocumentText(view.state.doc)
+    const inside = indexed.offsetsInside(from, to)
+    if (inside === undefined) return undefined
+    return {
+      offset: inside.fromOffset,
+      quote: indexed.text.slice(inside.fromOffset, inside.lastOffset + 1),
+    }
+  }
+
+  /** Draws pending proposals over the document (ADR-0013). Empty clears them. */
+  setProposals(items: readonly ProposalDecorationItem[]): void {
+    const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
+    setProposals(view, items)
   }
 
   /**

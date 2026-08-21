@@ -20,7 +20,12 @@ import {
   resolveThread,
 } from '../domain/index.js'
 import type { Anchor, Thread } from '../domain/index.js'
-import { DocumentSession } from '../application/index.js'
+import {
+  DocumentSession,
+  ProposalQueue,
+  locateProposal,
+  virtualMarkdown,
+} from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import type { DiagramController } from '../adapters/editor/milkdown-editor.js'
 import { createStepDocumentPort } from '../adapters/editor/step-document-port.js'
@@ -33,6 +38,7 @@ import { createAgentStatusLine } from './ui/agent-status-line.js'
 import { AgentConversation } from './agent-conversation.js'
 import type { ComposerMode } from './agent-conversation.js'
 import { createAgentController } from './agent-controller.js'
+import { loadAgentEditMode } from './agent-settings.js'
 import { createAgentEditTally } from './agent-edit-overlay.js'
 import { createWedgeDetector } from './wedge-detector.js'
 import type { AgentEditTally } from './agent-edit-overlay.js'
@@ -1287,6 +1293,145 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     editor?.applyRemoteSteps(change.steps, 'activity')
   })
 
+  /**
+   * Agent proposals (ADR-0013): the trust gate.
+   *
+   * With Settings → Document agent → Edits at "Propose first", a run's writes
+   * are staged here instead of applied. The authority is not consulted; the
+   * queue is session state; the markup is decoration. Accepting relocates the
+   * proposal's passage by text in the current document and applies through
+   * `applyMarkdown` — the ordinary write path, so Activity, attribution, the
+   * mirror and Revert all behave as for a direct write.
+   */
+  const proposals = new ProposalQueue()
+  const proposalBar = document.createElement('div')
+  proposalBar.className = 'sm-proposal-bar'
+  proposalBar.setAttribute('role', 'status')
+  proposalBar.hidden = true
+  documentSurface?.append(proposalBar)
+
+  const noteHandleForTally = (): string => options.noteRowId?.() ?? session.documentHandle()
+
+  const paintProposals = (): void => {
+    const pending = proposals.list()
+    if (editor === undefined) return
+    const text = editor.noteDocumentText()
+    const items = pending.flatMap((proposal) => {
+      const located = locateProposal(text, proposal)
+      if (located === undefined) return []
+      const range = located.length === 0
+        ? (() => {
+            const end = editor.documentRangeAt(Math.max(0, text.length - 1), 1)
+            return end === undefined ? undefined : { from: end.to, to: end.to }
+          })()
+        : editor.documentRangeAt(located.offset, located.length)
+      if (range === undefined) return []
+      return [{
+        id: proposal.id,
+        name: proposal.name,
+        from: range.from,
+        to: range.to,
+        fragment: stepAdapter.renderMarkdown(proposal.markdown),
+      }]
+    })
+    editor.setProposals(items)
+
+    proposalBar.hidden = pending.length === 0
+    proposalBar.replaceChildren()
+    if (pending.length === 0) return
+    const label = document.createElement('span')
+    label.textContent = pending.length === 1 ? '1 proposed change' : `${pending.length} proposed changes`
+    const acceptAll = document.createElement('button')
+    acceptAll.type = 'button'
+    acceptAll.dataset['action'] = 'accept-all-proposals'
+    acceptAll.textContent = 'Accept all'
+    const rejectAll = document.createElement('button')
+    rejectAll.type = 'button'
+    rejectAll.dataset['action'] = 'reject-all-proposals'
+    rejectAll.textContent = 'Reject all'
+    proposalBar.append(label, acceptAll, rejectAll)
+    // Unlocated proposals are still pending; say so rather than drawing nothing.
+    const lost = pending.length - items.length
+    if (lost > 0) {
+      const note = document.createElement('span')
+      note.className = 'sm-proposal-bar-note'
+      note.textContent = lost === 1
+        ? '1 cannot be placed — its passage changed'
+        : `${lost} cannot be placed — their passages changed`
+      proposalBar.append(note)
+    }
+  }
+
+  const acceptProposal = (id: string): boolean => {
+    const proposal = proposals.get(id)
+    if (proposal === undefined || editor === undefined) return false
+    const text = editor.noteDocumentText()
+    const located = locateProposal(text, proposal)
+    if (located === undefined) {
+      chrome.setStatus('error', `Could not accept “${proposal.name}” — its passage changed.`)
+      return false
+    }
+    const range = located.length === 0
+      ? undefined
+      : editor.documentRangeAt(located.offset, located.length)
+    if (located.length > 0 && range === undefined) {
+      chrome.setStatus('error', `Could not accept “${proposal.name}” — its passage changed.`)
+      return false
+    }
+    const applied = session.applyMarkdown({
+      actorId: proposal.actorId,
+      name: proposal.name,
+      baseVersion: session.snapshot().revision,
+      markdown: proposal.markdown,
+      ...(range === undefined ? {} : { range }),
+    })
+    if (!applied.ok) {
+      chrome.setStatus('error', `Could not accept “${proposal.name}” — ${applied.reason}.`)
+      return false
+    }
+    proposals.remove(id)
+    if (range !== undefined) agentChangePositions.set(String(applied.revision), range.from)
+    const handle = noteHandleForTally()
+    const changes = agentEdits.record(handle)
+    if (changes > 0) chrome.applyAgentEdits(handle, changes)
+    chrome.setStatus('dirty')
+    chrome.refreshStatistics()
+    activityTimeline.repaint()
+    paintNotes()
+    paintProposals()
+    return true
+  }
+
+  const rejectProposal = (id: string): void => {
+    const proposal = proposals.remove(id)
+    if (proposal === undefined) return
+    conversation.post({ author: 'agent', markdown: `Rejected: ${proposal.name}` })
+    agentPanel.repaint()
+    paintProposals()
+  }
+
+  chrome.element.ownerDocument.addEventListener('click', (event) => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    const button = target.closest<HTMLElement>('[data-action="accept-proposal"], [data-action="reject-proposal"], [data-action="accept-all-proposals"], [data-action="reject-all-proposals"]')
+    if (button === null) return
+    event.preventDefault()
+    const action = button.dataset['action']
+    const id = button.dataset['proposal']
+    if (action === 'accept-proposal' && id !== undefined) acceptProposal(id)
+    if (action === 'reject-proposal' && id !== undefined) rejectProposal(id)
+    if (action === 'accept-all-proposals') {
+      for (const proposal of [...proposals.list()]) {
+        if (!acceptProposal(proposal.id)) break
+      }
+    }
+    if (action === 'reject-all-proposals') {
+      for (const proposal of [...proposals.list()]) rejectProposal(proposal.id)
+    }
+  })
+  // A person's own typing or an acceptance moves passages; relocate the rest.
+  session.onAccepted(() => paintProposals())
+
   const agentController = createAgentController({
     session,
     editor: {
@@ -1295,6 +1440,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       reveal: (range) => editor?.reveal(range.from),
       documentText: () => editor?.noteDocumentText() ?? session.snapshot().markdown,
       documentRangeAt: (offset, length) => editor?.documentRangeAt(offset, length),
+      textAt: (from, to) => editor?.textAt(from, to),
       showScope: (range) => editor?.showAgentScope(range),
     },
     panel: agentPanel,
@@ -1302,6 +1448,18 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     conversation,
     provider: () => agentProvider?.(),
     noteHandle: () => options.noteRowId?.() ?? session.documentHandle(),
+    // Propose first (ADR-0013) unless Settings says apply directly. Read per
+    // run so the setting changes without a restart.
+    staged: () =>
+      loadAgentEditMode(storage) === 'propose'
+        ? {
+            propose: (change) => {
+              proposals.add(change)
+              paintProposals()
+            },
+            view: (markdown) => virtualMarkdown(markdown, proposals.list()),
+          }
+        : undefined,
     onAcceptedAt: (transactionId, from) => {
       agentChangePositions.set(transactionId, from)
       activityTimeline.repaint()

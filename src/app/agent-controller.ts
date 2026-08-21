@@ -1,4 +1,4 @@
-import { runAgentLoop } from '../application/index.js'
+import { runAgentLoop, type AgentLoopInput } from '../application/index.js'
 import type {
   AcceptedChange,
   AgentActivity,
@@ -48,6 +48,8 @@ export interface AgentEditorBridge {
     offset: number,
     length: number,
   ): { readonly from: number; readonly to: number } | undefined
+  /** The reverse map for a selection, so a proposal can be relocated by text. */
+  textAt?(from: number, to: number): { readonly offset: number; readonly quote: string } | undefined
 }
 
 export interface AgentControllerOptions {
@@ -71,6 +73,11 @@ export interface AgentControllerOptions {
   readonly onAcceptedAt?: (transactionId: string, from: number) => void
   /** The actor id agent writes are credited to in the margin. */
   readonly actorId?: string
+  /**
+   * Stages writes as proposals instead of applying them (ADR-0013). Read per
+   * run so the setting can change between runs. Undefined applies directly.
+   */
+  readonly staged?: () => AgentLoopInput['staged'] | undefined
 }
 
 export interface AgentController {
@@ -189,7 +196,12 @@ export function createAgentController(options: AgentControllerOptions): AgentCon
       textTarget: {
         text: () => options.editor.documentText(),
         rangeAt: (offset, length) => options.editor.documentRangeAt(offset, length),
+        textAt: (from, to) => options.editor.textAt?.(from, to),
       },
+      ...((): { staged?: NonNullable<AgentLoopInput['staged']> } => {
+        const staged = options.staged?.()
+        return staged === undefined ? {} : { staged }
+      })(),
     })
 
     if (result.kind === 'ask') {

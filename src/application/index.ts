@@ -52,6 +52,8 @@ export type {
 export { isAiConfigured, isAgentConfigured, AGENT_REASONING_LEVELS } from './ports.js'
 export { DocumentSession } from './document-session.js'
 export { runAgentLoop } from './agent-loop.js'
+export { ProposalQueue, locateProposal, virtualMarkdown } from './agent-proposals.js'
+export type { AgentProposal, ProposedChange, ProposalLocation } from './agent-proposals.js'
 export type {
   AgentActivity,
   AgentLoopInput,

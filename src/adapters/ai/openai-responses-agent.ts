@@ -211,6 +211,15 @@ export class OpenAiResponsesAgentPort implements AgentProviderPort {
           'lists, emphasis, and tables where they aid reading — reasons,',
           'steps, and comparisons belong in lists, not paragraphs of prose.',
           'When the work is done, reply with plain text and call no further tool.',
+          ...(input.staging === true
+            ? [
+                // ADR-0013: staged writes wait for a person. Said plainly, or
+                // the model redoes an edit it believes vanished.
+                'Your edits are staged as proposals for the reader to accept;',
+                'the note text you are shown may not include them yet.',
+                'Never repeat an edit you already made in this run.',
+              ]
+            : []),
         ].join(' '),
         input: [
           { role: 'user', content: `The note currently reads:\n\n${input.noteMarkdown}` },

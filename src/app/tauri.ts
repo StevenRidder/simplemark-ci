@@ -19,7 +19,7 @@ import { OpenAiCompatibleDiagramFixPort } from '../adapters/ai/openai-compatible
 import { OpenAiResponsesAgentPort } from '../adapters/ai/openai-responses-agent.js'
 import type { AgentResponsesTransport } from '../adapters/ai/openai-responses-agent.js'
 import { isAgentConfigured, loadAgentConnection } from './agent-settings.js'
-import { applyAgentEditsToCatalog, createAgentEditTally } from './agent-edit-overlay.js'
+import { applyAgentEditsToCatalog, applyNoteCountsToCatalog, createAgentEditTally, type NoteCounts } from './agent-edit-overlay.js'
 import type { AgentEditTally } from './agent-edit-overlay.js'
 import type { ChatCompletionTransport, ModelListTransport } from '../adapters/ai/openai-compatible-diagram-fix.js'
 import { loadAiSettings } from './ai-settings.js'
@@ -292,15 +292,23 @@ async function startNative(
    * `mount` runs once per opened note and each run discards everything it owns.
    */
   const agentEdits = createAgentEditTally()
+  /**
+   * Note counts per document (APP-44), held out here like the agent tally so
+   * a remount does not forget what the previous note reported.
+   */
+  const noteCounts = new Map<string, NoteCounts>()
 
   /** The catalog as the note list should show it: AI summaries beat previews. */
   const withSummaries = (catalog: WorkspaceCatalog): WorkspaceCatalog =>
-    applyAgentEditsToCatalog(
-      applySummariesToCatalog(
-        applyPreviewsToCatalog(catalog, arrivedPreviews),
-        arrivedSummaries,
+    applyNoteCountsToCatalog(
+      applyAgentEditsToCatalog(
+        applySummariesToCatalog(
+          applyPreviewsToCatalog(catalog, arrivedPreviews),
+          arrivedSummaries,
+        ),
+        agentEdits.all(),
       ),
-      agentEdits.all(),
+      noteCounts,
     )
 
   await listen<WorkspacePreview>('workspace-note-preview', ({ payload }) => {
@@ -492,6 +500,7 @@ async function startNative(
       pageZoom,
       settingsPanel,
       agentEdits,
+      noteCounts,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
       onOpenFolder: addFolder,
@@ -721,6 +730,7 @@ async function startNative(
         pageZoom,
         settingsPanel,
         agentEdits,
+        noteCounts,
         menuTarget: () => current,
         onOpenFile: openFromPicker,
         onOpenFolder: addFolder,
@@ -883,6 +893,7 @@ async function startNative(
       pageZoom,
       settingsPanel,
       agentEdits,
+      noteCounts,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
       onOpenFolder: addFolder,
@@ -965,6 +976,7 @@ async function startNative(
       pageZoom,
       settingsPanel,
       agentEdits,
+      noteCounts,
       menuTarget: () => current,
       onOpenFile: openFromPicker,
       onOpenFolder: addFolder,
@@ -1201,6 +1213,8 @@ async function mount(
      * everything it owns, and this marker has to outlive that.
      */
     agentEdits: AgentEditTally
+    /** Note counts per document, surviving remounts like the tally (APP-44). */
+    noteCounts: Map<string, NoteCounts>
   },
 ): Promise<AppComposition> {
   let app: AppComposition
@@ -1357,6 +1371,9 @@ async function mount(
     // the WebContent process and reload does not reliably leave it.
     onRelaunch: () => void invoke('relaunch_app'),
     agentEdits: options.agentEdits,
+    onNoteCountsChanged: (handle, open, resolved) => {
+      options.noteCounts.set(handle, { open, resolved })
+    },
     // Phase 1 hands over the documented install rather than performing it
     // (docs/UPDATE-NOTIFICATION.md §6). One-click needs a signing key, a
     // published feed, and notarization; none of them exist, and an app that

@@ -344,6 +344,12 @@ export interface ComposeOptions {
    * under a key no row has, and the marker never appears.
    */
   readonly noteRowId?: () => string
+  /**
+   * Told when the open document's note counts change (APP-44), so a shell
+   * can keep its catalog overlay across remounts. The active row is patched
+   * here regardless.
+   */
+  readonly onNoteCountsChanged?: (handle: string, open: number, resolved: number) => void
 }
 
 const STYLES_BAR_KEY = 'simplemark.styles-bar-visible'
@@ -2088,10 +2094,20 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   // card elements, and cards without tops pile at the column's origin.
   {
     const paintedNotes = paintNotes
+    let paintedCounts = ''
     paintNotes = (): void => {
       paintedNotes()
       alignNoteCards()
       notesOverview.repaint()
+      // Note counts for the catalog row (APP-44): said once per real change.
+      const open = noteThreads.filter((thread) => thread.state === 'open').length
+      const resolved = noteThreads.filter((thread) => thread.state === 'resolved').length
+      const signature = `${open}/${resolved}`
+      if (signature === paintedCounts) return
+      paintedCounts = signature
+      const handle = options.noteRowId?.() ?? session.documentHandle()
+      chrome.applyNoteCounts(handle, open, resolved)
+      options.onNoteCountsChanged?.(handle, open, resolved)
     }
   }
   scheduleAlign()

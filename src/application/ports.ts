@@ -58,6 +58,13 @@ export interface WorkspaceCatalogEntry {
    * the list looks exactly as it did before an agent was in the room.
    */
   readonly agentChanges?: number
+  /**
+   * Notes on this document (APP-44): open, and resolved. Absent when both are
+   * zero, by the same rule as `agentChanges` — a document nobody annotated
+   * looks exactly as it always did.
+   */
+  readonly openNotes?: number
+  readonly resolvedNotes?: number
 }
 
 /** A non-recursive local folder whose Markdown files form the visible catalog. */

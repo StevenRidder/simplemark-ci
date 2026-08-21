@@ -5958,3 +5958,8 @@ section.editor::-webkit-scrollbar {
 .document-surface[data-proposal-markup="none"] .sm-proposal-del { text-decoration: none; background: transparent; }
 .document-surface[data-proposal-markup="none"] .sm-proposal-ins { display: none; }
 .sm-proposal-bar select { font: 500 11px/1 ui-monospace, monospace; padding: 3px 6px; border-radius: 999px; border: 1px solid var(--line); background: transparent; }
+/* Note counts on a catalog row (APP-44): open is a live amber, resolved is quiet. */
+.note-notes-status { display: inline-flex; align-items: center; gap: 2px; color: #b58a2a; }
+.note-notes-status[data-state="resolved"] { color: var(--ink-2); }
+.note-notes-status svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.note-notes-status small { font-size: 10px; font-variant-numeric: tabular-nums; color: var(--ink-2); }

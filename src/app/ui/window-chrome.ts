@@ -221,6 +221,9 @@ export interface WorkspaceNote {
    * is looking at, and this row is the only place that becomes visible.
    */
   readonly agentChanges?: number
+  /** Notes on this document (APP-44). Absent when zero. */
+  readonly openNotes?: number
+  readonly resolvedNotes?: number
 }
 
 /** One explicitly adopted local folder shown in the library sidebar. */
@@ -370,6 +373,8 @@ export interface WindowChrome {
   applyNotePreview(handle: string, preview: string): void
   /** Marks a row as agent-edited, in place, without reordering the list. */
   applyAgentEdits(handle: string, changes: number): void
+  /** Patches a catalog row's note counts in place (APP-44). */
+  applyNoteCounts(handle: string, open: number, resolved: number): void
   setNotesSort(sort: NotesSort): void
   notesSort(): NotesSort
   toggleNewestOnTop(): void
@@ -429,6 +434,29 @@ const TRAILING: ReadonlyArray<{ label: string; icon: string; owner: string }> = 
     icon: '<path d="M12 16V3M8 7l4-4 4 4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/>',
   },
 ]
+
+/** The catalog's note-count label (APP-44): open notes win the number. */
+function noteCountLabel(open: number, resolved: number): string {
+  if (open > 0) return open === 1 ? '1 open note' : `${open} open notes`
+  return resolved === 1 ? '1 resolved note' : `${resolved} resolved notes`
+}
+
+function noteCountMark(open: number, resolved: number): HTMLElement {
+  const mark = document.createElement('span')
+  mark.className = 'note-notes-status'
+  mark.dataset['openNotes'] = String(open)
+  mark.dataset['resolvedNotes'] = String(resolved)
+  mark.dataset['state'] = open > 0 ? 'open' : 'resolved'
+  const label = noteCountLabel(open, resolved)
+  mark.setAttribute('role', 'img')
+  mark.setAttribute('aria-label', label)
+  mark.title = label
+  mark.innerHTML = tablerIcon('note')
+  const count = document.createElement('small')
+  count.textContent = String(open > 0 ? open : resolved)
+  mark.append(count)
+  return mark
+}
 
 function svgButton(
   className: string,
@@ -2014,6 +2042,7 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
   // state or exposing the DOM.
   let applySummaryToRow: (handle: string, summary: string) => void = () => {}
   let applyAgentEditsToRow: (handle: string, changes: number) => void = () => {}
+  let applyNoteCountsToRow: (handle: string, open: number, resolved: number) => void = () => {}
 
   if (options.workspace === undefined) {
     windowEl.append(titlebar, documentSurface)
@@ -2039,6 +2068,21 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
      * only the element would show the marker until the next reconcile and then
      * silently lose it, which is exactly how note summaries broke.
      */
+    applyNoteCountsToRow = (handle, open, resolved) => {
+      const note = workspaceNotes.find((candidate) => candidate.id === handle)
+      if (note === undefined) return
+      // Written onto the array as well as the DOM, for the same reason the
+      // agent tally is: a later repaint rebuilds every row from the array.
+      Object.assign(note, {
+        openNotes: open > 0 ? open : undefined,
+        resolvedNotes: resolved > 0 ? resolved : undefined,
+      })
+      const row = noteItems.querySelector(`.note-item[data-note-id="${CSS.escape(handle)}"]`)
+      const time = row?.querySelector('.note-select time')
+      if (time === null || time === undefined) return
+      time.querySelector('.note-notes-status')?.remove()
+      if (open > 0 || resolved > 0) time.prepend(noteCountMark(open, resolved))
+    }
     applyAgentEditsToRow = (handle, changes) => {
       const note = workspaceNotes.find((candidate) => candidate.id === handle)
       if (note === undefined) return
@@ -2732,6 +2776,11 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
           agentMark.append(count)
           updated.prepend(agentMark)
         }
+        if ((note.openNotes ?? 0) > 0 || (note.resolvedNotes ?? 0) > 0) {
+          // Which document still has review work, answered from the list
+          // (APP-44). Open notes win the number; resolved-only says so.
+          updated.prepend(noteCountMark(note.openNotes ?? 0, note.resolvedNotes ?? 0))
+        }
         select.append(title, preview, updated)
         if (workspace.onSelectNote !== undefined) {
           select.addEventListener('click', () => {
@@ -3422,6 +3471,9 @@ export function createWindowChrome(options: WindowChromeOptions): WindowChrome {
     },
     applyAgentEdits(handle: string, changes: number): void {
       applyAgentEditsToRow(handle, changes)
+    },
+    applyNoteCounts(handle: string, open: number, resolved: number): void {
+      applyNoteCountsToRow(handle, open, resolved)
     },
     setNotesSort(sort) {
       notesSort = sort

@@ -18,6 +18,35 @@ import type { WorkspaceCatalog } from '../application/index.js'
  * Pure and separate from the entrypoints so it can be tested: the composition
  * root touches the DOM, and vitest runs in `node` deliberately.
  */
+/** Open and resolved notes per document, for the catalog (APP-44). */
+export interface NoteCounts {
+  readonly open: number
+  readonly resolved: number
+}
+
+/**
+ * Lays note counts over a catalog the same way agent edits are laid over it:
+ * absent when there is nothing to say, so an unannotated list is unchanged.
+ */
+export function applyNoteCountsToCatalog(
+  catalog: WorkspaceCatalog,
+  counts: ReadonlyMap<string, NoteCounts>,
+): WorkspaceCatalog {
+  if (counts.size === 0) return catalog
+  return {
+    ...catalog,
+    notes: catalog.notes.map((note) => {
+      const found = counts.get(note.handle)
+      if (found === undefined || (found.open <= 0 && found.resolved <= 0)) return note
+      return {
+        ...note,
+        ...(found.open > 0 ? { openNotes: found.open } : {}),
+        ...(found.resolved > 0 ? { resolvedNotes: found.resolved } : {}),
+      }
+    }),
+  }
+}
+
 export function applyAgentEditsToCatalog(
   catalog: WorkspaceCatalog,
   edits: ReadonlyMap<string, number>,

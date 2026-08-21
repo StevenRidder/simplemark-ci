@@ -15,6 +15,10 @@ async function noteOnPassage(page: Page, body: string): Promise<void> {
   await expect(page.locator(editor)).toBeVisible()
   await page.getByRole('button', { name: 'New note' }).click()
   await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  // The merge group once typed the whole setup into nothing: a key burst
+  // right after focusEnd() can land before the fresh editor owns focus. Wait
+  // for it, as the paste specs do.
+  await expect(page.locator(editor)).toBeFocused()
   await page.keyboard.press('Enter')
   await page.keyboard.type('Alpha holds the opening claim.')
   await page.keyboard.press('Enter')

@@ -1,4 +1,5 @@
 import { makeDraggable } from '../../adapters/editor/draggable.js'
+import { stampLabel } from './stamps.js'
 import type { AgentConversation, ComposerMode, ConversationMessage } from '../agent-conversation.js'
 import { tablerIcon } from './tabler-icons.js'
 
@@ -115,7 +116,10 @@ export function createAgentPanel(options: AgentPanelOptions): AgentPanel {
     const byline = document.createElement('header')
     byline.className = 'sm-agent-message-byline'
     const who = document.createElement('span')
-    who.textContent = message.author === 'you' ? 'You' : 'Agent'
+    // The same byline a note card carries (APP-48): who, and when.
+    const stamp = stampLabel(message.at)
+    const label = message.author === 'you' ? 'You' : 'Agent'
+    who.textContent = stamp === undefined ? label : `${label} · ${stamp}`
     byline.append(who)
     if (message.mode !== undefined) {
       // The composer mode is recorded on the message so the sequence stays

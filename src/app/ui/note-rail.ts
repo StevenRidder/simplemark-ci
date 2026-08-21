@@ -1,4 +1,5 @@
 import { makeDraggable } from '../../adapters/editor/draggable.js'
+import { stampLabel } from './stamps.js'
 import { hasAgentTurn, matchAnchor, threadTurns } from '../../domain/index.js'
 import type { Thread } from '../../domain/index.js'
 
@@ -51,6 +52,10 @@ export interface NoteRailOptions {
    * state.
    */
   readonly onHide?: () => void
+  /** Threads shown folded to their opening lines (APP-48). */
+  readonly collapsed?: ReadonlySet<string>
+  /** Folds or unfolds one card. Absent leaves no control. */
+  readonly onToggleCollapsed?: (id: string) => void
 }
 
 export function renderNoteRail(
@@ -98,6 +103,26 @@ export function renderNoteRail(
     row.dataset['thread'] = thread.id
     row.dataset['orphan'] = matched ? 'false' : 'true'
     row.dataset['waiting'] = waitingId === thread.id ? 'true' : 'false'
+    // Folded, a card keeps its opening lines and says how much it is holding
+    // back (APP-48): a long agent reply no longer buries the cards below it.
+    const collapsed = options.collapsed?.has(thread.id) === true
+    row.dataset['collapsed'] = String(collapsed)
+    if (options.onToggleCollapsed !== undefined) {
+      const toggle = document.createElement('button')
+      toggle.type = 'button'
+      toggle.className = 'sm-note-rail-collapse'
+      toggle.dataset['action'] = 'collapse-note'
+      toggle.setAttribute('aria-expanded', String(!collapsed))
+      toggle.setAttribute('aria-label', collapsed ? 'Expand note' : 'Collapse note')
+      toggle.title = collapsed ? 'Expand — show the whole note' : 'Collapse — keep the opening lines'
+      toggle.textContent = collapsed ? '▸' : '▾'
+      toggle.addEventListener('click', (event) => {
+        event.stopPropagation()
+        options.onToggleCollapsed?.(thread.id)
+      })
+      row.append(toggle)
+    }
+    let turnIndex = 0
 
     // Every turn, oldest first, the opening note included — a conversation that
     // rendered only the replies would hide what was asked.
@@ -109,6 +134,7 @@ export function renderNoteRail(
       const byline = document.createElement('p')
       byline.className = 'sm-note-rail-byline'
       byline.dataset['author'] = turn.author
+      byline.dataset['turn'] = turnIndex === 0 ? 'first' : 'later'
       const stamp = turnStamp(turn.createdAt)
       byline.textContent = stamp === undefined
         ? turnAuthorLabel(turn.author)
@@ -117,6 +143,7 @@ export function renderNoteRail(
       const body = document.createElement('p')
       body.className = 'sm-note-rail-body'
       body.dataset['author'] = turn.author
+      body.dataset['turn'] = turnIndex === 0 ? 'first' : 'later'
       if (turn.mode !== undefined) body.dataset['mode'] = turn.mode
       if (options.renderMarkdown === undefined) {
         body.textContent = turn.body
@@ -124,6 +151,13 @@ export function renderNoteRail(
         body.append(options.renderMarkdown(turn.body))
       }
       row.append(body)
+      turnIndex += 1
+    }
+    if (collapsed && turnIndex > 1) {
+      const more = document.createElement('p')
+      more.className = 'sm-note-rail-more'
+      more.textContent = `${turnIndex - 1} more`
+      row.append(more)
     }
 
     if (options.busyThreadId === thread.id) {
@@ -313,11 +347,7 @@ function turnAuthorLabel(author: string): string {
 
 /** A short local stamp, or nothing for a turn whose date never parsed. */
 function turnStamp(createdAt: string): string | undefined {
-  const time = Date.parse(createdAt)
-  if (Number.isNaN(time)) return undefined
-  return new Date(time).toLocaleString(undefined, {
-    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  })
+  return stampLabel(createdAt)
 }
 
 function threadComposer(

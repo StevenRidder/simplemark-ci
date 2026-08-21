@@ -1702,6 +1702,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
    * the align pass leaves these where the hand put them.
    */
   const movedCards = new Map<string, { readonly left: string; readonly top: string }>()
+  /** Cards folded to their opening lines (APP-48), by thread id, for this open document. */
+  const collapsedCards = new Set<string>()
   let notesLoadError: string | undefined
   try {
     noteThreads = await persist.list(await noteKeyForOpenDocument())
@@ -1909,6 +1911,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       onHide: () => {
         noteRailHidden = true
         noteRailHost.replaceChildren()
+      },
+      collapsed: collapsedCards,
+      onToggleCollapsed: (id) => {
+        if (collapsedCards.has(id)) collapsedCards.delete(id)
+        else collapsedCards.add(id)
+        // Through the paint: the fold changes the card's height, and the
+        // cards below it move only when the margin re-aligns.
+        paintNotes()
       },
     })
   }

@@ -34,12 +34,16 @@ export interface ConversationMessage {
   readonly mode?: ComposerMode
   /** True once corrected in place, so the surface can say so honestly. */
   readonly edited: boolean
+  /** When it was posted, epoch milliseconds — the byline's stamp (APP-48). */
+  readonly at: number
 }
 
 export interface PostedMessage {
   readonly author: MessageAuthor
   readonly markdown: string
   readonly mode?: ComposerMode
+  /** Defaults to now. */
+  readonly at?: number
 }
 
 /**
@@ -66,6 +70,7 @@ export class AgentConversation {
       markdown: message.markdown,
       ...(message.mode === undefined ? {} : { mode: message.mode }),
       edited: false,
+      at: message.at ?? Date.now(),
     })
     return id
   }

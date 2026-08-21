@@ -5087,8 +5087,14 @@ section.editor::-webkit-scrollbar {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  font-size: 11px;
-  color: var(--ink-2);
+  /* The note card's byline, exactly (APP-48): who, and when, in one voice. */
+  font: 500 10px/1.2 ui-monospace, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink, CanvasText) 48%, transparent);
+}
+.sm-agent-message[data-author="agent"] .sm-agent-message-byline {
+  color: color-mix(in srgb, #4a5b8c 78%, CanvasText 22%);
 }
 
 .sm-agent-message-mode,
@@ -5821,6 +5827,37 @@ section.editor::-webkit-scrollbar {
 .sm-agent-scope-menu button:hover { background: color-mix(in srgb, var(--line) 40%, transparent); }
 
 /* Turn bylines (APP-41): who said it, and when. */
+/* Folded cards (APP-48): the opening turn's first two lines, a count of
+   what is held back, nothing else — so a long agent reply never buries the
+   cards below it. The toggle sits in the card's top-right corner. */
+.sm-note-rail article { position: relative; }
+.sm-note-rail-collapse {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 2;
+  font: 500 12px/1 ui-monospace, monospace;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--ink, CanvasText) 55%, transparent);
+  cursor: pointer;
+}
+.sm-note-rail article[data-collapsed="true"] .sm-note-rail-body[data-turn="first"] {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sm-note-rail article[data-collapsed="true"] :is([data-turn="later"], .sm-note-rail-quote, .sm-note-rail-composer, .sm-note-rail-actions) {
+  display: none;
+}
+/* On the phone the fold toggle is a thumb target like every other control
+   in the sheet (the 44pt floor). */
+@media (max-width: 620px) {
+  .sm-note-rail-collapse { min-width: 44px; min-height: 44px; font-size: 16px; }
+}
+.sm-note-rail-more { margin: 4px 0 0; font: 500 10px/1.2 ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in srgb, var(--ink, CanvasText) 55%, transparent); }
 .sm-note-rail-byline { margin: 8px 0 2px; font: 500 10px/1.2 ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in srgb, var(--ink, CanvasText) 48%, transparent); }
 .sm-note-rail-byline[data-author="agent"] { color: color-mix(in srgb, #4a5b8c 78%, CanvasText 22%); }
 .sm-note-rail-byline:first-child, article > .sm-note-rail-byline:first-of-type { margin-top: 0; }

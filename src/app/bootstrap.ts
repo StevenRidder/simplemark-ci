@@ -217,6 +217,8 @@ export interface AppComposition {
   applyNoteSummary(handle: string, summary: string): void
   /** Adds an extracted note preview without reordering the visible list. */
   applyNotePreview(handle: string, preview: string): void
+  /** Patches one row's note counts in place (APP-47); absent when both are zero. */
+  applyNoteCounts(handle: string, open: number, resolved: number): void
   /** Whether the optional styles bar is showing, for the View menu checkmark. */
   stylesBarVisible(): boolean
   /**
@@ -2371,6 +2373,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     },
     applyNoteSummary: (handle, summary) => chrome.applyNoteSummary(handle, summary),
     applyNotePreview: (handle, preview) => chrome.applyNotePreview(handle, preview),
+    applyNoteCounts: (handle, open, resolved) => chrome.applyNoteCounts(handle, open, resolved),
     runNativeContextCommand: (command) => {
       if (command === 'addNote') {
         if (nativeNoteRange !== undefined) editor?.restoreSelection(nativeNoteRange)

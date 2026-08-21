@@ -452,6 +452,34 @@ export interface NoteIdentity {
   >
 }
 
+/** Open and resolved notes on one catalog document (APP-47). */
+export interface NoteCountEntry {
+  readonly handle: string
+  readonly open: number
+  readonly resolved: number
+}
+
+export interface NoteCountReport {
+  readonly counts: readonly NoteCountEntry[]
+  /**
+   * Documents whose notes could not be read. Named, never counted as zero:
+   * zero means "no notes", which is not something we know about a file we
+   * could not read.
+   */
+  readonly unreadable: readonly string[]
+}
+
+/**
+ * Counts notes for documents nobody has opened this session (APP-47).
+ *
+ * One request for many handles: a catalog is a folder, and a round-trip per
+ * row would be N calls across the bridge where the native side can read N
+ * files in one. Reads only — a count must never create a sidecar.
+ */
+export interface NoteCountSource {
+  count(handles: readonly string[]): Promise<NoteCountReport>
+}
+
 /**
  * Credentials for the in-document agent (AGENT-8). Same three fields as
  * diagram-repair settings, stored separately — repairing a diagram and

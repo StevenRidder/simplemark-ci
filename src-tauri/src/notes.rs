@@ -240,8 +240,8 @@ pub(crate) fn threads_file_for_document(document: &Path) -> Result<PathBuf, Stri
 
 /// Mirrors `noteKeyForPath` in src/adapters/filesystem/tauri-thread-store.ts:
 /// hash = (hash * 131 + codepoint) mod 2^64 over the path's chars, hex, 16 wide.
-/// Called from `threads_file_for_document`, which only the mobile watcher uses.
-#[cfg_attr(not(mobile), allow(dead_code))]
+/// Called from `threads_file_for_document` (the mobile watcher) and from
+/// `count_threads_for_document` (the catalog sweep, APP-47).
 fn degraded_key_for_path(path: &Path) -> String {
     let mut hash: u64 = 0;
     for ch in path.to_string_lossy().chars() {
@@ -278,6 +278,91 @@ pub async fn write_note_threads(
         )
     })
     .await
+}
+
+/// Open and resolved notes on one catalog document (APP-47).
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct NoteCountEntry {
+    pub handle: String,
+    pub open: u32,
+    pub resolved: u32,
+}
+
+/// The answer to one sweep. A document whose notes could not be read is named
+/// in `unreadable`, never counted as zero: zero means "no notes", and that is
+/// not something we know about a file we could not read.
+#[derive(Serialize, Debug, Default, PartialEq)]
+pub struct NoteCountReport {
+    pub counts: Vec<NoteCountEntry>,
+    pub unreadable: Vec<String>,
+}
+
+/// How much of a document is read to find its front-matter id. Front matter
+/// sits at the top by definition; a file whose opening fence has not closed
+/// within this window is read whole rather than guessed at.
+const FRONT_MATTER_WINDOW: u64 = 8 * 1024;
+
+fn read_front_matter_window(path: &Path) -> io::Result<String> {
+    use std::io::Read;
+    let mut file = File::open(path)?;
+    let mut head = Vec::new();
+    // `Read::by_ref`, spelled out: `Write` is in scope too and both have one.
+    Read::by_ref(&mut file).take(FRONT_MATTER_WINDOW).read_to_end(&mut head)?;
+    let text = String::from_utf8_lossy(&head).into_owned();
+    let fenced = text.starts_with("---\n");
+    let closed = text.get(4..).is_some_and(|rest| rest.contains("\n---"));
+    if fenced && !closed && head.len() as u64 >= FRONT_MATTER_WINDOW {
+        return fs::read_to_string(path);
+    }
+    Ok(text)
+}
+
+/// Counts a threads file the way the composer reads it: `state` is either
+/// `open` or `resolved`. Anything that is not a JSON array of threads is an
+/// error, not an empty document.
+fn count_threads_json(text: &str) -> Result<(u32, u32), String> {
+    if text.trim().is_empty() {
+        return Ok((0, 0));
+    }
+    let threads: Vec<serde_json::Value> =
+        serde_json::from_str(text).map_err(|error| error.to_string())?;
+    let resolved = threads
+        .iter()
+        .filter(|thread| thread.get("state").and_then(|state| state.as_str()) == Some("resolved"))
+        .count() as u32;
+    Ok((threads.len() as u32 - resolved, resolved))
+}
+
+/// Open and resolved notes for one document, located exactly as the composer
+/// locates them: front-matter id (else the degraded path key), the sidecar
+/// beside the document when it exists, else application data. Reads only.
+fn count_threads_for_document(path: &Path) -> Result<(u32, u32), String> {
+    let head = read_front_matter_window(path).map_err(|error| error.to_string())?;
+    let key = extract_id(&head).unwrap_or_else(|| degraded_key_for_path(path));
+    let location = resolve_threads_location(&key, Some(path), Intent::Read)?;
+    count_threads_json(&read_threads_file(location.path())?)
+}
+
+fn apply_count_note_threads(handles: &[String]) -> NoteCountReport {
+    let mut report = NoteCountReport::default();
+    for handle in handles {
+        match count_threads_for_document(Path::new(handle)) {
+            Ok((open, resolved)) => report.counts.push(NoteCountEntry {
+                handle: handle.clone(),
+                open,
+                resolved,
+            }),
+            Err(_) => report.unreadable.push(handle.clone()),
+        }
+    }
+    report
+}
+
+/// One call for a whole catalog (APP-47): the frontend asks once per folder,
+/// not once per row, and every read happens off the UI thread.
+#[tauri::command]
+pub async fn count_note_threads(handles: Vec<String>) -> Result<NoteCountReport, String> {
+    crate::off_the_ui_thread(move || Ok(apply_count_note_threads(&handles))).await
 }
 
 #[derive(Serialize)]
@@ -1037,5 +1122,71 @@ mod snapshot_tests {
         assert!(validate_snapshot_id("1a2b-x9").is_ok());
         assert!(validate_snapshot_id("../escape").is_err());
         assert!(validate_snapshot_id("").is_err());
+    }
+}
+
+#[cfg(test)]
+mod count_tests {
+    use super::*;
+
+    #[test]
+    fn counts_open_and_resolved_threads_beside_the_document() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let doc = dir.path().join("note.md");
+        fs::write(&doc, "---\nid: app47-counted\n---\n# Note\n").expect("doc");
+        let sidecar = dir.path().join(".simplemark");
+        fs::create_dir_all(&sidecar).expect("sidecar");
+        fs::write(
+            sidecar.join("app47-counted.json"),
+            r#"[{"id":"t1","state":"open"},{"id":"t2","state":"resolved"},{"id":"t3","state":"open"}]"#,
+        )
+        .expect("threads");
+        let handle = doc.to_string_lossy().into_owned();
+        let report = apply_count_note_threads(&[handle.clone()]);
+        assert_eq!(report.unreadable, Vec::<String>::new());
+        assert_eq!(
+            report.counts,
+            vec![NoteCountEntry { handle, open: 2, resolved: 1 }]
+        );
+    }
+
+    #[test]
+    fn a_document_without_notes_is_zero_and_an_unreadable_one_is_named() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let quiet = dir.path().join("quiet.md");
+        fs::write(&quiet, "---\nid: app47-quiet-no-threads-anywhere\n---\n# Quiet\n").expect("doc");
+        let broken = dir.path().join("broken.md");
+        fs::write(&broken, "---\nid: app47-broken\n---\n# Broken\n").expect("doc");
+        let sidecar = dir.path().join(".simplemark");
+        fs::create_dir_all(&sidecar).expect("sidecar");
+        fs::write(sidecar.join("app47-broken.json"), "{not json").expect("threads");
+        let missing = dir.path().join("missing.md");
+        let handles: Vec<String> = [&quiet, &broken, &missing]
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        let report = apply_count_note_threads(&handles);
+        assert_eq!(
+            report.counts,
+            vec![NoteCountEntry { handle: handles[0].clone(), open: 0, resolved: 0 }]
+        );
+        assert_eq!(report.unreadable, vec![handles[1].clone(), handles[2].clone()]);
+        // Reading never creates anything beside the documents.
+        assert!(!sidecar.join("app47-quiet-no-threads-anywhere.json").exists());
+    }
+
+    #[test]
+    fn the_front_matter_window_reads_a_long_document_whole_only_when_the_fence_is_open() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let long_body = "x".repeat(20 * 1024);
+        let closed = dir.path().join("closed.md");
+        fs::write(&closed, format!("---\nid: app47-long\n---\n{long_body}")).expect("doc");
+        let head = read_front_matter_window(&closed).expect("head");
+        assert!(head.len() <= 8 * 1024);
+        assert_eq!(extract_id(&head).as_deref(), Some("app47-long"));
+        let unclosed = dir.path().join("unclosed.md");
+        fs::write(&unclosed, format!("---\n{long_body}\nid: late\n---\n")).expect("doc");
+        let whole = read_front_matter_window(&unclosed).expect("whole");
+        assert!(whole.len() > 8 * 1024);
     }
 }

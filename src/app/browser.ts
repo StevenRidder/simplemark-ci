@@ -14,6 +14,9 @@ import { BrowserDocumentLinkPort } from '../adapters/filesystem/browser-document
 import { BrowserUploadFilePort } from '../adapters/filesystem/browser-upload-file-port.js'
 import { BrowserClipboardPort } from '../adapters/clipboard/browser-clipboard-port.js'
 import { FixtureFilePort } from '../adapters/filesystem/fixture-file-port.js'
+import { LocalNoteCountSource } from '../adapters/filesystem/local-note-count-source.js'
+import { createNoteCountSweep } from './note-count-sweep.js'
+import type { NoteCounts } from './agent-edit-overlay.js'
 import type { FilePort } from '../application/index.js'
 import { composeApp } from './bootstrap.js'
 import type { AppComposition } from './bootstrap.js'
@@ -139,6 +142,19 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
   const ports = new Map(DEMO_NOTES.map((note) => [note.id, new FixtureFilePort(note.name, note.markdown)]))
   let activeId = DEMO_NOTES[0]!.id
   let current: AppComposition | undefined
+  /** Demo rows are keyed by id; their threads live under the port's `fixture:<name>` handle. */
+  const threadKeyFor = (rowId: string): string | undefined => {
+    const note = DEMO_NOTES.find((candidate) => candidate.id === rowId)
+    return note === undefined ? undefined : `fixture:${note.name}`
+  }
+  const noteCountSweep = createNoteCountSweep({
+    source: new LocalNoteCountSource(window.localStorage, threadKeyFor),
+    cache: noteCounts,
+    apply: (handle, open, resolved) => current?.applyNoteCounts(handle, open, resolved),
+    report: (message) => current?.setStatus('error', message),
+    label: (rowId) => DEMO_NOTES.find((candidate) => candidate.id === rowId)?.name ?? rowId,
+  })
+  const demoRows = () => ({ notes: DEMO_NOTES.map((note) => ({ handle: note.id })) })
 
   // In memory rather than persisted: the demo notes are rebuilt on every load,
   // so a stack that outlived the page would point at notes that no longer are.
@@ -169,7 +185,9 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
       workspace: workspaceSnapshot(),
       // The demo rows are keyed by fixture id; the port answers `fixture:<name>`.
       noteRowId: () => activeId,
+      onNoteCountsChanged: (handle, open, resolved) => noteCounts.set(handle, { open, resolved }),
     })
+    void noteCountSweep.sweep(demoRows())
   }
 
   const createDemoNote = (): void => {
@@ -206,6 +224,7 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
     DEMO_NOTES.splice(index, 1)
     if (!wasActive) {
       current?.reconcileWorkspace(workspaceSnapshot())
+      void noteCountSweep.sweep(demoRows())
       current?.setStatus('saved', 'Closed note — file remains on disk')
       return
     }
@@ -263,6 +282,8 @@ export async function start(root: HTMLElement): Promise<AppComposition> {
  * discards the composition, and this marker has to survive that.
  */
 const agentEdits = createAgentEditTally()
+/** Note counts per row (APP-44/47), module-scoped for the same reason. */
+const noteCounts = new Map<string, NoteCounts>()
 
 function workspaceOptions(
   activeNoteId: string,
@@ -302,6 +323,10 @@ function workspaceOptions(
       ...(agentEdits.all().get(note.id) === undefined
         ? {}
         : { agentChanges: agentEdits.all().get(note.id)! }),
+      ...((noteCounts.get(note.id)?.open ?? 0) > 0 ? { openNotes: noteCounts.get(note.id)!.open } : {}),
+      ...((noteCounts.get(note.id)?.resolved ?? 0) > 0
+        ? { resolvedNotes: noteCounts.get(note.id)!.resolved }
+        : {}),
     })),
   }
 }
@@ -325,6 +350,8 @@ async function mount(
     workspace?: WorkspaceOptions
     /** Row id for the open note, when the list keys rows by something else. */
     noteRowId?: () => string
+    /** The open note's own counts, so a remount repaints them (APP-44). */
+    onNoteCountsChanged?: (handle: string, open: number, resolved: number) => void
   },
 ): Promise<AppComposition> {
   const canWriteOriginal = BrowserFilePort.isSupported()
@@ -408,6 +435,7 @@ async function mount(
       isAgentConfigured(loadAgentConnection(window.localStorage)) ? agentPort : undefined,
     agentEdits,
     ...(options.noteRowId === undefined ? {} : { noteRowId: options.noteRowId }),
+    ...(options.onNoteCountsChanged === undefined ? {} : { onNoteCountsChanged: options.onNoteCountsChanged }),
   })
 
   root.replaceChildren(app.element)

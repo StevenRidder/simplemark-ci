@@ -2421,6 +2421,7 @@ pub fn run() {
             notes::delete_note_snapshot,
             notes::read_note_id,
             notes::ensure_note_id,
+            notes::count_note_threads,
             open_document_link,
             inspect_workspace_note,
             list_workspace,

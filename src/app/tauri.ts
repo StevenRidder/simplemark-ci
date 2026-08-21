@@ -20,6 +20,8 @@ import { OpenAiResponsesAgentPort } from '../adapters/ai/openai-responses-agent.
 import type { AgentResponsesTransport } from '../adapters/ai/openai-responses-agent.js'
 import { isAgentConfigured, loadAgentConnection } from './agent-settings.js'
 import { applyAgentEditsToCatalog, applyNoteCountsToCatalog, createAgentEditTally, type NoteCounts } from './agent-edit-overlay.js'
+import { createNoteCountSweep } from './note-count-sweep.js'
+import { TauriNoteCountSource } from '../adapters/filesystem/tauri-note-count-source.js'
 import type { AgentEditTally } from './agent-edit-overlay.js'
 import type { ChatCompletionTransport, ModelListTransport } from '../adapters/ai/openai-compatible-diagram-fix.js'
 import { loadAiSettings } from './ai-settings.js'
@@ -298,6 +300,17 @@ async function startNative(
    * a remount does not forget what the previous note reported.
    */
   const noteCounts = new Map<string, NoteCounts>()
+  /**
+   * Counts for the rows nobody opened this session (APP-47): one native call
+   * per catalog, results patched into rows as they arrive and remembered in
+   * the same map the open document reports into.
+   */
+  const noteCountSweep = createNoteCountSweep({
+    source: new TauriNoteCountSource(invoke),
+    cache: noteCounts,
+    apply: (handle, open, resolved) => current?.applyNoteCounts(handle, open, resolved),
+    report: (message) => current?.setStatus('error', message),
+  })
 
   /** The catalog as the note list should show it: AI summaries beat previews. */
   const withSummaries = (catalog: WorkspaceCatalog): WorkspaceCatalog =>
@@ -450,6 +463,7 @@ async function startNative(
     // place summaries need asking for. Fire-and-forget: results arrive on an
     // event and never hold up the render.
     requestSummaries(selectedHandle, catalog)
+    void noteCountSweep.sweep(catalog)
     return catalogWorkspace(
       withSummaries(catalog),
       selectedHandle,
@@ -487,6 +501,7 @@ async function startNative(
     activeCollectionId = collectionId
     saveActiveCollection(window.localStorage, collectionId)
     const catalog = collections.collection(collectionId, inspected.handle)
+    void noteCountSweep.sweep(catalog)
     // Startup can reach this path before there is a composition at all. A
     // later open replaces the mounted editor; the very first restored note is
     // the initial mount and therefore has nothing to tear down.
@@ -888,6 +903,7 @@ async function startNative(
     await invoke('stop_watching_note')
     activeHandle = undefined
     if (activeCollectionId === 'recent') workspaceHandle = undefined
+    void noteCountSweep.sweep(after)
     await current.destroy()
     current = await mount(root, new FixtureFilePort('No note selected.md', ''), {
       filePath: 'No note selected',

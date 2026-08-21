@@ -1334,6 +1334,25 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
    * mirror and Revert all behave as for a direct write.
    */
   const proposals = new ProposalQueue()
+  /**
+   * Markup views (APP-45), Word's All / Simple / None over the proposal
+   * decorations. A display choice only: it never changes what is pending,
+   * and the bar keeps counting so hidden proposals are never forgotten.
+   */
+  const PROPOSAL_MARKUP_KEY = 'simplemark.proposal-markup'
+  type ProposalMarkup = 'all' | 'simple' | 'none'
+  const readProposalMarkup = (): ProposalMarkup => {
+    try {
+      const stored = storage.getItem(PROPOSAL_MARKUP_KEY)
+      return stored === 'simple' || stored === 'none' ? stored : 'all'
+    } catch {
+      return 'all'
+    }
+  }
+  let proposalMarkup: ProposalMarkup = readProposalMarkup()
+  // Applied at once, not only on the next proposal paint: a remembered choice
+  // is a fact about this document's surface from the moment it opens.
+  if (documentSurface instanceof HTMLElement) documentSurface.dataset['proposalMarkup'] = proposalMarkup
   const proposalBar = document.createElement('div')
   proposalBar.className = 'sm-proposal-bar'
   proposalBar.setAttribute('role', 'status')
@@ -1366,11 +1385,13 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     })
     editor.setProposals(items)
 
+    if (documentSurface instanceof HTMLElement) documentSurface.dataset['proposalMarkup'] = proposalMarkup
     proposalBar.hidden = pending.length === 0
     proposalBar.replaceChildren()
     if (pending.length === 0) return
     const label = document.createElement('span')
     label.textContent = pending.length === 1 ? '1 proposed change' : `${pending.length} proposed changes`
+    if (proposalMarkup === 'none') label.textContent += ' · markup hidden'
     const acceptAll = document.createElement('button')
     acceptAll.type = 'button'
     acceptAll.dataset['action'] = 'accept-all-proposals'
@@ -1379,7 +1400,27 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     rejectAll.type = 'button'
     rejectAll.dataset['action'] = 'reject-all-proposals'
     rejectAll.textContent = 'Reject all'
-    proposalBar.append(label, acceptAll, rejectAll)
+    const markup = document.createElement('select')
+    markup.dataset['action'] = 'proposal-markup'
+    markup.setAttribute('aria-label', 'Proposal markup')
+    markup.title = 'How proposals are drawn. All: strikethrough and insertions. Simple: insertions only. None: the clean document; proposals stay pending.'
+    for (const [value, text] of [['all', 'Markup: All'], ['simple', 'Markup: Simple'], ['none', 'Markup: None']] as const) {
+      const option = document.createElement('option')
+      option.value = value
+      option.textContent = text
+      option.selected = proposalMarkup === value
+      markup.append(option)
+    }
+    markup.addEventListener('change', () => {
+      proposalMarkup = markup.value === 'simple' || markup.value === 'none' ? markup.value : 'all'
+      try {
+        storage.setItem(PROPOSAL_MARKUP_KEY, proposalMarkup)
+      } catch (error) {
+        chrome.setStatus('error', `The markup view was not remembered — ${error instanceof Error ? error.message : String(error)}`)
+      }
+      paintProposals()
+    })
+    proposalBar.append(label, acceptAll, rejectAll, markup)
     // Unlocated proposals are still pending; say so rather than drawing nothing.
     const lost = pending.length - items.length
     if (lost > 0) {

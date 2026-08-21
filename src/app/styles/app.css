@@ -5950,3 +5950,11 @@ section.editor::-webkit-scrollbar {
 .sm-overview-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .sm-overview-actions button { font: 500 11px/1 ui-monospace, monospace; padding: 3px 7px; border-radius: 4px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
 .sm-overview-empty { margin: 8px 0; font-size: 13px; color: color-mix(in srgb, var(--ink, CanvasText) 55%, transparent); }
+
+/* Proposal markup views (APP-45): All is the default drawing above. */
+.document-surface[data-proposal-markup="simple"] .sm-proposal-del { text-decoration: none; background: transparent; opacity: .55; }
+.document-surface[data-proposal-markup="simple"] .sm-proposal-ins { background: transparent; }
+.document-surface[data-proposal-markup="simple"] .sm-proposal-ins-body { text-decoration: none; }
+.document-surface[data-proposal-markup="none"] .sm-proposal-del { text-decoration: none; background: transparent; }
+.document-surface[data-proposal-markup="none"] .sm-proposal-ins { display: none; }
+.sm-proposal-bar select { font: 500 11px/1 ui-monospace, monospace; padding: 3px 6px; border-radius: 999px; border: 1px solid var(--line); background: transparent; }

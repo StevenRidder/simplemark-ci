@@ -135,3 +135,28 @@ test('Accept all lands every proposal from a run', async ({ page }) => {
   expect(await markdown(page)).toContain('A closing line.')
   await expect(page.locator('.sm-proposal-bar')).toBeHidden()
 })
+
+test('markup views draw proposals three ways and never change what is pending', async ({ page }) => {
+  await noteOnPassage(page, 'Split this by region.')
+  await scriptAgent(page, 'Beta, split by region.')
+  await page.locator('.sm-note-rail [data-thread="t1"] [data-action="ask-agent"]').click()
+  await expect(page.locator('.sm-proposal-ins')).toBeVisible()
+  await expect(page.locator('.document-surface')).toHaveAttribute('data-proposal-markup', 'all')
+
+  const markup = page.locator('[data-action="proposal-markup"]')
+  await markup.selectOption('none')
+  await expect(page.locator('.document-surface')).toHaveAttribute('data-proposal-markup', 'none')
+  await expect(page.locator('.sm-proposal-ins')).toBeHidden()
+  // Hidden is not gone: the bar still counts, and says the markup is hidden.
+  await expect(page.locator('.sm-proposal-bar')).toContainText('1 proposed change · markup hidden')
+  expect(await markdown(page)).toContain(PASSAGE)
+
+  await markup.selectOption('simple')
+  await expect(page.locator('.sm-proposal-ins')).toBeVisible()
+  await expect(page.locator('.document-surface')).toHaveAttribute('data-proposal-markup', 'simple')
+
+  // The choice is remembered.
+  await page.reload()
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await expect(page.locator('.document-surface')).toHaveAttribute('data-proposal-markup', 'simple')
+})

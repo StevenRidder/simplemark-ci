@@ -121,6 +121,8 @@ export interface AppComposition {
    * localStorage so a reload can prove the same promise.
    */
   readonly notes: {
+    /** Makes every thread save/remove reject, to prove failures are loud. */
+    breakPersistenceForTest(broken: boolean): void
     setThreadsForTest(threads: readonly Thread[]): void
     selectTextForTest(quote: string): boolean
     /** Optional NOTES-8 hook. Called after the editor receives the threads. */
@@ -1337,7 +1339,20 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       readId: async (handle) => handle,
       ensureId: async (handle) => ({ id: handle }),
     }
-  const persist: ThreadStore = ports.threads ?? new LocalThreadStore(storage)
+  const basePersist: ThreadStore = ports.threads ?? new LocalThreadStore(storage)
+  /** Test tap: proves persistence failures are loud, not that they cannot happen. */
+  let persistBrokenForTest = false
+  const persist: ThreadStore = {
+    list: (noteKey) => basePersist.list(noteKey),
+    save: (thread) =>
+      persistBrokenForTest
+        ? Promise.reject(new Error('persistence broken for test'))
+        : basePersist.save(thread),
+    remove: (noteKey, threadId) =>
+      persistBrokenForTest
+        ? Promise.reject(new Error('persistence broken for test'))
+        : basePersist.remove(noteKey, threadId),
+  }
   const store: ThreadStore = {
     list: (noteKey) => persist.list(noteKey),
     save: async (thread) => {
@@ -1369,6 +1384,19 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     notesLoadError = error instanceof Error ? error.message : String(error)
   }
 
+  /**
+   * Every note persistence failure is loud (BUG-18, fail-and-fix-early).
+   *
+   * Six lifecycle actions ran `void store.save(...)` with no rejection path —
+   * the identical silence that let a morning's notes look saved while being
+   * persisted nowhere. A failure names its action in the status line; nothing
+   * is retried and nothing pretends.
+   */
+  const notesPersistFailed = (what: string) => (error: unknown): void => {
+    const message = error instanceof Error ? error.message : String(error)
+    chrome.setStatus('error', `${what} was not saved — ${message}`)
+  }
+
   const persistDerivedAnchors = async (): Promise<void> => {
     if (editor === undefined) return
     const derived = editor.currentNoteAnchors()
@@ -1391,7 +1419,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     const thread = noteThreads.find((candidate) => candidate.id === waitingReattachId)
     if (thread === undefined) return
     waitingReattachId = undefined
-    void store.save({ ...thread, anchor }).then(() => paintNotes())
+    void store.save({ ...thread, anchor }).then(() => paintNotes()).catch(notesPersistFailed('The note’s new passage'))
   }
 
   /** Note ids and turn counts the rail last painted, to notice a real change. */
@@ -1432,30 +1460,30 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         waitingReattachId = undefined
         const thread = noteThreads.find((candidate) => candidate.id === id)
         if (thread === undefined) return
-        void store.save(resolveThread(thread)).then(() => paintNotes())
+        void store.save(resolveThread(thread)).then(() => paintNotes()).catch(notesPersistFailed('Resolving the note'))
       },
       reopen: (id) => {
         waitingReattachId = undefined
         const thread = noteThreads.find((candidate) => candidate.id === id)
         if (thread === undefined) return
-        void store.save({ ...thread, state: 'open' }).then(() => paintNotes())
+        void store.save({ ...thread, state: 'open' }).then(() => paintNotes()).catch(notesPersistFailed('Reopening the note'))
       },
       editBody: (id, body) => {
         const thread = noteThreads.find((candidate) => candidate.id === id)
         if (thread === undefined) return
-        void store.save({ ...thread, body }).then(() => paintNotes())
+        void store.save({ ...thread, body }).then(() => paintNotes()).catch(notesPersistFailed('The note edit'))
       },
       detach: (id) => {
         waitingReattachId = undefined
         const thread = noteThreads.find((candidate) => candidate.id === id)
         if (thread === undefined) return
-        void store.save(detachThread(thread)).then(() => paintNotes())
+        void store.save(detachThread(thread)).then(() => paintNotes()).catch(notesPersistFailed('Keeping the note'))
       },
       remove: (id) => {
         if (waitingReattachId === id) waitingReattachId = undefined
         const thread = noteThreads.find((candidate) => candidate.id === id)
         if (thread === undefined) return
-        void store.remove(thread.noteKey, id).then(() => paintNotes())
+        void store.remove(thread.noteKey, id).then(() => paintNotes()).catch(notesPersistFailed('Deleting the note'))
       },
       reattach: (id) => {
         waitingReattachId = id
@@ -1589,14 +1617,19 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     })
     try {
       await store.save(next)
-    } catch {
-      // A sidecar that cannot be written costs the transcript, not the edit
-      // that already landed. Keep the turn in memory so the rail still shows it.
+    } catch (error) {
+      // The turn stays on screen so nothing typed is lost — and the person is
+      // told it is unsaved, instead of discovering that at the next open.
       noteThreads = [...noteThreads.filter((candidate) => candidate.id !== id), next]
+      const message = error instanceof Error ? error.message : String(error)
+      chrome.setStatus('error', `The reply is on screen but was not saved — ${message}`)
     }
     paintNotes()
   }
   const notes: AppComposition['notes'] = {
+    breakPersistenceForTest: (broken: boolean) => {
+      persistBrokenForTest = broken
+    },
     setThreadsForTest: (threads) => {
       waitingReattachId = undefined
       closeNoteStack()

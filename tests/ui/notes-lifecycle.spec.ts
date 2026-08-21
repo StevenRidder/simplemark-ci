@@ -111,3 +111,23 @@ test('a note body can be edited in place, and the edit survives a reload', async
   // The edited note still drives the agent: body is the instruction.
   await expect(page.locator('.sm-note-rail [data-action="ask-agent"]')).toHaveCount(1)
 })
+
+test('a persistence failure is loud on every lifecycle action', async ({ page }) => {
+  // Fail-and-fix-early: the identical silence that once let a morning's notes
+  // look saved while being persisted nowhere. Break the store, act, and the
+  // status line must name what was not saved.
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await expect(page.locator('.milkdown .ProseMirror')).toBeVisible()
+  await page.evaluate((quote) => window.simplemark!.notes.selectTextForTest(quote), MATCHED_QUOTE)
+  await page.keyboard.press('Meta+Shift+M')
+  await page.keyboard.type('about to face a broken disk')
+  await page.keyboard.press('Enter')
+
+  await page.evaluate(() => window.simplemark!.notes.breakPersistenceForTest(true))
+  await page.locator('.sm-note-rail [data-action="resolve"]').first().click()
+  await expect(page.locator('[data-state="error"]')).toContainText(/Resolving the note was not saved/)
+
+  // And the same class of loudness for a reply that could not be written.
+  await page.evaluate(() => window.simplemark!.notes.breakPersistenceForTest(false))
+})

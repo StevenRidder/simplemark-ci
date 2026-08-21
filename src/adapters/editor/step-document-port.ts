@@ -23,6 +23,7 @@ import type {
   StepDocumentRange,
   StepJson,
 } from '../../application/index.js'
+import { splitClosedFrontMatter } from '../../domain/index.js'
 import { calloutRemark, calloutSchema } from './callout.js'
 import { codeBlockMetaSchema } from './code-fence-meta.js'
 import { highlightRemark, highlightSchema } from './highlight-mark.js'
@@ -234,8 +235,30 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
     this.#serialize = milkdown.ctx.get(serializerCtx)
   }
 
+  /**
+   * Parses in the editor's coordinate space (BUG-23).
+   *
+   * The live editor strips closed front matter before it parses
+   * (`prepareMarkdownForEditor`), so every document position it hands over —
+   * a selection, a located passage, a section — counts from the first body
+   * node. This port used to parse the whole file, which put the front matter
+   * into the document as a thematic break and a heading ahead of the body:
+   * every positioned agent edit on an annotated note landed inside the `id:`
+   * line, and the serialized result carried the front matter as body. The
+   * matter is split off here and put back on serialization, exactly as the
+   * editor's `restoreMarkdown` does, so both parses describe one document.
+   */
+  #parseBody(markdown: string): { readonly matter: string; readonly doc: ProseNode } {
+    const split = splitClosedFrontMatter(markdown)
+    return { matter: split.matter, doc: this.#parse(split.body) }
+  }
+
+  #serializeWith(matter: string, doc: ProseNode): string {
+    return matter + this.#serialize(doc)
+  }
+
   applySteps(markdown: string, stepsJson: StepBatch): StepApplicationResult {
-    const doc = this.#parse(markdown)
+    const { matter, doc } = this.#parseBody(markdown)
     if (!validDocument(doc)) return { ok: false, kind: 'invalid_schema' }
 
     const steps = decodeSteps(this.milkdown.schema, stepsJson)
@@ -245,7 +268,7 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
     if (!applied.ok) return applied
     if (!validDocument(applied.doc)) return { ok: false, kind: 'invalid_schema' }
 
-    return { ok: true, markdown: this.#serialize(applied.doc), steps: toStepBatch(steps) }
+    return { ok: true, markdown: this.#serializeWith(matter, applied.doc), steps: toStepBatch(steps) }
   }
 
   rebaseSteps(
@@ -253,7 +276,7 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
     localJson: StepBatch,
     committedBatches: readonly StepBatch[],
   ): StepApplicationResult {
-    const base = this.#parse(baseMarkdown)
+    const { matter, doc: base } = this.#parseBody(baseMarkdown)
     if (!validDocument(base)) return { ok: false, kind: 'invalid_schema' }
 
     const local = decodeSteps(this.milkdown.schema, localJson)
@@ -302,7 +325,7 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
 
     return {
       ok: true,
-      markdown: this.#serialize(transform.doc),
+      markdown: this.#serializeWith(matter, transform.doc),
       steps: toStepBatch(rebased),
     }
   }
@@ -312,7 +335,7 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
     inverseJson: StepBatch,
     laterBatches: readonly StepBatch[],
   ): StepApplicationResult {
-    const current = this.#parse(currentMarkdown)
+    const { matter, doc: current } = this.#parseBody(currentMarkdown)
     if (!validDocument(current)) return { ok: false, kind: 'invalid_schema' }
 
     const inverse = decodeSteps(this.milkdown.schema, inverseJson)
@@ -335,7 +358,7 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
       if (!validDocument(applied.doc)) return { ok: false, kind: 'invalid_schema' }
       return {
         ok: true,
-        markdown: this.#serialize(applied.doc),
+        markdown: this.#serializeWith(matter, applied.doc),
         steps: toStepBatch(applied.steps),
       }
     }
@@ -365,7 +388,7 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
 
     return {
       ok: true,
-      markdown: this.#serialize(transform.doc),
+      markdown: this.#serializeWith(matter, transform.doc),
       steps: toStepBatch(transform.steps),
     }
   }
@@ -444,7 +467,7 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
   }
 
   invertSteps(markdown: string, stepsJson: StepBatch): StepBatch | null {
-    const doc = this.#parse(markdown)
+    const { doc } = this.#parseBody(markdown)
     if (!validDocument(doc)) return null
 
     const steps = decodeSteps(this.milkdown.schema, stepsJson)
@@ -466,7 +489,7 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
   }
 
   replaceAllSteps(markdown: string, replacement: string): MarkdownStepResult {
-    const doc = this.#parse(markdown)
+    const { doc } = this.#parseBody(markdown)
     if (!validDocument(doc)) return { ok: false, kind: 'invalid_schema' }
     return this.markdownToSteps(markdown, replacement, { from: 0, to: doc.content.size })
   }
@@ -476,7 +499,7 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
     replacement: string,
     range?: StepDocumentRange,
   ): MarkdownStepResult {
-    const doc = this.#parse(markdown)
+    const { doc } = this.#parseBody(markdown)
     const replacementDoc = this.#parse(replacement)
     if (!validDocument(doc) || !validDocument(replacementDoc)) {
       return { ok: false, kind: 'invalid_schema' }

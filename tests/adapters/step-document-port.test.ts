@@ -183,3 +183,70 @@ describe('step document port', () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 3_100))
   })
 })
+
+/**
+ * BUG-23. The live editor strips closed front matter before parsing, so the
+ * positions it hands this port count from the first body node. Parsing the
+ * whole file put the front matter into the document ahead of the body: a
+ * positioned agent edit on an annotated note landed inside the `id:` line and
+ * the serialized result carried a second, torn copy of the front matter as
+ * body. Every method that takes Markdown has to work in the editor's space.
+ */
+describe('front matter stays front matter (BUG-23)', () => {
+  const MATTER = '---\nid: abc\ncomments: .simplemark/abc.json\n---\n\n'
+  const BODY = '# Tiny probe\n\nOne paragraph. Nothing else.\n'
+  const DOCUMENT = MATTER + BODY
+  // Just after the heading node in the editor's document — which has no front matter in it.
+  const AFTER_HEADING = 12
+
+  it('inserts at an editor position and keeps the front matter once, as front matter', async () => {
+    const stepPort = await port()
+    const steps = stepPort.markdownToSteps(DOCUMENT, 'Inserted.', { from: AFTER_HEADING, to: AFTER_HEADING })
+    expect(steps).toMatchObject({ ok: true })
+    if (!steps.ok) throw new Error(steps.kind)
+    const result = stepPort.applySteps(DOCUMENT, steps.steps)
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) throw new Error(result.kind)
+    expect(result.markdown).toBe(`${MATTER}# Tiny probe\n\nInserted.\n\nOne paragraph. Nothing else.\n`)
+  })
+
+  it('replaces the whole body without touching the front matter', async () => {
+    const stepPort = await port()
+    const steps = stepPort.replaceAllSteps(DOCUMENT, 'New body.')
+    expect(steps).toMatchObject({ ok: true })
+    if (!steps.ok) throw new Error(steps.kind)
+    const result = stepPort.applySteps(DOCUMENT, steps.steps)
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) throw new Error(result.kind)
+    expect(result.markdown).toBe(`${MATTER}New body.\n`)
+  })
+
+  it('inverts and reverts in the same space, front matter intact both ways', async () => {
+    const stepPort = await port()
+    const steps = stepPort.markdownToSteps(DOCUMENT, 'Inserted.', { from: AFTER_HEADING, to: AFTER_HEADING })
+    if (!steps.ok) throw new Error(steps.kind)
+    const applied = stepPort.applySteps(DOCUMENT, steps.steps)
+    if (!applied.ok) throw new Error(applied.kind)
+    const inverse = stepPort.invertSteps(DOCUMENT, steps.steps)
+    expect(inverse).not.toBeNull()
+    const reverted = stepPort.revertSteps(applied.markdown, inverse!, [])
+    expect(reverted).toMatchObject({ ok: true })
+    if (!reverted.ok) throw new Error(reverted.kind)
+    expect(reverted.markdown).toBe(DOCUMENT)
+  })
+
+  it('rebases a body-positioned batch over a committed one and keeps one front matter', async () => {
+    const stepPort = await port()
+    const mine = stepPort.markdownToSteps(DOCUMENT, 'Mine.', { from: AFTER_HEADING, to: AFTER_HEADING })
+    const theirs = stepPort.markdownToSteps(DOCUMENT, 'Theirs.', { from: AFTER_HEADING, to: AFTER_HEADING })
+    if (!mine.ok || !theirs.ok) throw new Error('conversion failed')
+    const rebased = stepPort.rebaseSteps(DOCUMENT, mine.steps, [theirs.steps])
+    expect(rebased).toMatchObject({ ok: true })
+    if (!rebased.ok) throw new Error(rebased.kind)
+    expect(rebased.markdown.startsWith(MATTER)).toBe(true)
+    expect(rebased.markdown.slice(MATTER.length)).not.toContain('---')
+    expect(rebased.markdown).toContain('Mine.')
+    expect(rebased.markdown).toContain('Theirs.')
+    expect(rebased.markdown).toContain('One paragraph. Nothing else.')
+  })
+})

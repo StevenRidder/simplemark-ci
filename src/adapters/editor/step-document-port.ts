@@ -179,9 +179,37 @@ async function createHeadlessMilkdown(): Promise<HeadlessMilkdown> {
   }
 }
 
+/**
+ * Milkdown's list schemas validate `spread` as a boolean but their Markdown
+ * parser stores it as the string "true"/"false" (preset-commonmark). Live
+ * nodes never hit the validator; anything rebuilt from JSON does, and throws
+ * — so every step carrying a list failed to apply (BUG-28). Coerced at the
+ * one seam all steps cross, in both directions.
+ */
+const LIST_NODES = new Set(['bullet_list', 'ordered_list', 'list_item'])
+
+export function normalizeListSpreadJson(step: StepJson): StepJson {
+  return normalizeListSpread(step) as StepJson
+}
+
+function normalizeListSpread(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeListSpread)
+  if (value === null || typeof value !== 'object') return value
+  const record = value as Record<string, unknown>
+  const next: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(record)) next[key] = normalizeListSpread(entry)
+  if (typeof next['type'] === 'string' && LIST_NODES.has(next['type']) && typeof next['attrs'] === 'object' && next['attrs'] !== null) {
+    const attrs = { ...(next['attrs'] as Record<string, unknown>) }
+    if (attrs['spread'] === 'true') attrs['spread'] = true
+    if (attrs['spread'] === 'false') attrs['spread'] = false
+    next['attrs'] = attrs
+  }
+  return next
+}
+
 function decodeSteps(schema: Schema, stepsJson: StepBatch): Step[] | null {
   try {
-    return stepsJson.map((stepJson) => Step.fromJSON(schema, stepJson))
+    return stepsJson.map((stepJson) => Step.fromJSON(schema, normalizeListSpread(stepJson) as StepJson))
   } catch {
     return null
   }
@@ -225,7 +253,7 @@ function validDocument(doc: ProseNode): boolean {
 }
 
 function toStepBatch(steps: readonly Step[]): StepBatch {
-  return steps.map((step) => step.toJSON() as StepJson)
+  return steps.map((step) => normalizeListSpread(step.toJSON()) as StepJson)
 }
 
 class MilkdownStepDocumentPort implements StepDocumentPort {
@@ -506,22 +534,46 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
     range?: StepDocumentRange,
   ): MarkdownStepResult {
     const { doc } = this.#parseBody(markdown)
-    const replacementDoc = this.#parse(replacement)
+    // A replacement is body Markdown. A model that resends the whole note
+    // includes its front matter (BUG-28); the fences would otherwise become a
+    // thematic break and a heading inside the passage.
+    const replacementDoc = this.#parse(splitClosedFrontMatter(replacement).body)
     if (!validDocument(doc) || !validDocument(replacementDoc)) {
       return { ok: false, kind: 'invalid_schema' }
     }
 
-    try {
-      const transform = new Transform(doc)
-      const from = range?.from ?? doc.content.size
-      const to = range?.to ?? from
-      transform.replaceRange(from, to, new Slice(replacementDoc.content, 0, 0))
-      const next = transform.doc
-      if (!validDocument(next)) return { ok: false, kind: 'invalid_schema' }
-      return { ok: true, steps: toStepBatch(transform.steps) }
-    } catch {
-      return { ok: false, kind: 'invalid_step' }
+    const from = range?.from ?? doc.content.size
+    const to = range?.to ?? from
+    const slice = new Slice(replacementDoc.content, 0, 0)
+    const attempt = (start: number, end: number): MarkdownStepResult | undefined => {
+      try {
+        const transform = new Transform(doc)
+        transform.replaceRange(start, end, slice)
+        if (!validDocument(transform.doc)) return undefined
+        return { ok: true, steps: toStepBatch(transform.steps) }
+      } catch {
+        return undefined
+      }
     }
+    const direct = attempt(from, to)
+    if (direct !== undefined) return direct
+    // A multi-block rewrite of a passage that sits inside a list item cannot
+    // be fitted into its paragraph (BUG-28): a heading or a second paragraph
+    // has no place there. Widen to the enclosing list item, then to the
+    // enclosing top-level block, so the rewrite lands where the passage was
+    // instead of refusing with a code the reader cannot act on.
+    if (range !== undefined && from <= doc.content.size && to <= doc.content.size) {
+      const $from = doc.resolve(from)
+      const $to = doc.resolve(to)
+      for (let depth = Math.min($from.depth, $to.depth); depth >= 1; depth -= 1) {
+        if ($from.node(depth) !== $to.node(depth)) continue
+        const name = $from.node(depth).type.name
+        if (name !== 'list_item' && name !== 'listItem' && depth !== 1) continue
+        const widened = attempt($from.before(depth), $from.after(depth))
+        if (widened !== undefined) return widened
+      }
+    }
+    return { ok: false, kind: 'invalid_step' }
   }
 }
 

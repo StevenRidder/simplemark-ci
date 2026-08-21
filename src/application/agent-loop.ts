@@ -1,3 +1,4 @@
+import { splitClosedFrontMatter } from '../domain/index.js'
 import {
   grantScope,
   mayApply,
@@ -429,9 +430,13 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       providerTurn = await input.provider.complete({
         scope: granted.token,
         instruction: control.instruction,
-        noteMarkdown: input.staged === undefined
-          ? input.session.snapshot().markdown
-          : input.staged.view(input.session.snapshot().markdown),
+        // The body only (BUG-28): shown the front matter, a model echoes it
+        // into its rewrite, and `id:` / `comments:` end up proposed as prose.
+        noteMarkdown: splitClosedFrontMatter(
+          input.staged === undefined
+            ? input.session.snapshot().markdown
+            : input.staged.view(input.session.snapshot().markdown),
+        ).body,
         messages,
         tools: TOOLS,
         ...(input.staged === undefined ? {} : { staging: true }),
@@ -595,10 +600,14 @@ function dispatchTool(input: {
     if (!mayWriteAtCall(input.capability, input.inviter)) {
       return { kind: 'error', message: 'This capability cannot write.' }
     }
-    const markdown = textOf(args.markdown)
-    if (markdown === undefined) {
+    const rawMarkdown = textOf(args.markdown)
+    if (rawMarkdown === undefined) {
       return { kind: 'error', message: `${input.name} requires markdown.` }
     }
+    // Body only (BUG-28): a model that resends the whole note includes its
+    // front matter; stripped here so neither a proposal, its virtual view,
+    // nor a direct write ever carries `id:` / `comments:` as prose.
+    const markdown = splitClosedFrontMatter(rawMarkdown).body
     const current = input.session.snapshot()
     // An append has no position of its own to give. Leaving the range absent
     // lets the step port use the end of the document it just parsed; deriving

@@ -1383,6 +1383,18 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
 
   const noteHandleForTally = (): string => options.noteRowId?.() ?? session.documentHandle()
 
+  /** A step-port refusal in the reader's terms; the code stays for the log. */
+  const describeStepFailure = (reason: string): string => {
+    switch (reason) {
+      case 'invalid_step': return 'the proposed text does not fit where the passage is'
+      case 'invalid_schema': return 'the proposed text could not be read as a document'
+      case 'rebase_failed': return 'the document changed too much since it was proposed'
+      case 'capability_denied': return 'this document does not take step edits'
+      case 'invalid_version': return 'the document moved on; ask again'
+      default: return reason
+    }
+  }
+
   /** "Proposed: <name> — at the end of the note" / "— at “quote…”". */
   const describeProposalPlace = (proposal: { readonly name: string; readonly kind: 'append' | 'replace'; readonly quote: string }, text: string): string => {
     if (proposal.kind === 'append') return `Proposed: ${proposal.name} — at the end of the note`
@@ -1505,7 +1517,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     })
     if (!applied.ok) {
       acceptedProposalRevisions.delete(session.snapshot().revision + 1)
-      chrome.setStatus('error', `Could not accept “${proposal.name}” — ${applied.reason}.`)
+      chrome.setStatus('error', `Could not accept — ${describeStepFailure(applied.reason)} (“${proposal.name}”).`)
       return false
     }
     proposals.remove(id)

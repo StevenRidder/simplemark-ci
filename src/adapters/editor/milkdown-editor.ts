@@ -64,7 +64,7 @@ import type {
   StepBatch,
   StepJson,
 } from '../../application/index.js'
-import { looksLikeMermaid, looksLikeSvg, withFenceMetaKey } from '../../domain/index.js'
+import { looksLikeMermaid, looksLikeSvg, splitClosedFrontMatter, withFenceMetaKey } from '../../domain/index.js'
 import type { Anchor, Thread } from '../../domain/index.js'
 import { AssetImageNodeView } from './asset-image-node-view.js'
 import { codeBlockMetaSchema } from './code-fence-meta.js'
@@ -94,6 +94,7 @@ import {
 } from './note-decorations.js'
 import { proposalsPlugin, setProposals, type ProposalDecorationItem } from './proposal-decorations.js'
 import { proposalSpans, type ProposalSpans } from './changeset-diff.js'
+import { normalizeListSpreadJson } from './step-document-port.js'
 import {
   agentScopeDecoration,
   attributionKey,
@@ -334,7 +335,7 @@ export class MilkdownEditor {
       try {
         let transaction = view.state.tr
         for (const json of steps) {
-          const step = Step.fromJSON(view.state.schema, json)
+          const step = Step.fromJSON(view.state.schema, normalizeListSpreadJson(json))
           if (transaction.maybeStep(step).failed !== null) return false
         }
         // A remote batch stays out of the person's undo stack — except one a
@@ -2070,7 +2071,8 @@ export class MilkdownEditor {
   proposalSpans(from: number, to: number, markdown: string): ProposalSpans {
     return this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
-      const replacement = ctx.get(parserCtx)(markdown)
+      // Body only, as the step port parses it (BUG-28).
+      const replacement = ctx.get(parserCtx)(splitClosedFrontMatter(markdown).body)
       return proposalSpans(view.state.doc, from, to, replacement)
     })
   }

@@ -106,6 +106,8 @@ describe('the /v1/responses request', () => {
     expect(String(body()['instructions'])).toContain('Markdown idiom')
     // BUG-27: a question in a note is answered, not acted on.
     expect(String(body()['instructions'])).toContain('answer it in your reply and change nothing')
+    // BUG-28: the scope is the passage, never the whole note.
+    expect(String(body()['instructions'])).toContain('replaces only the passage in scope')
   })
 
   it('refuses to call out at all when nothing is configured', async () => {

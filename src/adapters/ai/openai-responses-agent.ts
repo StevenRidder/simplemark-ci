@@ -213,6 +213,10 @@ export class OpenAiResponsesAgentPort implements AgentProviderPort {
           // BUG-27: a note that asks "how do we know this is correct?" got a
           // new section written into the document. Questions are answered in
           // the reply; the document changes only when asked to change.
+          // BUG-28: a rewrite came back as the entire note, front matter
+          // included, over one bullet. The scope is the passage.
+          'Your Markdown replaces only the passage in scope. Never resend the',
+          'whole note, and never include front matter (id:, comments:).',
           'If the instruction asks a question, answer it in your reply and',
           'change nothing. Edit the note only when the instruction asks for',
           'a change to the note.',

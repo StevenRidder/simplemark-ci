@@ -278,3 +278,52 @@ describe('diffMarkdown (prosemirror-changeset)', () => {
     expect(tokens.some((token) => token.kind === 'deleted')).toBe(false)
   })
 })
+
+/** BUG-28: a multi-block rewrite of a bullet's passage lands instead of refusing. */
+describe('a multi-block replacement inside a list item (BUG-28)', () => {
+  it('widens to the enclosing list item so a heading and paragraphs can land', async () => {
+    const stepPort = await port()
+    const document = '# Evaluation\n\n- Finding first: the agent receives every signal.\n- Second bullet stays.\n'
+    // Positions inside the first bullet's paragraph text.
+    const from = 16
+    const to = from + 'Finding first'.length
+    const steps = stepPort.markdownToSteps(document, '## What happened\n\nDecision: do not promote.\n\nIt closes more leaks.', { from, to })
+    expect(steps).toMatchObject({ ok: true })
+    if (!steps.ok) throw new Error(steps.kind)
+    const result = stepPort.applySteps(document, steps.steps)
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) throw new Error(result.kind)
+    expect(result.markdown).toContain('What happened')
+    expect(result.markdown).toContain('Decision: do not promote.')
+    expect(result.markdown).toContain('Second bullet stays.')
+    expect(result.markdown).not.toContain('Finding first')
+  })
+})
+
+/** BUG-28: a replacement that carries a list must survive the JSON seam. */
+describe('list attributes across the step JSON seam (BUG-28)', () => {
+  it('a replacement containing a bullet list applies instead of failing validation', async () => {
+    const stepPort = await port()
+    const document = '# Evaluation\n\n- Finding first.\n- Second bullet stays.\n\nClosing paragraph.\n'
+    const steps = stepPort.markdownToSteps(document, '- Finding first, rewritten.\n- And a new one.\n', { from: 15, to: 15 + 'Finding first.'.length })
+    expect(steps).toMatchObject({ ok: true })
+    if (!steps.ok) throw new Error(steps.kind)
+    const result = stepPort.applySteps(document, steps.steps)
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) throw new Error(result.kind)
+    expect(result.markdown).toContain('Finding first, rewritten.')
+    expect(result.markdown).toContain('And a new one.')
+    expect(result.markdown).toContain('Second bullet stays.')
+  })
+
+  it('an appended list applies', async () => {
+    const stepPort = await port()
+    const document = 'Intro.\n'
+    const steps = stepPort.markdownToSteps(document, '1. one\n2. two\n')
+    if (!steps.ok) throw new Error(steps.kind)
+    const result = stepPort.applySteps(document, steps.steps)
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) throw new Error(result.kind)
+    expect(result.markdown).toContain('1. one')
+  })
+})

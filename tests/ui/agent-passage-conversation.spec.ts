@@ -132,17 +132,19 @@ test('the note body is the instruction the agent receives', async ({ page }) => 
     .toBe('Turn this into a three-step list.')
 })
 
-test('a composer appears only once there is an agent in the thread', async ({ page }) => {
+test('every note takes replies; Redirect appears once an agent joins', async ({ page }) => {
   await noteOnPassage(page, 'Tighten this.')
-  // A plain note is a note: no chat box on a document nobody invited anything
-  // into.
-  await expect(page.locator('.sm-note-rail-composer')).toHaveCount(0)
+  // APP-41: a note is a thread of one from birth — the composer is there, and
+  // the only thing missing is a generation to redirect.
+  const composer = page.locator('.sm-note-rail-composer')
+  await expect(composer).toHaveCount(1)
+  await expect(composer.locator('[data-action="leave-note"]')).toBeVisible()
+  await expect(composer.locator('[data-action="redirect-now"]')).toHaveCount(0)
 
   await scriptAgent(page, 'Beta, tightened.', 'Tightened it.')
   await page.locator('.sm-note-rail [data-thread="t1"] [data-action="ask-agent"]').click()
   await expect(page.locator(editor)).toContainText('Beta, tightened.')
 
-  const composer = page.locator('.sm-note-rail-composer')
   await expect(composer).toHaveCount(1)
   await expect(composer.locator('[data-action="redirect-now"]')).toBeVisible()
   await expect(composer.locator('[data-action="leave-note"]')).toBeVisible()
@@ -322,4 +324,32 @@ test('Ask agent appears only once the note has been written', async ({ page }) =
     },
   ]), PASSAGE)
   await expect(row.locator('[data-action="ask-agent"]')).toBeVisible()
+})
+
+test('turns carry bylines, and a human reply persists on a plain note', async ({ page }) => {
+  // A real note, through the real store — the reload leg needs persistence,
+  // which the fixture threads deliberately do not have.
+  await page.goto('/')
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  await expect(page.locator(editor)).toBeVisible()
+  await page.evaluate(() => window.simplemark!.notes.selectTextForTest('This document is the demo.'))
+  await page.keyboard.press('Meta+Shift+M')
+  await page.keyboard.type('needs a second look tomorrow')
+  await page.keyboard.press('Enter')
+
+  const row = page.locator('.sm-note-rail article').first()
+  // The opening turn is yours, and says so (APP-41).
+  await expect(row.locator('.sm-note-rail-byline').first()).toContainText('You')
+
+  await row.locator('.sm-note-rail-input').fill('checked — still true after the call')
+  await row.locator('[data-action="leave-note"]').click()
+  await expect(row).toContainText('checked — still true after the call')
+  await expect(row.locator('.sm-note-rail-byline')).toHaveCount(2)
+
+  // A reply is a stored turn, not a rendering — it survives a reload.
+  await page.reload()
+  await page.waitForFunction(() => window.simplemark !== undefined)
+  const after = page.locator('.sm-note-rail article').first()
+  await expect(after).toContainText('checked — still true after the call')
+  await expect(after.locator('.sm-note-rail-byline').nth(1)).toContainText('You')
 })

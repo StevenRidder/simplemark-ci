@@ -5791,3 +5791,8 @@ section.editor::-webkit-scrollbar {
 .sm-agent-scope-menu { position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; right: 0; max-height: 220px; overflow: auto; background: var(--paper, Canvas); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.14); display: flex; flex-direction: column; }
 .sm-agent-scope-menu button { text-align: left; font-size: 12px; padding: 7px 10px; border: 0; background: transparent; cursor: pointer; }
 .sm-agent-scope-menu button:hover { background: color-mix(in srgb, var(--line) 40%, transparent); }
+
+/* Turn bylines (APP-41): who said it, and when. */
+.sm-note-rail-byline { margin: 8px 0 2px; font: 500 10px/1.2 ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in srgb, var(--ink, CanvasText) 48%, transparent); }
+.sm-note-rail-byline[data-author="agent"] { color: color-mix(in srgb, #4a5b8c 78%, CanvasText 22%); }
+.sm-note-rail-byline:first-child, article > .sm-note-rail-byline:first-of-type { margin-top: 0; }

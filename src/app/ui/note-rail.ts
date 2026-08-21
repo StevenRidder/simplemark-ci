@@ -104,6 +104,16 @@ export function renderNoteRail(
     const conversational = hasAgentTurn(thread)
     row.dataset['conversation'] = String(conversational)
     for (const turn of threadTurns(thread)) {
+      // Who said it, and when — stored since the beginning, painted never
+      // (APP-41). "You" is the one name that needs no configuration.
+      const byline = document.createElement('p')
+      byline.className = 'sm-note-rail-byline'
+      byline.dataset['author'] = turn.author
+      const stamp = turnStamp(turn.createdAt)
+      byline.textContent = stamp === undefined
+        ? turnAuthorLabel(turn.author)
+        : `${turnAuthorLabel(turn.author)} · ${stamp}`
+      row.append(byline)
       const body = document.createElement('p')
       body.className = 'sm-note-rail-body'
       body.dataset['author'] = turn.author
@@ -138,11 +148,11 @@ export function renderNoteRail(
       row.append(hint)
     }
 
-    // The composer, once there is an agent in the thread to speak to. Before
-    // that the note is a note, and a composer would be a chat box on a document
-    // nobody has invited anything into.
-    if (conversational && actions.sendTurn !== undefined) {
-      row.append(threadComposer(thread.id, actions.sendTurn))
+    // Every note takes replies from birth (APP-41): a note to your later self
+    // is a thread of one, and an agent joining later inherits the whole
+    // conversation. Redirect appears only once there is an agent to redirect.
+    if (actions.sendTurn !== undefined) {
+      row.append(threadComposer(thread.id, actions.sendTurn, conversational))
     }
 
     const buttons = document.createElement('div')
@@ -295,22 +305,41 @@ export function renderNoteStack(host: HTMLElement, threads: readonly Thread[], o
  * communication and control cannot be conflated. A message reading "stop" sent
  * with Leave note is a message (SWITCHBOARD-KERNEL.md §5).
  */
+function turnAuthorLabel(author: string): string {
+  if (author === 'local') return 'You'
+  if (author === 'agent') return 'Agent'
+  return author
+}
+
+/** A short local stamp, or nothing for a turn whose date never parsed. */
+function turnStamp(createdAt: string): string | undefined {
+  const time = Date.parse(createdAt)
+  if (Number.isNaN(time)) return undefined
+  return new Date(time).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  })
+}
+
 function threadComposer(
   threadId: string,
   send: (id: string, mode: 'note' | 'redirect', body: string) => void,
+  conversational: boolean,
 ): HTMLElement {
   const composer = document.createElement('form')
   composer.className = 'sm-note-rail-composer'
 
   const input = document.createElement('textarea')
   input.className = 'sm-note-rail-input'
-  input.setAttribute('aria-label', 'Reply in this passage conversation')
-  input.placeholder = 'To the agent…'
+  input.setAttribute('aria-label', conversational ? 'Reply in this passage conversation' : 'Add a reply to this note')
+  input.placeholder = conversational ? 'To the agent…' : 'Add a reply…'
   composer.append(input)
 
   const buttons = document.createElement('div')
   buttons.className = 'sm-note-rail-actions'
-  for (const mode of ['redirect', 'note'] as const) {
+  // Redirect fences a live generation; a thread with no agent in it has
+  // nothing to fence, and offering the button would imply otherwise.
+  const modes = conversational ? (['redirect', 'note'] as const) : (['note'] as const)
+  for (const mode of modes) {
     const button = document.createElement('button')
     button.type = 'button'
     button.dataset['action'] = mode === 'redirect' ? 'redirect-now' : 'leave-note'

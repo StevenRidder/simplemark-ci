@@ -52,10 +52,10 @@ use tauri_plugin_dialog::DialogExt;
 #[cfg_attr(mobile, allow(dead_code))]
 mod app_icons;
 #[cfg(target_os = "macos")]
-#[cfg(target_os = "macos")]
 mod macos_ax_guard;
 #[cfg(target_os = "macos")]
 mod macos_ax_privacy;
+#[cfg(target_os = "macos")]
 mod macos_context_menu;
 #[cfg(target_os = "macos")]
 mod macos_note_navigation;

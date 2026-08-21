@@ -1733,6 +1733,8 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const movedCards = new Map<string, { readonly left: string; readonly top: string }>()
   /** Cards folded to their opening lines (APP-48), by thread id, for this open document. */
   const collapsedCards = new Set<string>()
+  /** Sizes a person gave cards by their corner handle (APP-53), by thread id. */
+  const cardSizes = new Map<string, { readonly width: string; readonly height: string }>()
   let notesLoadError: string | undefined
   try {
     noteThreads = await persist.list(await noteKeyForOpenDocument())
@@ -2256,6 +2258,27 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
         card.addEventListener('click', (event) => {
           if (`${card.style.left}|${card.style.top}` !== grabbed) event.stopPropagation()
         }, true)
+      }
+      const size = cardSizes.get(id)
+      if (size !== undefined) {
+        card.dataset['resized'] = 'true'
+        card.style.width = size.width
+        card.style.height = size.height
+      }
+      if (card.dataset['sizeWatched'] !== 'true' && typeof ResizeObserver !== 'undefined') {
+        card.dataset['sizeWatched'] = 'true'
+        // The corner handle writes inline width/height as it drags, and the
+        // browser keeps the pointer's release for itself — so the size is
+        // remembered from the observer, not from an event.
+        new ResizeObserver(() => {
+          if (card.style.width === '' && card.style.height === '') return
+          const next = { width: card.style.width, height: card.style.height }
+          const known = cardSizes.get(id)
+          if (known?.width === next.width && known?.height === next.height) return
+          card.dataset['resized'] = 'true'
+          cardSizes.set(id, next)
+          scheduleAlign()
+        }).observe(card)
       }
       const moved = movedCards.get(id)
       if (moved !== undefined) {

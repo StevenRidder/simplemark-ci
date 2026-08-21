@@ -17,6 +17,8 @@
 const UNDRAGGABLE = 'button, a, input, textarea, select, [contenteditable="true"], p, blockquote, pre, ul, ol, li, h1, h2, h3, h4, h5, h6, table, code'
 
 const EDGE_MARGIN = 8
+/** The square at the bottom-right corner a CSS `resize` handle occupies. */
+const RESIZE_CORNER = 18
 /** How much of the panel must remain reachable inside the host. */
 const KEEP_VISIBLE = 48
 
@@ -42,6 +44,11 @@ export function makeDraggable(panel: HTMLElement, options: DraggableOptions = {}
     if (event.button !== 0) return
     const target = event.target
     if (target instanceof Element && target !== grip && target.closest(UNDRAGGABLE) !== null) return
+    // The bottom-right corner belongs to the CSS resize handle (APP-53): a
+    // press there sizes the panel, and a drag that claimed it would make the
+    // panel move instead — the handle never gets the pointer.
+    const box = panel.getBoundingClientRect()
+    if (event.clientX > box.right - RESIZE_CORNER && event.clientY > box.bottom - RESIZE_CORNER) return
     drag = {
       pointerId: event.pointerId,
       x: event.clientX,

@@ -5010,11 +5010,14 @@ section.editor::-webkit-scrollbar {
   right: calc(var(--sm-agent-panel-width) + 16px);
 }
 .sm-agent-panel[data-moved="true"] {
+  /* A floating panel keeps its bottom inside the surface, so its corner
+     handle stays reachable (APP-53); a hand-set height overrides. */
   right: auto;
-  bottom: auto;
-  height: min(720px, calc(100vh - var(--sm-surface-top, 0px) - 16px));
 }
 .sm-agent-panel > .sm-drag-grip { flex: 0 0 auto; }
+/* Sized by hand (APP-53): a corner handle on the panel; its width feeds the
+   document's strip so the column yields exactly what the panel takes. */
+.sm-agent-panel { resize: both; min-width: 220px; min-height: 240px; overflow: hidden; }
 
 .sm-agent-panel-header {
   display: flex;
@@ -5941,6 +5944,15 @@ section.editor::-webkit-scrollbar {
   max-height: min(36vh, 320px);
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* A corner handle (APP-53): size a card how you want; the align pass reads
+     the height, so the cards below follow. */
+  resize: both;
+  min-width: 220px;
+  min-height: 72px;
+}
+.sm-note-rail-host[data-layout="margin"] .sm-note-rail article[data-resized="true"] {
+  max-height: none;
+  right: auto;
 }
 /* A card a person has dragged is a small window: it leaves the column,
    keeps its width, sits above its siblings, and the align pass leaves it

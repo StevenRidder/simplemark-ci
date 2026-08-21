@@ -406,6 +406,17 @@ export function createAgentPanel(options: AgentPanelOptions): AgentPanel {
     // panel becomes a floating window: app.css returns the column and the
     // notes to their docked places when `data-moved` is set.
     makeDraggable(panel)
+    // A hand-sized panel keeps its size while open, and its width is what the
+    // document yields (APP-53): the strip follows the handle.
+    if (typeof ResizeObserver !== 'undefined') {
+      const sizing = new ResizeObserver(() => {
+        if (panel.style.width === '' && panel.style.height === '') return
+        panel.dataset['resized'] = 'true'
+        const surface = panel.closest<HTMLElement>('.document-surface')
+        if (surface !== null && panel.style.width !== '') surface.style.setProperty('--sm-agent-panel-width', panel.style.width)
+      })
+      sizing.observe(panel)
+    }
 
     const list = document.createElement('div')
     list.className = 'sm-agent-messages'

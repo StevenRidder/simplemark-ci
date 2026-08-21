@@ -78,6 +78,13 @@ export interface AgentControllerOptions {
    * run so the setting can change between runs. Undefined applies directly.
    */
   readonly staged?: () => AgentLoopInput['staged'] | undefined
+  /**
+   * Runs before the loop's first provider call (ADR-0014): the moment to
+   * snapshot the document before the agent's words can enter it. Awaited, so
+   * the snapshot lands before the first write; a rejection is reported by
+   * the caller and does not stop the run.
+   */
+  readonly onRunStart?: () => Promise<void> | void
 }
 
 export interface AgentController {
@@ -181,6 +188,7 @@ export function createAgentController(options: AgentControllerOptions): AgentCon
     }
 
     options.panel.setQuestion(undefined)
+    await options.onRunStart?.()
 
     const result = await runAgentLoop({
       session: options.session,

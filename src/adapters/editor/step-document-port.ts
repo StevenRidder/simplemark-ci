@@ -465,6 +465,12 @@ class MilkdownStepDocumentPort implements StepDocumentPort {
     }
   }
 
+  replaceAllSteps(markdown: string, replacement: string): MarkdownStepResult {
+    const doc = this.#parse(markdown)
+    if (!validDocument(doc)) return { ok: false, kind: 'invalid_schema' }
+    return this.markdownToSteps(markdown, replacement, { from: 0, to: doc.content.size })
+  }
+
   markdownToSteps(
     markdown: string,
     replacement: string,

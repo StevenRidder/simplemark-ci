@@ -8,7 +8,7 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 fn threads_dir_path() -> Result<PathBuf, String> {
@@ -856,5 +856,186 @@ mod tests {
     fn degraded_key_matches_the_typescript_note_key_for_path() {
         // node -e "…noteKeyForPath('/tmp/a.md')" → path-39a4d087f4444fa3
         assert_eq!(degraded_key_for_path(Path::new("/tmp/a.md")), "path-39a4d087f4444fa3");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Snapshots beside the document (ADR-0014).
+//
+// A snapshot is the document's exact bytes in
+// `.simplemark/versions/<note-key>/<id>.md`, indexed by `index.json` beside
+// them. "Beside" resolves exactly as it does for threads, so the two kinds of
+// companion file can never disagree about where the document's things live.
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotEntry {
+    pub id: String,
+    pub created_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub trigger: String,
+    pub bytes: u64,
+}
+
+/// Automatic snapshots kept per note; named ones are never pruned.
+const AUTOMATIC_SNAPSHOT_LIMIT: usize = 50;
+
+fn versions_dir(note_key: &str, document_handle: Option<&Path>, intent: Intent) -> Result<PathBuf, String> {
+    let threads = resolve_threads_location(note_key, document_handle, intent)?;
+    let base = threads
+        .path()
+        .parent()
+        .ok_or_else(|| "threads location has no parent".to_string())?
+        .to_path_buf();
+    Ok(base.join("versions").join(note_key))
+}
+
+fn read_snapshot_index(dir: &Path) -> Result<Vec<SnapshotEntry>, String> {
+    let index = dir.join("index.json");
+    if !index.exists() {
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(&index).map_err(|error| error.to_string())?;
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str(&text).map_err(|error| format!("The snapshot index could not be read: {error}"))
+}
+
+fn write_snapshot_index(dir: &Path, entries: &[SnapshotEntry]) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    let text = serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?;
+    write_bytes_atomically(&dir.join("index.json"), text.as_bytes()).map_err(|error| error.to_string())
+}
+
+fn validate_snapshot_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err("snapshot id must be alphanumeric".to_string());
+    }
+    Ok(())
+}
+
+/// Keeps every named snapshot and the newest automatic ones; returns the dropped ids.
+fn prune_snapshots(entries: &mut Vec<SnapshotEntry>) -> Vec<String> {
+    let automatic: Vec<String> = entries
+        .iter()
+        .filter(|entry| entry.label.is_none())
+        .map(|entry| entry.id.clone())
+        .collect();
+    let excess = automatic.len().saturating_sub(AUTOMATIC_SNAPSHOT_LIMIT);
+    let dropped: Vec<String> = automatic.into_iter().take(excess).collect();
+    entries.retain(|entry| !dropped.contains(&entry.id));
+    dropped
+}
+
+#[tauri::command]
+pub async fn list_note_snapshots(
+    note_key: String,
+    document_handle: Option<String>,
+) -> Result<Vec<SnapshotEntry>, String> {
+    crate::off_the_ui_thread(move || {
+        let dir = versions_dir(&note_key, document_handle.as_deref().map(Path::new), Intent::Read)?;
+        read_snapshot_index(&dir)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn write_note_snapshot(
+    note_key: String,
+    document_handle: Option<String>,
+    markdown: String,
+    trigger: String,
+    label: Option<String>,
+) -> Result<SnapshotEntry, String> {
+    crate::off_the_ui_thread(move || {
+        if !matches!(trigger.as_str(), "agent" | "manual" | "restore") {
+            return Err(format!("unknown snapshot trigger: {trigger}"));
+        }
+        let dir = versions_dir(&note_key, document_handle.as_deref().map(Path::new), Intent::Write)?;
+        fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+        let created_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let id = format!("{created_ms:x}-{}", new_id().chars().rev().take(6).collect::<String>());
+        write_bytes_atomically(&dir.join(format!("{id}.md")), markdown.as_bytes())
+            .map_err(|error| error.to_string())?;
+        let entry = SnapshotEntry {
+            id,
+            created_ms,
+            label: label.filter(|text| !text.trim().is_empty()),
+            trigger,
+            bytes: markdown.len() as u64,
+        };
+        let mut entries = read_snapshot_index(&dir)?;
+        entries.push(entry.clone());
+        for dropped in prune_snapshots(&mut entries) {
+            let _ = fs::remove_file(dir.join(format!("{dropped}.md")));
+        }
+        write_snapshot_index(&dir, &entries)?;
+        Ok(entry)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn read_note_snapshot(
+    note_key: String,
+    document_handle: Option<String>,
+    id: String,
+) -> Result<String, String> {
+    crate::off_the_ui_thread(move || {
+        validate_snapshot_id(&id)?;
+        let dir = versions_dir(&note_key, document_handle.as_deref().map(Path::new), Intent::Read)?;
+        fs::read_to_string(dir.join(format!("{id}.md"))).map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_note_snapshot(
+    note_key: String,
+    document_handle: Option<String>,
+    id: String,
+) -> Result<(), String> {
+    crate::off_the_ui_thread(move || {
+        validate_snapshot_id(&id)?;
+        let dir = versions_dir(&note_key, document_handle.as_deref().map(Path::new), Intent::Write)?;
+        let mut entries = read_snapshot_index(&dir)?;
+        entries.retain(|entry| entry.id != id);
+        let _ = fs::remove_file(dir.join(format!("{id}.md")));
+        write_snapshot_index(&dir, &entries)
+    })
+    .await
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    fn entry(id: &str, label: Option<&str>) -> SnapshotEntry {
+        SnapshotEntry { id: id.to_string(), created_ms: 0, label: label.map(String::from), trigger: "agent".into(), bytes: 0 }
+    }
+
+    #[test]
+    fn pruning_keeps_named_snapshots_and_the_newest_automatic_ones() {
+        let mut entries: Vec<SnapshotEntry> = (0..AUTOMATIC_SNAPSHOT_LIMIT + 3)
+            .map(|i| entry(&format!("auto-{i}"), None))
+            .collect();
+        entries.insert(1, entry("named", Some("sent to Brent")));
+        let dropped = prune_snapshots(&mut entries);
+        assert_eq!(dropped, vec!["auto-0", "auto-1", "auto-2"]);
+        assert!(entries.iter().any(|e| e.id == "named"));
+        assert_eq!(entries.iter().filter(|e| e.label.is_none()).count(), AUTOMATIC_SNAPSHOT_LIMIT);
+    }
+
+    #[test]
+    fn snapshot_ids_are_confined_to_a_file_name() {
+        assert!(validate_snapshot_id("1a2b-x9").is_ok());
+        assert!(validate_snapshot_id("../escape").is_err());
+        assert!(validate_snapshot_id("").is_err());
     }
 }

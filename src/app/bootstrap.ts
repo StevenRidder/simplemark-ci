@@ -8,6 +8,9 @@ import type {
   ImageStorePort,
   NoteIdentity,
   ThreadStore,
+  SnapshotStore,
+  SnapshotEntry,
+  BlockChange,
 } from '../application/index.js'
 import {
   appendReply,
@@ -25,6 +28,7 @@ import {
   ProposalQueue,
   locateProposal,
   virtualMarkdown,
+  diffBlocks,
 } from '../application/index.js'
 import { MilkdownEditor } from '../adapters/editor/milkdown-editor.js'
 import type { DiagramController } from '../adapters/editor/milkdown-editor.js'
@@ -45,6 +49,7 @@ import { createWedgeDetector } from './wedge-detector.js'
 import type { AgentEditTally } from './agent-edit-overlay.js'
 import { NEED_SELECTION } from '../adapters/editor/note-capture.js'
 import { LocalThreadStore } from '../adapters/filesystem/local-thread-store.js'
+import { LocalSnapshotStore } from '../adapters/filesystem/local-snapshot-store.js'
 import { noteKeyForPath } from '../adapters/filesystem/tauri-thread-store.js'
 import type { EditorCommand } from './ui/window-chrome.js'
 import { COMMANDS } from '../application/index.js'
@@ -105,6 +110,8 @@ export interface AppPorts {
   readonly images?: ImageStorePort
   /** Native notes store. Absent in the browser shell; bootstrap then uses localStorage. */
   readonly threads?: ThreadStore
+  /** Versions beside the document (ADR-0014). Absent hosts fall back to localStorage. */
+  readonly snapshots?: SnapshotStore
   readonly identity?: NoteIdentity
 }
 
@@ -1296,6 +1303,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       const position = agentChangePositions.get(id)
       if (position !== undefined) editor?.reveal(position)
     },
+    snapshotActions: {
+      snapshots: () => snapshotEntries,
+      snapshotNow: (label) => takeSnapshot('manual', label),
+      restore: (id) => restoreSnapshot(id),
+      compare: (id) => compareSnapshot(id),
+    },
     revert: (id) => {
       const result = session.revert(id)
       if (!result.ok) {
@@ -1439,9 +1452,10 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     }
   }
 
-  const acceptProposal = (id: string): boolean => {
+  const acceptProposal = async (id: string): Promise<boolean> => {
     const proposal = proposals.get(id)
     if (proposal === undefined || editor === undefined) return false
+    await takeSnapshot('agent')
     const text = editor.noteDocumentText()
     const located = locateProposal(text, proposal)
     if (located === undefined) {
@@ -1495,12 +1509,14 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     event.preventDefault()
     const action = button.dataset['action']
     const id = button.dataset['proposal']
-    if (action === 'accept-proposal' && id !== undefined) acceptProposal(id)
+    if (action === 'accept-proposal' && id !== undefined) void acceptProposal(id)
     if (action === 'reject-proposal' && id !== undefined) rejectProposal(id)
     if (action === 'accept-all-proposals') {
-      for (const proposal of [...proposals.list()]) {
-        if (!acceptProposal(proposal.id)) break
-      }
+      void (async () => {
+        for (const proposal of [...proposals.list()]) {
+          if (!(await acceptProposal(proposal.id))) break
+        }
+      })()
     }
     if (action === 'reject-all-proposals') {
       for (const proposal of [...proposals.list()]) rejectProposal(proposal.id)
@@ -1525,6 +1541,10 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     conversation,
     provider: () => agentProvider?.(),
     noteHandle: () => options.noteRowId?.() ?? session.documentHandle(),
+    // Before the agent's words can enter the document (ADR-0014 §2): a direct
+    // run snapshots at start; a proposing run snapshots when a proposal is
+    // accepted, below.
+    onRunStart: () => (loadAgentEditMode(storage) === 'direct' ? takeSnapshot('agent') : undefined),
     // Propose first (ADR-0013) unless Settings says apply directly. Read per
     // run so the setting changes without a restart.
     staged: () =>
@@ -1630,6 +1650,72 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   const notesPersistFailed = (what: string) => (error: unknown): void => {
     const message = error instanceof Error ? error.message : String(error)
     chrome.setStatus('error', `${what} was not saved — ${message}`)
+  }
+
+  /**
+   * Snapshots beside the document (ADR-0014). Taken before the agent's words
+   * can enter the document, named on demand, restored as an ordinary step
+   * transaction so Activity records it and Revert applies.
+   */
+  const snapshotStore: SnapshotStore = ports.snapshots ?? new LocalSnapshotStore(storage)
+  let snapshotEntries: readonly SnapshotEntry[] = []
+  const refreshSnapshots = async (): Promise<void> => {
+    try {
+      snapshotEntries = await snapshotStore.list(await noteKeyForOpenDocument())
+    } catch (error) {
+      chrome.setStatus('error', `Snapshots could not be read — ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    activityTimeline.repaint()
+  }
+  const takeSnapshot = async (trigger: SnapshotEntry['trigger'], label?: string): Promise<void> => {
+    try {
+      await snapshotStore.write(await noteKeyForOpenDocument(), session.snapshot().markdown, {
+        trigger,
+        ...(label === undefined ? {} : { label }),
+      })
+    } catch (error) {
+      chrome.setStatus('error', `The snapshot was not saved — ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    await refreshSnapshots()
+  }
+  const restoreSnapshot = async (id: string): Promise<void> => {
+    const entry = snapshotEntries.find((candidate) => candidate.id === id)
+    if (entry === undefined) return
+    const label = entry.label ?? (entry.trigger === 'agent' ? 'before agent run' : entry.trigger === 'restore' ? 'before restore' : 'snapshot')
+    // The current text is kept first: a restore must itself be restorable.
+    await takeSnapshot('restore')
+    let text: string
+    try {
+      text = await snapshotStore.read(await noteKeyForOpenDocument(), id)
+    } catch (error) {
+      chrome.setStatus('error', `The snapshot could not be read — ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    const converted = stepAdapter.port.replaceAllSteps(session.snapshot().markdown, text)
+    if (!converted.ok) {
+      chrome.setStatus('error', `Could not restore — ${converted.kind}`)
+      return
+    }
+    const applied = session.applySteps({
+      actorId: 'activity',
+      name: `Restore “${label}”`,
+      baseVersion: session.snapshot().revision,
+      steps: converted.steps,
+    })
+    if (!applied.ok) {
+      chrome.setStatus('error', `Could not restore — ${applied.reason}`)
+      return
+    }
+    chrome.setStatus('dirty')
+    chrome.refreshStatistics()
+    paintNotes()
+    activityTimeline.repaint()
+  }
+  const compareSnapshot = async (id: string): Promise<readonly BlockChange[]> => {
+    const text = await snapshotStore.read(await noteKeyForOpenDocument(), id)
+    return diffBlocks(text, session.snapshot().markdown)
   }
 
   const persistDerivedAnchors = async (): Promise<void> => {
@@ -1907,6 +1993,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
     },
   }
   paintNotes()
+  void refreshSnapshots()
   if (notesLoadError !== undefined) {
     chrome.setStatus('error', `Notes for this document could not be read — ${notesLoadError}`)
   }

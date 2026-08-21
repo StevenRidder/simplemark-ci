@@ -31,6 +31,7 @@ import { TauriChartDataReader } from '../adapters/filesystem/tauri-chart-data-re
 import { TauriImageStore } from '../adapters/filesystem/tauri-image-store.js'
 import { TauriNoteIdentity } from '../adapters/filesystem/tauri-note-identity.js'
 import { TauriThreadStore } from '../adapters/filesystem/tauri-thread-store.js'
+import { TauriSnapshotStore } from '../adapters/filesystem/tauri-snapshot-store.js'
 import { VegaLiteRenderer } from '../adapters/renderers/vega-lite-renderer.js'
 import type { FilePort, WorkspaceCatalog } from '../application/index.js'
 import { suggestedMarkdownFileName } from '../domain/index.js'
@@ -1281,6 +1282,10 @@ async function mount(
       links: new TauriDocumentLinkPort(invoke),
       images: new TauriImageStore((command, args) => invoke(command, args)),
       threads: new TauriThreadStore(
+        (command, args) => invoke(command, args),
+        () => options.filePath,
+      ),
+      snapshots: new TauriSnapshotStore(
         (command, args) => invoke(command, args),
         () => options.filePath,
       ),

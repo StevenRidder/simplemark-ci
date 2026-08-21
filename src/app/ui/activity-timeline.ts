@@ -1,4 +1,4 @@
-import type { AcceptedChangeRecord } from '../../application/index.js'
+import type { AcceptedChangeRecord, BlockChange, SnapshotEntry } from '../../application/index.js'
 import { tablerIcon } from './tabler-icons.js'
 
 /**
@@ -31,6 +31,17 @@ export interface ActivityTimelineActions {
   revert(transactionId: string): boolean
 }
 
+/** Snapshots beside the document (ADR-0014), offered from the same surface. */
+export interface SnapshotActions {
+  /** The known snapshots, oldest first. Refreshed by the caller after writes. */
+  readonly snapshots: () => readonly SnapshotEntry[]
+  /** Takes a named snapshot now. */
+  readonly snapshotNow: (label: string) => Promise<void>
+  readonly restore: (id: string) => Promise<void>
+  /** Blocks that differ between the snapshot and the document as it is now. */
+  readonly compare: (id: string) => Promise<readonly BlockChange[]>
+}
+
 export interface ActivityTimeline {
   readonly host: HTMLElement
   open(): void
@@ -56,6 +67,8 @@ export interface ActivityTimelineOptions extends ActivityTimelineActions {
    * row rather than offering a button that goes nowhere.
    */
   readonly positionOf?: (transactionId: string) => number | undefined
+  /** Absent when the host has no snapshot store at all. */
+  readonly snapshotActions?: SnapshotActions
 }
 
 export function createActivityTimeline(options: ActivityTimelineOptions): ActivityTimeline {
@@ -165,7 +178,135 @@ export function createActivityTimeline(options: ActivityTimelineOptions): Activi
     }
 
     panel.append(header, list)
+    if (options.snapshotActions !== undefined) panel.append(snapshotSection(options.snapshotActions))
     return panel
+  }
+
+  /** Where a snapshot's compare view is open, so a repaint keeps it open. */
+  let comparing: string | undefined
+  let compareResult: readonly BlockChange[] | undefined
+
+  function snapshotLabel(entry: SnapshotEntry): string {
+    if (entry.label !== undefined) return entry.label
+    if (entry.trigger === 'agent') return 'Before agent run'
+    if (entry.trigger === 'restore') return 'Before restore'
+    return 'Snapshot'
+  }
+
+  function snapshotStamp(entry: SnapshotEntry): string {
+    return new Date(entry.createdMs).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    })
+  }
+
+  function snapshotSection(actions: SnapshotActions): HTMLElement {
+    const section = document.createElement('section')
+    section.className = 'sm-snapshots'
+    section.setAttribute('aria-label', 'Snapshots')
+
+    const title = document.createElement('h3')
+    title.className = 'sm-snapshots-title'
+    title.textContent = 'Snapshots'
+    section.append(title)
+
+    // Named on demand (ADR-0014 §3).
+    const form = document.createElement('form')
+    form.className = 'sm-snapshots-form'
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'sm-snapshots-label'
+    input.placeholder = 'Name this moment…'
+    input.setAttribute('aria-label', 'Snapshot name')
+    const take = document.createElement('button')
+    take.type = 'submit'
+    take.dataset['action'] = 'snapshot-now'
+    take.textContent = 'Snapshot now'
+    form.append(input, take)
+    form.addEventListener('submit', (event) => {
+      event.preventDefault()
+      const label = input.value.trim()
+      if (label === '') {
+        input.focus()
+        return
+      }
+      void actions.snapshotNow(label).then(() => repaint())
+    })
+    section.append(form)
+
+    const list = document.createElement('div')
+    list.className = 'sm-snapshots-rows'
+    const entries = [...actions.snapshots()].reverse()
+    if (entries.length === 0) {
+      const empty = document.createElement('p')
+      empty.className = 'sm-activity-empty'
+      empty.textContent = 'No snapshots yet. One is taken before every agent run.'
+      list.append(empty)
+    }
+    for (const entry of entries) {
+      const row = document.createElement('article')
+      row.className = 'sm-snapshot-row'
+      row.dataset['snapshot'] = entry.id
+      row.dataset['trigger'] = entry.trigger
+      const name = document.createElement('p')
+      name.className = 'sm-snapshot-name'
+      name.textContent = snapshotLabel(entry)
+      const meta = document.createElement('p')
+      meta.className = 'sm-snapshot-meta'
+      meta.textContent = `${snapshotStamp(entry)} · ${entry.trigger}`
+      const rowActions = document.createElement('div')
+      rowActions.className = 'sm-activity-actions'
+      const restore = document.createElement('button')
+      restore.type = 'button'
+      restore.dataset['action'] = 'restore-snapshot'
+      restore.textContent = 'Restore'
+      restore.title = 'Bring the document back to this snapshot. The current text is snapshotted first.'
+      restore.addEventListener('click', () => void actions.restore(entry.id).then(() => repaint()))
+      const compare = document.createElement('button')
+      compare.type = 'button'
+      compare.dataset['action'] = 'compare-snapshot'
+      compare.textContent = comparing === entry.id ? 'Hide compare' : 'Compare'
+      compare.addEventListener('click', () => {
+        if (comparing === entry.id) {
+          comparing = undefined
+          compareResult = undefined
+          repaint()
+          return
+        }
+        void actions.compare(entry.id).then((result) => {
+          comparing = entry.id
+          compareResult = result
+          repaint()
+        })
+      })
+      rowActions.append(restore, compare)
+      row.append(name, meta, rowActions)
+      if (comparing === entry.id && compareResult !== undefined) row.append(compareView(compareResult))
+      list.append(row)
+    }
+    section.append(list)
+    return section
+  }
+
+  /** Block-level compare (ADR-0014 §5): kept, added, removed, in order. */
+  function compareView(changes: readonly BlockChange[]): HTMLElement {
+    const view = document.createElement('div')
+    view.className = 'sm-snapshot-compare'
+    const changed = changes.filter((change) => change.kind !== 'same').length
+    const summary = document.createElement('p')
+    summary.className = 'sm-snapshot-compare-summary'
+    summary.textContent = changed === 0
+      ? 'Identical to the document now.'
+      : changed === 1 ? '1 block differs' : `${changed} blocks differ`
+    view.append(summary)
+    for (const change of changes) {
+      if (change.kind === 'same') continue
+      const block = document.createElement('pre')
+      block.className = 'sm-snapshot-block'
+      block.dataset['kind'] = change.kind
+      block.textContent = change.text
+      view.append(block)
+    }
+    return view
   }
 
   function repaint(): void {

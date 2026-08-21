@@ -40,6 +40,8 @@ export type {
   StepDocumentPort,
   NoteIdentity,
   ThreadStore,
+  SnapshotStore,
+  SnapshotEntry,
   AgentConnection,
   AgentReasoning,
   AgentMayOpenNotes,
@@ -89,3 +91,5 @@ export type {
   MenuSpec,
 } from './commands.js'
 export { MAX_HIDDEN_DIAGRAM_FIX_ATTEMPTS, repairHiddenDiagram } from './repair-hidden-diagram.js'
+export { diffBlocks, changedBlockCount } from './snapshot-diff.js'
+export type { BlockChange, BlockChangeKind } from './snapshot-diff.js'

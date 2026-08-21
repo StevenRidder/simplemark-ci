@@ -99,6 +99,7 @@ function stepPort() {
       return inverse as unknown as StepBatch
     },
     markdownToSteps: () => ({ ok: false, kind: 'invalid_step' }),
+    replaceAllSteps: () => ({ ok: false, kind: 'invalid_step' }),
   }
 
   return { port, rebases, reverts }

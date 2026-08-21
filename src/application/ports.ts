@@ -409,6 +409,14 @@ export interface StepDocumentPort {
     inverse: StepBatch,
     laterBatches: readonly StepBatch[],
   ): StepApplicationResult
+  /**
+   * Steps that replace the whole document with `replacement` (ADR-0014 §4).
+   *
+   * The range is the parsed document's own extent, which only the editor
+   * adapter can know — a caller guessing it from text offsets would miss the
+   * structure around the text.
+   */
+  replaceAllSteps(markdown: string, replacement: string): MarkdownStepResult
   markdownToSteps(
     markdown: string,
     replacement: string,
@@ -563,4 +571,30 @@ export type AgentProviderTurn =
 
 export interface AgentProviderPort {
   complete(input: AgentProviderInput): Promise<AgentProviderTurn>
+}
+
+
+/** One saved version of a document (ADR-0014). */
+export interface SnapshotEntry {
+  readonly id: string
+  readonly createdMs: number
+  /** A person's name for it; absent on automatic snapshots. */
+  readonly label?: string
+  /** Why it was taken. */
+  readonly trigger: 'agent' | 'manual' | 'restore'
+  readonly bytes: number
+}
+
+/**
+ * Versions beside the document (ADR-0014).
+ *
+ * The same "beside" as threads: the sidecar directory when it is writable,
+ * application data otherwise, keyed by the note's id or degraded path key.
+ * Bytes in, bytes out — a snapshot is the document exactly as it was.
+ */
+export interface SnapshotStore {
+  list(noteKey: string): Promise<readonly SnapshotEntry[]>
+  write(noteKey: string, markdown: string, options: { readonly trigger: SnapshotEntry['trigger']; readonly label?: string }): Promise<SnapshotEntry>
+  read(noteKey: string, id: string): Promise<string>
+  remove(noteKey: string, id: string): Promise<void>
 }

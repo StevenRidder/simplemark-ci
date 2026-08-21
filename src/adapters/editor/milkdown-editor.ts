@@ -110,6 +110,21 @@ import { inlineMathSchema, InlineMathNodeView } from './inline-math.js'
 import { toggleUnderlineCommand, underlineRemark, underlineSchema } from './underline-mark.js'
 import { wikiLinkSchema, wikiRemark } from './wiki-link.js'
 import { syncTextSelectionFromDOM } from './live-selection.js'
+
+/**
+ * The export reads (`selectionMarkdown`, `selectionHtml`) serve shell
+ * commands — menu, toolbar, keyboard — which can run inside the gap between a
+ * click moving the DOM caret and ProseMirror's asynchronous `selectionchange`
+ * catching up. A copy that read the state in that gap found the caret where
+ * it *was*: on a loaded CI runner Copy Code saw the heading the document
+ * opened on, refused, and wrote nothing (BUG-22). Same rule #196 gave
+ * `runCommand` and BUG-19 gave paste: pull the live caret in first. Text
+ * selections only, as `live-selection.ts` says — a cell or node selection is
+ * not described by the DOM range the browser reports for it.
+ */
+function syncLiveTextSelection(view: EditorView): void {
+  if (view.state.selection instanceof TextSelection) syncTextSelectionFromDOM(view)
+}
 import { pasteSniffers } from './paste-sniffers.js'
 import { pageTrimOfferPlugin } from './page-trim-offer.js'
 import {
@@ -2269,6 +2284,7 @@ export class MilkdownEditor {
     return this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
       const serializer = ctx.get(serializerCtx)
+      syncLiveTextSelection(view)
       const { state } = view
       const content = state.selection.empty
         ? blockAround(state.selection.$from)
@@ -2350,6 +2366,7 @@ export class MilkdownEditor {
   selectionHtml(): string {
     return this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
+      syncLiveTextSelection(view)
       const { state } = view
       const content = state.selection.empty
         ? blockAround(state.selection.$from)

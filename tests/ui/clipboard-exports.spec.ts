@@ -74,6 +74,10 @@ async function expectClipboard(
   page: import('@playwright/test').Page,
   expected: string,
 ): Promise<void> {
+  // A refused command is a failure of the command, not of the clipboard. Say
+  // so at once: a refusal writes nothing, and polling the system clipboard for
+  // 30s afterwards only ever reports some other test's bytes (BUG-22).
+  await expect(page.locator('.status')).not.toHaveAttribute('data-state', 'error')
   await expect.poll(async () => clipboardText(page), { timeout: CLIPBOARD_SETTLE_TIMEOUT_MS }).toBe(expected)
 }
 
@@ -125,6 +129,38 @@ test('Copy Table as Markdown keeps the portable pipe table', async ({ page }) =>
 test('Copy Code gives the fence body without the backticks', async ({ page }) => {
   await openNote(page)
   await caretInThenRun(page, `${EDITOR} pre`, 'copyCode')
+
+  await expectClipboard(page, 'const total = 2100')
+})
+
+/**
+ * BUG-22. A click moves the DOM caret at once; ProseMirror hears about it a
+ * task later, from the browser's asynchronous `selectionchange`. A shell copy
+ * that ran inside that gap read the caret where it *was* — on a loaded CI
+ * runner, Copy Code found the heading the document opened on, refused, and
+ * the test above spent 30s polling another test's clipboard. Placing the DOM
+ * caret and running the command in the same task makes that gap certain
+ * rather than occasional, so the export has to pull the live caret in first.
+ */
+test('Copy Code reads the caret the reader sees, not the one ProseMirror last heard about', async ({ page }) => {
+  await openNote(page)
+  const status = await page.evaluate((selector) => {
+    const pre = document.querySelector(`${selector} pre`)
+    if (pre === null) throw new Error('no code block rendered')
+    const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT)
+    const text = walker.nextNode()
+    if (!(text instanceof Text)) throw new Error('no text inside the code block')
+    const range = document.createRange()
+    range.setStart(text, Math.min(2, text.length))
+    range.collapse(true)
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    // Same task as the caret move: no selectionchange has reached ProseMirror.
+    window.simplemark!.run('copyCode' as never)
+    return document.querySelector('.status')?.textContent ?? ''
+  }, EDITOR)
+  expect(status).not.toContain('needs a code block')
 
   await expectClipboard(page, 'const total = 2100')
 })

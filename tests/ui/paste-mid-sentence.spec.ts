@@ -23,16 +23,29 @@ const editor = '.milkdown .ProseMirror'
  * Caret between the two words of a fresh `before after` paragraph.
  *
  * A fresh paragraph rather than the fixture's own prose: the assertion is about
- * what surrounds the paste, so the surroundings have to be exactly known. Six
- * ArrowLefts is `" after"` — the caret sits after `before`, with a real word on
- * each side, so `$from.parentOffset` is neither 0 nor the end of the block.
+ * what surrounds the paste, so the surroundings have to be exactly known. The
+ * caret sits after `before`, with a real word on each side, so
+ * `$from.parentOffset` is neither 0 nor the end of the block.
+ *
+ * Placed through the editor's own selection API, not with six ArrowLefts
+ * (BUG-19). A native caret move reaches ProseMirror through the browser's
+ * asynchronous `selectionchange` event, and prosemirror-view's focus handler
+ * schedules a 20ms check that restores its own selection over any DOM
+ * selection it has not read yet. A key burst that starts right after
+ * `focusEnd()` — impossible for a person, routine for a harness — ran into
+ * that check about once in seventy runs and lost a move, so the paste landed
+ * one character off. A dispatched selection is consistent in the state and the
+ * DOM at once; neither race exists for it.
  */
 async function caretMidSentence(page: import('@playwright/test').Page): Promise<void> {
   await page.evaluate(() => window.simplemark!.editor.focusEnd())
   await expect(page.locator(editor)).toBeFocused()
   await page.keyboard.press('Enter')
   await page.keyboard.type('before after')
-  for (let index = 0; index < 6; index += 1) await page.keyboard.press('ArrowLeft')
+  const placed = await page.evaluate(() =>
+    window.simplemark!.editor.placeCaretInQuote('before after', 'before'.length),
+  )
+  expect(placed, 'the typed sentence must be unique in the document').toBe(true)
 }
 
 /** A real clipboard, both flavours when given. A synthetic event is untrusted. */
@@ -65,7 +78,11 @@ const serialize = (page: import('@playwright/test').Page) =>
 test.beforeEach(async ({ page }) => {
   await page.goto('/?fixture=legacy')
   await page.waitForFunction(() => window.simplemark !== undefined)
-  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  // Chromium exposes explicit clipboard permissions to Playwright; WebKit does
+  // not recognise those names and gates the focused page's clipboard directly.
+  if (page.context().browser()?.browserType().name() === 'chromium') {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  }
   await page.bringToFront()
   await expect(page.locator(editor)).toBeVisible()
 })
@@ -171,4 +188,53 @@ test('bare Mermaid pasted mid-sentence stays text and never converts', async ({ 
   await expect.poll(async () => serialize(page)).toContain('flowchart LR')
   await expect(page.locator('.diagram')).toHaveCount(diagrams)
   expect(await serialize(page)).not.toContain('```mermaid\nflowchart LR\n  A --> B')
+})
+
+// ── The caret the reader sees ────────────────────────────────────────────────
+
+/**
+ * BUG-19. ProseMirror learns where a caret went from the browser's
+ * `selectionchange` event, which arrives a task later — in practice at the
+ * next rendering frame. A paste handled inside that gap used to land at the
+ * caret's *previous* position; `handlePaste` now pulls the live DOM selection
+ * into the state first, the rule #196 gave toolbar and menu commands.
+ *
+ * The gap is reproduced by construction rather than by luck: the DOM caret is
+ * moved and the paste event dispatched in the same task, so no
+ * `selectionchange` can run in between. A synthetic event is untrusted and is
+ * never used for the flavour tests above; here it is the only way to be inside
+ * the gap on purpose.
+ */
+test('a paste that arrives before ProseMirror has read a caret move lands at the visible caret', async ({
+  page,
+}) => {
+  await page.evaluate(() => window.simplemark!.editor.focusEnd())
+  await expect(page.locator(editor)).toBeFocused()
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('before after')
+  const paragraphs = await page.locator(`${editor} p`).count()
+
+  await page.evaluate((selector) => {
+    const selection = document.getSelection()
+    const host = selection?.anchorNode ?? null
+    if (
+      selection === null
+      || host === null
+      || host.nodeType !== Node.TEXT_NODE
+      || host.textContent !== 'before after'
+    ) {
+      throw new Error(
+        `the caret is not in the typed paragraph: ${host?.nodeName} ${JSON.stringify(host?.textContent)}`,
+      )
+    }
+    selection.collapse(host, 'before'.length)
+    const data = new DataTransfer()
+    data.setData('text/plain', 'MIDDLE')
+    document.querySelector(selector)!.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+    )
+  }, editor)
+
+  await expect.poll(async () => serialize(page)).toContain('beforeMIDDLE after')
+  await expect(page.locator(`${editor} p`)).toHaveCount(paragraphs)
 })

@@ -109,6 +109,7 @@ import { mathBlockSchema, mathRemark } from './math-block.js'
 import { inlineMathSchema, InlineMathNodeView } from './inline-math.js'
 import { toggleUnderlineCommand, underlineRemark, underlineSchema } from './underline-mark.js'
 import { wikiLinkSchema, wikiRemark } from './wiki-link.js'
+import { syncTextSelectionFromDOM } from './live-selection.js'
 import { pasteSniffers } from './paste-sniffers.js'
 import { pageTrimOfferPlugin } from './page-trim-offer.js'
 import {
@@ -2114,6 +2115,38 @@ export class MilkdownEditor {
   }
 
   /** The current selection as a note anchor, or nothing if the selection is empty. */
+  /**
+   * Puts a caret `offset` characters into the first unique occurrence of
+   * `quote`, for the Playwright harness.
+   *
+   * A dispatched selection rather than a run of arrow keys (BUG-19). The
+   * browser reports a native caret move through `selectionchange` a task
+   * later, and prosemirror-view's focus handler schedules a 20ms check that
+   * restores its own selection over any DOM selection it has not read yet —
+   * a check that input traffic can delay into a harness's key burst. A
+   * harness that navigates by key there loses moves; a dispatched selection
+   * is consistent in the state and the DOM at once.
+   */
+  placeCaretInQuote(quote: string, offset: number): boolean {
+    if (offset < 0 || offset > quote.length) return false
+    return this.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const indexed = indexDocumentText(view.state.doc)
+      const start = indexed.text.indexOf(quote)
+      if (start === -1) return false
+      if (indexed.text.indexOf(quote, start + 1) !== -1) return false
+      // `posAt` maps a character to the position before it; a caret after the
+      // quote's last character is the position after that character.
+      const atEnd = offset === quote.length
+      const anchorPos = indexed.posAt(atEnd ? start + offset - 1 : start + offset)
+      if (anchorPos === undefined) return false
+      const pos = atEnd ? anchorPos + 1 : anchorPos
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
+      view.focus()
+      return true
+    })
+  }
+
   anchorFromSelection(): Anchor | undefined {
     const view = this.editor.action((ctx) => ctx.get(editorViewCtx))
     return anchorFromView(view)
@@ -2338,41 +2371,6 @@ export class MilkdownEditor {
     this.#activeTable = undefined
     this.#activeTableCell = undefined
     await this.editor.destroy()
-  }
-}
-
-/**
- * Pulls a live browser text selection into ProseMirror before focus restores
- * ProseMirror's last known caret.
- *
- * A click moves the DOM selection synchronously, while ProseMirror observes
- * the resulting `selectionchange` later. A toolbar or native-menu command can
- * arrive in that gap under load. Focusing first would overwrite the new DOM
- * caret with stale editor state and apply the command to the previous block.
- */
-function syncTextSelectionFromDOM(view: EditorView): void {
-  const selection = view.dom.ownerDocument.getSelection()
-  if (selection === null || selection.rangeCount === 0) return
-
-  const { anchorNode, focusNode } = selection
-  if (
-    anchorNode === null
-    || focusNode === null
-    || anchorNode.nodeType !== 3
-    || focusNode.nodeType !== 3
-    || !view.dom.contains(anchorNode)
-    || !view.dom.contains(focusNode)
-  ) return
-
-  try {
-    const anchor = view.posAtDOM(anchorNode, selection.anchorOffset)
-    const head = view.posAtDOM(focusNode, selection.focusOffset)
-    const next = TextSelection.create(view.state.doc, anchor, head)
-    if (!next.eq(view.state.selection)) view.dispatch(view.state.tr.setSelection(next))
-  } catch (error: unknown) {
-    // A NodeView can replace its DOM between selection capture and mapping.
-    // Keep the authoritative ProseMirror selection when that happens.
-    console.warn('Could not synchronize the live editor selection; keeping the ProseMirror selection.', error)
   }
 }
 

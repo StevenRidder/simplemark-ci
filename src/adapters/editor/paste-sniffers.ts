@@ -3,7 +3,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { Fragment } from '@milkdown/kit/prose/model'
 import { DOMParser as ProseDOMParser, Slice } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 
@@ -29,6 +29,7 @@ import {
 } from '../../domain/index.js'
 import type { DiagramRenderer, NoteImageStore } from '../../application/index.js'
 import { captureRemoteImages, remoteImageSources } from './image-capture.js'
+import { syncTextSelectionFromDOM } from './live-selection.js'
 import { stripUnsafePastedUrls } from './paste-urls.js'
 import { looksLikeFullPagePaste } from './page-trim.js'
 import { offerPageTrim } from './page-trim-offer.js'
@@ -42,6 +43,7 @@ import { offerPageTrim } from './page-trim-offer.js'
  *
  * ```
  * ⌘V
+ *  ├─ 0. Live caret              pull the DOM selection into the state (BUG-19)
  *  ├─ 1. Clipboard triage        collect {text, html}
  *  ├─ 2. Sniffer chain           svg-in-html · svg · mermaid
  *  │      first to MATCH, VALIDATE and pass the standalone-block test wins
@@ -348,6 +350,15 @@ export const pasteSniffers = (options: PasteSnifferOptions) =>
       key: pasteSnifferKey,
       props: {
         handlePaste: (view: EditorView, event: ClipboardEvent): boolean => {
+          // Where the caret *is*, not where ProseMirror last saw it. The
+          // browser reports a caret move through `selectionchange` a task
+          // later, and a paste arriving inside that gap would otherwise land
+          // one move behind the caret the reader is looking at (BUG-19) — the
+          // rule #196 already gives toolbar and menu commands. Ahead of the
+          // early returns on purpose: ProseMirror's own fallback path reads
+          // the same selection.
+          if (view.state.selection instanceof TextSelection) syncTextSelectionFromDOM(view)
+
           const clipboard = event.clipboardData
           if (clipboard === null) return false
 

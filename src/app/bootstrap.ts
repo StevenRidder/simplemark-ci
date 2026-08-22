@@ -813,6 +813,12 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   }
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined
+  /** Debounced save on pause, never per keystroke (DESIGN.md §8). */
+  const scheduleSave = (): void => {
+    if (autosaveMs <= 0) return
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => void save(), autosaveMs)
+  }
   const autosaveMs = options.autosaveMs ?? 900
   const save = async (force = false): Promise<boolean> => {
     clearTimeout(saveTimer)
@@ -1037,11 +1043,7 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
       chrome.setStatus('dirty')
       chrome.refreshStatistics()
       paintNotes()
-      if (autosaveMs > 0 && options.onSaveDraft === undefined) {
-        // Debounced save on pause, never per keystroke (DESIGN.md §8).
-        clearTimeout(saveTimer)
-        saveTimer = setTimeout(() => void save(), autosaveMs)
-      }
+      if (options.onSaveDraft === undefined) scheduleSave()
     },
   })
 
@@ -1606,6 +1608,15 @@ export async function composeApp(options: ComposeOptions): Promise<AppCompositio
   })
   // A person's own typing or an acceptance moves passages; relocate the rest.
   session.onAccepted(() => paintProposals())
+  // A change the person did not type — an agent's direct write, an accepted
+  // proposal, a restore — reaches the session but not the editor's own change
+  // callback, so its save was never scheduled and it was lost on the next open
+  // (BUG-29). Human typing is already handled above; scheduling again only
+  // coalesces on the shared timer. Unlike typing this is not gated on the
+  // draft-save host: an agent edit must persist wherever it happens.
+  session.onAccepted((change) => {
+    if (change.actorId !== 'human') scheduleSave()
+  })
 
   const agentController = createAgentController({
     session,

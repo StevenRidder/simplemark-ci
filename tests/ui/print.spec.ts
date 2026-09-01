@@ -225,3 +225,131 @@ test('wide diagrams fit the sheet and drop Open figure chrome on paper', async (
   expect(paper.svgWidth).not.toBe('auto')
   expect(paper.printColorAdjust).toBe('exact')
 })
+
+test('off-screen diagram snapshots scale proportionally on paper', async ({ page }) => {
+  await expect(page.locator('.milkdown .ProseMirror')).toBeVisible()
+  const figure = page.locator('.diagram').first()
+  const diagramRender = figure.locator('.diagram-render')
+  await expect(diagramRender).toBeVisible()
+
+  // Simulate the snapshot swap that happens when a diagram scrolls off screen:
+  // an <img> with inline width/height replaces the live SVG, and the render
+  // container gets an inline min-height for scroll-hold.
+  await diagramRender.evaluate((render) => {
+    render.style.minHeight = '300px'
+    const img = document.createElement('img')
+    img.className = 'diagram-snapshot'
+    img.alt = ''
+    img.style.width = '800px'
+    img.style.height = '400px'
+    img.src =
+      'data:image/svg+xml,' +
+      encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400"><rect fill="#eee" width="800" height="400"/></svg>',
+      )
+    render.replaceChildren(img)
+  })
+
+  await page.emulateMedia({ media: 'print' })
+
+  const paper = await diagramRender.evaluate((render) => {
+    const img = render.querySelector<HTMLImageElement>('img.diagram-snapshot')!
+    const imgStyle = getComputedStyle(img)
+    return {
+      imgHeight: imgStyle.height,
+      imgInlineHeight: img.style.height,
+      renderMinHeight: getComputedStyle(render).minHeight,
+      renderInlineMinHeight: render.style.minHeight,
+    }
+  })
+
+  // !important must override the inline height so the image scales proportionally.
+  expect(paper.imgInlineHeight).toBe('400px')
+  expect(paper.imgHeight).not.toBe('400px')
+  // The render container's inline min-height must be cleared on paper.
+  expect(paper.renderInlineMinHeight).toBe('300px')
+  expect(paper.renderMinHeight).toBe('0px')
+})
+
+test('note anchor highlights are stripped on paper', async ({ page }) => {
+  await expect(page.locator('.milkdown .ProseMirror')).toBeVisible()
+
+  // ProseMirror reconciles its own subtree, stripping injected elements. Build
+  // a standalone structure that matches the selector chain used in both app.css
+  // and print.css so the cascade applies without editor interference.
+  await page.evaluate(() => {
+    const wrapper = document.createElement('div')
+    wrapper.className = 'milkdown'
+    wrapper.id = 'print-test-anchor'
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    const anchor = document.createElement('span')
+    anchor.className = 'sm-note-anchor'
+    anchor.textContent = 'annotated text'
+    pm.appendChild(anchor)
+    wrapper.appendChild(pm)
+    document.body.appendChild(wrapper)
+  })
+
+  const onScreen = await page.evaluate(() => {
+    const el = document.querySelector('#print-test-anchor .sm-note-anchor')!
+    const style = getComputedStyle(el)
+    return { background: style.backgroundColor }
+  })
+  expect(onScreen.background).not.toBe('rgba(0, 0, 0, 0)')
+
+  await page.emulateMedia({ media: 'print' })
+
+  const paper = await page.evaluate(() => {
+    const el = document.querySelector('#print-test-anchor .sm-note-anchor')!
+    const style = getComputedStyle(el)
+    return {
+      background: style.backgroundColor,
+      borderBottom: style.borderBottomStyle,
+    }
+  })
+
+  expect(paper.background).toBe('rgba(0, 0, 0, 0)')
+  expect(paper.borderBottom).toBe('none')
+})
+
+test('table wrappers release their scroll clip on paper', async ({ page }) => {
+  await expect(page.locator('.milkdown .ProseMirror')).toBeVisible()
+
+  // Build a standalone `.milkdown .ProseMirror .tableWrapper` outside the real
+  // editor so ProseMirror's DOM reconciliation cannot strip it.
+  await page.evaluate(() => {
+    const milkdown = document.createElement('div')
+    milkdown.className = 'milkdown'
+    milkdown.id = 'print-test-table-host'
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    const wrapper = document.createElement('div')
+    wrapper.className = 'tableWrapper'
+    const table = document.createElement('table')
+    const row = document.createElement('tr')
+    const cell = document.createElement('td')
+    cell.textContent = 'Row 1'
+    row.appendChild(cell)
+    table.appendChild(row)
+    wrapper.appendChild(table)
+    pm.appendChild(wrapper)
+    milkdown.appendChild(pm)
+    document.body.appendChild(milkdown)
+  })
+
+  const onScreen = await page.evaluate(() => {
+    const wrapper = document.querySelector('#print-test-table-host .tableWrapper')!
+    return { overflowX: getComputedStyle(wrapper).overflowX }
+  })
+  expect(onScreen.overflowX).toBe('auto')
+
+  await page.emulateMedia({ media: 'print' })
+
+  const paper = await page.evaluate(() => {
+    const wrapper = document.querySelector('#print-test-table-host .tableWrapper')!
+    return { overflow: getComputedStyle(wrapper).overflow }
+  })
+
+  expect(paper.overflow).toBe('visible')
+})

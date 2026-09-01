@@ -17,8 +17,8 @@ describe('native sample workspace', () => {
         pinned: true,
       },
       {
-        id: 'project-tanoa-storm-atlas',
-        title: 'Project Tanoa: Storm Atlas',
+        id: 'project-tanoa',
+        title: 'Project Tanoa',
         pinned: false,
       },
     ])
@@ -28,9 +28,9 @@ describe('native sample workspace', () => {
     const onSelectNote = vi.fn()
     const workspace = sampleWorkspaceOptions('welcome-to-simplemark', { onSelectNote })
 
-    workspace.onSelectNote?.('project-tanoa-storm-atlas')
+    workspace.onSelectNote?.('project-tanoa')
 
     expect(onSelectNote).toHaveBeenCalledOnce()
-    expect(onSelectNote).toHaveBeenCalledWith('project-tanoa-storm-atlas')
+    expect(onSelectNote).toHaveBeenCalledWith('project-tanoa')
   })
 })

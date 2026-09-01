@@ -122,6 +122,17 @@
   }
 
   /*
+   * Note anchors highlight text on screen to show where notes attach. The
+   * tint is a reader affordance — it invites a click, and paper has no
+   * pointer. Strip it so the printout is the document without annotations.
+   */
+  .milkdown .ProseMirror .sm-note-anchor,
+  .milkdown .ProseMirror .sm-note-anchor-stacked {
+    background: transparent;
+    border-bottom: none;
+  }
+
+  /*
    * Unwrap every scroll container between the sheet and the text.
    *
    * This is the load-bearing rule. On screen the document lives inside nested
@@ -241,6 +252,28 @@
   }
 
   /*
+   * Off-screen diagrams swap to a still frame (`img.diagram-snapshot`) whose
+   * inline width/height reflect the on-screen pixel box. Inline declarations
+   * outrank any normal CSS, so the `height: auto` above never reaches it —
+   * `max-width: 100%` constrains the width to the sheet while the height
+   * stays locked, distorting the aspect ratio. `!important` author rules are
+   * the one specificity tier that beats inline, and these properties must win
+   * for every snapshot on every page.
+   *
+   * The inline `min-height` on `.diagram-render` (frame reservation for
+   * scroll-hold) is likewise stripped: an empty placeholder should not burn
+   * paper.
+   */
+  .diagram-render img.diagram-snapshot {
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  .diagram-render {
+    min-height: 0 !important;
+  }
+
+  /*
    * Wide figures scroll on screen (`.diagram-render.is-wide` + fade mask).
    * Paper has no scrollport: unwrap the clip, drop the mask, and shrink the
    * SVG to the sheet. The `.is-wide svg` selectors are load-bearing — screen
@@ -268,6 +301,24 @@
   .diagram-render {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  /*
+   * Tables scroll sideways on screen (`.tableWrapper`, `.virtual-table-scroll`).
+   * Paper has no scrollport: unwrap the clip so WebKit can paginate through
+   * the rows. A table that sits near the bottom of a printed page would
+   * otherwise lose the rows past the wrapper's clipping boundary. Sticky
+   * headers are likewise released — `position: sticky` in a paginated context
+   * can cause WebKit to overlap rows or miscalculate page breaks.
+   */
+  .milkdown .ProseMirror .tableWrapper,
+  .virtual-table-scroll {
+    overflow: visible;
+    max-height: none;
+  }
+
+  .milkdown .ProseMirror .virtual-markdown-table th {
+    position: static;
   }
 
   /* A table crossing the fold repeats its header rather than losing it. */

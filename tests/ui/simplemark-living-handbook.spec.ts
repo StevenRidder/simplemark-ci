@@ -8,12 +8,12 @@ const WELCOME_SOURCE = readFileSync(
   'utf8',
 )
 const TANOA_SOURCE = readFileSync(
-  new URL('../../docs/showcase/project-tanoa-storm-atlas.md', import.meta.url),
+  new URL('../../docs/showcase/project-tanoa.md', import.meta.url),
   'utf8',
 )
 
 const WELCOME = 'Welcome to SimpleMark'
-const TANOA = 'Project Tanoa: Storm Atlas'
+const TANOA = 'Project Tanoa'
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
@@ -26,7 +26,7 @@ test('the default Samples catalogue opens both canonical documents', async ({ pa
   await expect(page.getByRole('heading', { name: WELCOME })).toBeVisible()
 
   await page.getByRole('button', { name: TANOA, exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Project Tanoa: the storm atlas' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Holding the island through the storm' })).toBeVisible()
 })
 
 test('the handbook renders every promised technical form without a blank', async ({ page }) => {

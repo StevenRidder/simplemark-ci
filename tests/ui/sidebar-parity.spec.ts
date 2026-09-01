@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 const WELCOME = 'Welcome to SimpleMark'
-const TANOA = 'Project Tanoa: Storm Atlas'
+const TANOA = 'Project Tanoa'
 
 const notes = (page: import('@playwright/test').Page) =>
   page.getByRole('complementary', { name: 'Notes' })
@@ -32,7 +32,7 @@ test('L2-020 selecting notes preserves the complete catalog and changes only the
   await expect(notes(page).locator('.note-item')).toHaveCount(2)
 
   for (const [name, heading] of [
-    [TANOA, 'Project Tanoa: the storm atlas'],
+    [TANOA, 'Holding the island through the storm'],
     [WELCOME, 'Welcome to SimpleMark'],
   ] as const) {
     await page.getByRole('button', { name, exact: true }).click()
@@ -94,7 +94,7 @@ test('L2-040/L2-041 pinning reorders, filters, and unpins without closing the do
   await togglePin(page, `Unpin ${TANOA}`)
 
   await expect(notes(page).locator('.note-item')).toHaveCount(1)
-  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Project Tanoa: the storm atlas')
+  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Holding the island through the storm')
   await expect(page.getByRole('button', { name: TANOA, exact: true })).toHaveCount(0)
   await expect(page.getByLabel('Library')).toContainText('Pinned1')
 })
@@ -328,7 +328,7 @@ test('closing the active note removes it from both the list and reading pane', a
     'aria-current',
     'page',
   )
-  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Project Tanoa: the storm atlas')
+  await expect(page.locator('.milkdown .ProseMirror h1')).toHaveText('Holding the island through the storm')
   await expect(page.locator('.milkdown .ProseMirror')).not.toContainText('Welcome to SimpleMark')
   await expect(page.getByText('Closed note — file remains on disk')).toBeVisible()
 })

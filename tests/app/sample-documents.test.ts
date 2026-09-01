@@ -17,9 +17,9 @@ describe('default sample documents', () => {
         title: 'Welcome to SimpleMark',
       },
       {
-        id: 'project-tanoa-storm-atlas',
-        name: 'project-tanoa-storm-atlas.md',
-        title: 'Project Tanoa: Storm Atlas',
+        id: 'project-tanoa',
+        name: 'project-tanoa.md',
+        title: 'Project Tanoa',
       },
     ])
     expect(WELCOME_SAMPLE).toBe(SAMPLE_DOCUMENTS[0])
@@ -33,7 +33,7 @@ describe('default sample documents', () => {
   })
 
   it('looks up known samples without inventing a fallback', () => {
-    expect(sampleDocument('project-tanoa-storm-atlas')?.title).toBe('Project Tanoa: Storm Atlas')
+    expect(sampleDocument('project-tanoa')?.title).toBe('Project Tanoa')
     expect(sampleDocument('missing')).toBeUndefined()
   })
 })

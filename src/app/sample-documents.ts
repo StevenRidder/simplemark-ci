@@ -1,4 +1,4 @@
-import projectTanoaMarkdown from '../../docs/showcase/project-tanoa-storm-atlas.md?raw'
+import projectTanoaMarkdown from '../../docs/showcase/project-tanoa.md?raw'
 import welcomeMarkdown from '../../docs/showcase/welcome-to-simplemark.md?raw'
 
 export interface SampleDocument {
@@ -26,9 +26,9 @@ export const SAMPLE_DOCUMENTS: readonly SampleDocument[] = [
     pinned: true,
   },
   {
-    id: 'project-tanoa-storm-atlas',
-    name: 'project-tanoa-storm-atlas.md',
-    title: 'Project Tanoa: Storm Atlas',
+    id: 'project-tanoa',
+    name: 'project-tanoa.md',
+    title: 'Project Tanoa',
     preview: 'A community microgrid enters island mode before the storm.',
     markdown: projectTanoaMarkdown,
     updatedLabel: 'Sample',

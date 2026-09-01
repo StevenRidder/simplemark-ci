@@ -136,19 +136,19 @@ test('workspace controls are real, and Work with AI is no longer later work', as
 
 test('switches notes, filters the local index, creates a note, and can focus the page', async ({ page }) => {
   await expect(page.getByLabel('Library')).toContainText('Recent Notes2')
-  await page.getByRole('button', { name: 'Project Tanoa: Storm Atlas', exact: true }).click()
-  await expect(page.locator('.filename-title')).toHaveText('project-tanoa-storm-atlas')
-  await expect(page.locator(`${editor} h1`)).toContainText('Project Tanoa: the storm atlas')
+  await page.getByRole('button', { name: 'Project Tanoa', exact: true }).click()
+  await expect(page.locator('.filename-title')).toHaveText('project-tanoa')
+  await expect(page.locator(`${editor} h1`)).toContainText('Holding the island through the storm')
 
   await page.getByRole('button', { name: 'Search' }).click()
   await page.getByRole('searchbox', { name: 'Search notes' }).fill('microgrid')
-  await expect(page.getByRole('button', { name: 'Project Tanoa: Storm Atlas', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Project Tanoa', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Welcome to SimpleMark', exact: true })).toBeHidden()
 
-  const pinTanoa = page.getByRole('button', { name: 'Pin Project Tanoa: Storm Atlas' })
+  const pinTanoa = page.getByRole('button', { name: 'Pin Project Tanoa' })
   await pinTanoa.locator('..').hover()
   await pinTanoa.click()
-  await expect(page.getByRole('button', { name: 'Unpin Project Tanoa: Storm Atlas' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Unpin Project Tanoa' })).toBeVisible()
   // Pinning is an in-place sidebar state change, like Bear. It deliberately
   // does not remount the shell or dismiss an active search.
   await page.getByRole('button', { name: 'Close search' }).click()
@@ -175,7 +175,7 @@ test('note-list options provide Bear-like sorting, density, and pinned views', a
   await page.getByRole('button', { name: 'Note list options' }).click()
   await page.getByLabel('Note list options').filter({ has: page.getByText('2 notes') }).getByRole('button', { name: 'Pinned' }).click()
   await expect(page.getByRole('button', { name: 'Welcome to SimpleMark', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Project Tanoa: Storm Atlas', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Project Tanoa', exact: true })).toHaveCount(0)
 })
 
 test('typing flows through the application API and advances the document revision', async ({

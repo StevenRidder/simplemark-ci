@@ -44,15 +44,25 @@ describe('alternate app icon assets', () => {
     expect(electric).toContain('data-block-palette="clear-azure-charcoal-charcoal"')
   })
 
-  test('keeps the Clear Azure palette aligned across desktop, chooser, and iOS masters', () => {
-    const sources = [native('icon.svg'), alternate('electric-blocks.svg'), native('ios-icon.svg')]
+  test('keeps the Clear Azure palette on the chooser alternate', () => {
+    const svg = readFileSync(alternate('electric-blocks.svg'), 'utf8')
+    expect(svg, 'electric-blocks must use the approved light endpoint').toContain('#168CFF')
+    expect(svg, 'electric-blocks must use the approved deep endpoint').toContain('#0064E8')
+    expect(svg, 'electric-blocks must not retain the violet endpoint').not.toContain('#1548E7')
+  })
 
-    for (const source of sources) {
+  test('keeps the glass Movable Blocks palette aligned across desktop and iOS masters', () => {
+    for (const source of [native('icon.svg'), native('ios-icon.svg')]) {
       const svg = readFileSync(source, 'utf8')
-      expect(svg, `${source} must use the approved light endpoint`).toContain('#168CFF')
-      expect(svg, `${source} must use the approved deep endpoint`).toContain('#0064E8')
-      expect(svg, `${source} must not retain the violet endpoint`).not.toContain('#1548E7')
+      expect(svg, `${source} must start on the ocean light endpoint`).toContain('#38B6FF')
+      expect(svg, `${source} must pass through the ocean mid stop`).toContain('#1A6DFF')
+      expect(svg, `${source} must end on the ocean deep endpoint`).toContain('#3D2BFF')
+      expect(svg, `${source} must stay fully vector`).not.toMatch(/<image\b|data:image|<text\b/i)
     }
+    const desktop = readFileSync(native('icon.svg'), 'utf8')
+    const ios = readFileSync(native('ios-icon.svg'), 'utf8')
+    expect(desktop, 'the desktop master draws its own rounded tile').toContain('rx="206"')
+    expect(ios, 'the iOS master runs full-bleed for the platform mask').toContain('<rect width="1024" height="1024"')
   })
 
   test('centres the Live Layers MDown mark on its front panel', () => {

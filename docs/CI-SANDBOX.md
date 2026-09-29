@@ -1,162 +1,61 @@
-# CI sandbox (`simplemark-ci`)
+# Public-only CI sandbox
 
-SimpleMark keeps its canonical source on the **private** repo
-[`6th-Element-Labs/simplemark`](https://github.com/6th-Element-Labs/simplemark). GitHub
-Actions minutes are billed on private repos and free on public ones, so — exactly
-as Helm and Switchboard already do — CI runs on a separate **public sandbox** that
-holds the **full actual tree** and the **same workflows**.
+The private `6th-Element-Labs/simplemark` repository owns source and merge
+provenance. The existing public `StevenRidder/simplemark-ci` repository executes
+all CI. This is the owner's policy, restored on 2026-09-30 after private Actions
+workflows caused unapproved charges. Public CI is mandatory, not optional.
 
-| Repo | Role | Authority |
-|---|---|---|
-| `6th-Element-Labs/simplemark` | Canonical source, PRs, Switchboard merge webhook | `done` · `merge_provenance` · `code_truth` |
-| `StevenRidder/simplemark-ci` | Public CI sandbox — push branches here first | `verification_only` |
+Private `verify.yml` and `native-testbuild.yml` are disabled in GitHub settings.
+Their job conditions also reject private repositories before allocating runners.
+Never re-enable them or introduce another private CI workflow.
 
-The sandbox is **not** a product mirror. It is not scrubbed, its feature branches
-are ephemeral, and it can never prove Done. Only a merge on the canonical repo can
-(Switchboard `repo_topology`, `switchboard.project_repo_topology.v1`).
+## Branch and merge queue loop
 
-## Reference implementations
-
-| Project | Canonical | Public CI | Required status |
-|---|---|---|---|
-| Switchboard | `6th-Element-Labs/projectplanner` | `6th-Element-Labs/projectplanner-ci` | `Switchboard CI / VM gate` |
-| Helm | `StevenRidder/Helm` | `StevenRidder/helm-ci` | `helm-ci/full-suite` |
-| SimpleMark | `6th-Element-Labs/simplemark` | `StevenRidder/simplemark-ci` | `gate` |
-
-> **SimpleMark no longer gates on the sandbox status.** Canonical `main` requires
-> `gate`, published by `.github/workflows/verify.yml` running on the canonical repo,
-> and landing is owned by GitHub's native merge queue. `simplemark-ci/full-suite` is
-> still what `ci-sandbox.sh` stamps, but nothing requires it. The sandbox is now an
-> optional pre-PR proof, not the gate.
-
-Switchboard uses the stricter variant: the canonical dispatcher mirrors an exact
-SHA to a disposable `ci/**` tag and invokes a workflow that lives on the sandbox's
-*trusted default branch*, so agent-authored workflow files on the mirrored branch
-are never executed. SimpleMark uses the simpler Helm-style flow until it has a
-fleet of agents authoring workflow changes; the upgrade path is
-[`verify.yml` on projectplanner](https://github.com/6th-Element-Labs/projectplanner/blob/master/.github/workflows/verify.yml).
-
-## One-time setup
-
-From a SimpleMark checkout with `gh` authenticated as a user who can create repos
-under `StevenRidder`:
+Run the local gate first, then:
 
 ```bash
-gh repo create StevenRidder/simplemark-ci --public --description "Public CI sandbox for SimpleMark — full tree, GitHub Actions run here for free. Not a product mirror; feature branches are ephemeral."
+scripts/ci-sandbox.sh setup
+scripts/ci-sandbox.sh open-pr <branch>
+scripts/ci-sandbox.sh queue <PR-number>
 ```
 
-Then wire the local checkout and seed the sandbox baseline:
+`open-pr` mirrors the exact source SHA, dispatches `verify.yml` in the public
+sandbox, waits for actual success, pushes that same SHA to canonical, and posts
+`simplemark-ci/full-suite`. Canonical `main` requires this status.
+
+`queue` keeps GitHub's native merge queue: it waits for the PR's synthetic
+`gh-readonly-queue/main/pr-<number>-*` ref, mirrors that exact commit to an ephemeral
+public branch, executes the full public verification, and stamps success only
+on the still-current merge-group SHA. Failure, cancellation, missing evidence,
+a private sandbox, or a changed SHA cannot pass the gate. Keep it running until
+GitHub merges the PR. Re-run it if interrupted. It needs Python 3 and the same
+GitHub CLI access already used by `open-pr`; no new hosted credential is required.
+
+For an already-open PR:
 
 ```bash
-scripts/ci-sandbox.sh setup && scripts/ci-sandbox.sh refresh-main
+scripts/ci-sandbox.sh push <branch>
+scripts/ci-sandbox.sh queue <PR-number>
 ```
 
-> **Do not run `scripts/ci-sandbox.sh protect-main` on SimpleMark.** It PUTs
-> `required_status_checks.contexts = ["simplemark-ci/full-suite"]` on canonical
-> `main`, which would replace the required `gate` context and break the merge-queue
-> gate. It remains correct for a project whose sandbox status *is* the required one.
+After merge, `scripts/ci-sandbox.sh refresh-main` refreshes the public baseline.
+`prune` removes branches no longer present in canonical; do not prune live work.
 
-## Typical branch loop
+## Native checks and installers
 
-```bash
-git checkout -b claude/FOUNDATION-1-scaffold
-```
+`native-testbuild.yml` runs on qualifying public mirror pushes and public manual
+dispatches. It retains the four native desktop builds and iOS compile check,
+verifies installer formats on the runner, and uploads diagnostic logs for seven
+days. It does **not** upload unsigned installers from the public repository.
+Private test-installer uploads are superseded by the public-only CI policy.
+Product releases remain governed by `RELEASE-CONTRACT.md` and `RELEASE-TRUST.md`.
 
-Edit, commit, then run the local gate before spending any CI minutes:
+## Enforcement and recovery
 
-```bash
-bash scripts/simplemark_ci.sh
-```
+The sandbox helper refuses a private CI target. The workflows reject private
+execution at job level. The private workflow disable switches are the immediate
+billing stop. Preserve both layers. `protect-main` requires executed evidence
+before changing protection; matching repository refs alone cannot create proof.
 
-Prove the checkout is wired correctly:
-
-```bash
-scripts/ci-sandbox.sh doctor
-```
-
-Then push and open the PR against canonical. The `gate` check runs there, and the
-merge queue runs the full scope on the commit that lands:
-
-```bash
-git push -u origin claude/FOUNDATION-1-scaffold && gh pr create --base main
-```
-
-To spend sandbox minutes instead of canonical ones, prove the SHA first. This
-pushes to the sandbox, waits for green, pushes the exact SHA to canonical, stamps
-`simplemark-ci/full-suite`, and opens the PR — one command:
-
-```bash
-scripts/ci-sandbox.sh open-pr claude/FOUNDATION-1-scaffold
-```
-
-That stamped status is evidence only; `gate` is still what `main` requires.
-
-Sandbox branches are terminal-scoped, the same rule Switchboard's
-`external_ci_mirror.py` enforces with `_cleanup_terminal_mirror_branch`: once the
-run is terminal and the proof is stamped on the canonical SHA, the sandbox copy is
-deleted automatically by `push`. A red run stays put for inspection; sweep leftovers
-with:
-
-```bash
-scripts/ci-sandbox.sh prune     # delete merged sandbox branches
-```
-
-`prune` keeps any branch that still exists on the canonical repo. We squash-merge,
-so a merged branch is deleted from `origin` and its original SHA is never an
-ancestor of `main` — which makes "still on origin" the honest signal for "someone
-may still be working on this". Deleting a live agent's sandbox branch mid-run
-breaks their gate for no gain. `prune --all` overrides when you know the
-remainder is abandoned.
-
-After the PR merges, refresh the dispatch baseline:
-
-```bash
-scripts/ci-sandbox.sh refresh-main
-```
-
-The commands above are the loop, not the whole interface. Run the script with no
-arguments for the full list — `wait`, `status`, `sync-main`, and `delete` are not
-described here on purpose, because a second copy of a command list is a copy that
-goes stale:
-
-```bash
-scripts/ci-sandbox.sh
-```
-
-## Why `workflow_dispatch` is mandatory
-
-`ci-sandbox.sh push` dispatches each workflow in `SANDBOX_WORKFLOWS` by name and
-then gates on `workflow_dispatch` runs whose `headSha` equals the exact local SHA.
-A workflow without `workflow_dispatch:` can never be dispatched, so the proof never
-completes and `prove` refuses to stamp. `ci-sandbox.sh doctor` fails on this.
-
-## Why only `verify.yml` is dispatched here
-
-`SANDBOX_WORKFLOWS` defaults to `verify.yml` alone, even though
-[`.github/workflows/native-testbuild.yml`](../.github/workflows/native-testbuild.yml)
-also lives on `main`. That is deliberate, and it is not a gap waiting to be filled.
-
-Actions artifacts are readable by anyone who can read the repository, and this
-sandbox is public. [`docs/RELEASE-CONTRACT.md`](RELEASE-CONTRACT.md) §2 requires
-pull-request installers to stay private to repository collaborators, so the native
-build runs on the **canonical** repo through its own `pull_request` trigger and
-never here. Adding it to `SANDBOX_WORKFLOWS` would publish unsigned installers to
-anyone who asked for them.
-
-The trade is explicit: those four native legs are the one part of SimpleMark's CI
-that does spend private Actions minutes, because free minutes and private artifacts
-are not available at the same time. Nothing else about the sandbox path changes —
-`verify.yml` is still what `prove` reads, and the native build is not a required
-status for landing.
-
-## Current state
-
-The gate is green. `FOUNDATION-1` landed the single root TypeScript package with
-`typecheck`, `test`, and `check:boundaries` per
-[ADR-0001](decisions/0001-single-product-modular-architecture.md), so
-`scripts/simplemark_ci.sh` runs the real suite rather than failing with
-`package.json is missing`.
-
-Landing is owned by the canonical `gate` check and the native merge queue. The
-sandbox path still works and is still worth using to keep private Actions minutes
-down, but it no longer decides whether a PR can merge.
+If CI fails, inspect the public run and fix the canonical source. Do not turn
+private Actions back on, remove the required status, or manufacture a green check.

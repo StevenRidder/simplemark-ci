@@ -112,7 +112,9 @@ case "\${1:-}" in
   repo) exit 0 ;;
   workflow) exit 0 ;;
   run) echo ${JSON.stringify(run)} ;;
-  api) exit 0 ;;
+  api)
+    [ "\${3:-}" = "--jq" ] && echo false
+    exit 0 ;;
   pr)
     # "pr view" must report no existing PR; "pr create" succeeds.
     [ "\${2:-}" = "view" ] && exit 1

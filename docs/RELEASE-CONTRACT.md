@@ -1,5 +1,14 @@
 # The SimpleMark release contract
 
+> Owner policy update, 2026-09-30: all CI executes in the existing public
+> `StevenRidder/simplemark-ci` sandbox. This supersedes this document's private
+> pull-request test-build execution and private CI installer-upload requirements.
+> Native verification runs on public mirror pushes or public manual dispatch;
+> generated installers are checked on the runner and are not uploaded. Diagnostic
+> logs retain the seven-day policy. Release publication and trust requirements
+> below remain in force. See [CI-SANDBOX.md](CI-SANDBOX.md).
+
+
 What any SimpleMark build-and-release workflow must do. This is a contract, not a
 workflow: it fixes the target matrix, triggers, artifact names, checksums, retention,
 permissions, release-note inputs, failure behavior, and required secrets, so that the

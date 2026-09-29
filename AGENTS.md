@@ -135,22 +135,33 @@ Nothing in `src-tauri/` may hold a document rule, so a native-only regression is
 a transport bug by construction; the shared modules the gate does cover are the
 same ones the native shell loads.
 
-The branch loop is an ordinary push and PR against the canonical repo:
+## Public-only CI (owner policy, 2026-09-30)
+
+All CI runs on the existing **public** `StevenRidder/simplemark-ci` sandbox.
+Never enable private `verify.yml` or `native-testbuild.yml`, add private CI jobs,
+or change the required check back to the private Actions `gate`.
+Private release workflows are a separate publication path.
+
+Canonical `main` requires `simplemark-ci/full-suite`, posted only after an executed
+full public workflow passes for the exact canonical SHA. Matching refs, skipped
+jobs, cancelled runs, or a green result for another SHA are not proof.
+
+Use the sandbox helper from the canonical checkout:
 
 ```bash
-git push -u origin <branch> && gh pr create --base main
+scripts/ci-sandbox.sh open-pr <branch>
+scripts/ci-sandbox.sh queue <PR-number>
 ```
 
-`.github/workflows/verify.yml` runs [`scripts/simplemark_ci.sh`](scripts/simplemark_ci.sh)
-and publishes the **`gate`** status — the only context canonical `main` requires.
-A pull request runs the fast admission scope; GitHub's native merge queue then runs
-the full scope on the merge-group commit that actually lands. Queue the PR once
-`gate` is green and the queue owns the rest.
+The first command verifies the PR head publicly and stamps its canonical status.
+The second enqueues the PR, mirrors GitHub's exact synthetic merge-group SHA,
+runs the full public suite, and posts that SHA's result before GitHub lands it.
+Keep this command running through the merge; a plain `gh pr merge --auto` does not
+provide the merge-group proof. The native merge queue remains enabled.
 
-The public sandbox remains available for proving a SHA before spending canonical
-minutes, and `verify.yml` keeps `workflow_dispatch` so it can. It is optional, not
-the loop — see [`docs/CI-SANDBOX.md`](docs/CI-SANDBOX.md), and note that
-`ci-sandbox.sh protect-main` would overwrite the required `gate` context.
+Native desktop and iOS checks run only on public mirror pushes or public manual
+dispatches. CI verifies generated installers but uploads only diagnostic logs;
+unsigned test installers are not published. See [docs/CI-SANDBOX.md](docs/CI-SANDBOX.md).
 
 ## Where information belongs
 

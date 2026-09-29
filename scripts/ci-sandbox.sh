@@ -56,6 +56,7 @@ ensure_remote() {
 
 ensure_repo() {
   if gh repo view "$CI_REPO" --json nameWithOwner >/dev/null 2>&1; then
+    [ "$(gh api "repos/$CI_REPO" --jq .private)" = false ] || die "CI sandbox must be public; refusing paid CI"
     return 0
   fi
   cat >&2 <<EOF
@@ -115,6 +116,7 @@ Commands:
   sync-main             Push local main to the CI sandbox (refresh baseline after merges)
   refresh-main          Fetch canonical main, then sync it to the CI sandbox
   open-pr               Push/wait on sandbox, push canonical, stamp, then open the PR
+  queue <PR-number>     Enqueue and verify the exact merge-group SHA in public CI
 
 Environment:
   CI_REPO               Sandbox repo (default: $CI_REPO)
@@ -125,7 +127,7 @@ Environment:
   WAIT_TIMEOUT_SEC      Max wait for Actions (default: $WAIT_TIMEOUT_SEC)
   POLL_INTERVAL_SEC     Poll interval while waiting (default: $POLL_INTERVAL_SEC)
   MAIN_REF              Ref to seed sandbox main from (default: $MAIN_REF)
-  SANDBOX_WORKFLOWS     Space-separated workflow files to dispatch after push
+  SANDBOX_WORKFLOWS     Space-separated PUBLIC workflow files to dispatch after push
   STATUS_CONTEXT        Canonical required status context (default: $STATUS_CONTEXT)
 
 Typical loop:
@@ -205,7 +207,7 @@ assert_sandbox_green_for_sha() {
   if [ "$pending" != "0" ]; then
     return 11
   fi
-  failed="$(printf '%s' "$matching" | jq '[.[] | select(.conclusion != "success" and .conclusion != "skipped")] | length')"
+  failed="$(printf '%s' "$matching" | jq '[.[] | select(.conclusion != "success")] | length')"
   if [ "$failed" != "0" ]; then
     return 12
   fi
@@ -310,7 +312,7 @@ wait_for_runs() {
       # ignored. A cancelled run is absent evidence, so it cannot make the
       # branch green either: at least one genuine success is still required.
       local failed superseded succeeded
-      failed="$(printf '%s' "$matching" | jq '[.[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "cancelled")] | length')"
+      failed="$(printf '%s' "$matching" | jq '[.[] | select(.conclusion != "success" and .conclusion != "cancelled")] | length')"
       superseded="$(printf '%s' "$matching" | jq '[.[] | select(.conclusion == "cancelled")] | length')"
       succeeded="$(printf '%s' "$matching" | jq '[.[] | select(.conclusion == "success")] | length')"
       echo ""
@@ -617,7 +619,7 @@ cmd_protect_main() {
   [ -n "$main_sha" ] || die "$ORIGIN_REMOTE/main is not reachable"
   [ "$ci_main" = "$main_sha" ] || die "$CI_REPO/main must match $ORIGIN_REMOTE/main first; run scripts/ci-sandbox.sh refresh-main"
 
-  set_canonical_status "$main_sha" "success" "$CI_REPO/main matches canonical main ${main_sha:0:12}" "https://github.com/${CI_REPO}/actions"
+  [ "$(canonical_status_state "$main_sha")" = success ] || die "main needs an executed public CI proof; matching refs alone is not proof"
 
   payload="$(jq -n --arg context "$STATUS_CONTEXT" '{
     required_status_checks: { strict: true, contexts: [$context] },
@@ -756,6 +758,7 @@ main() {
     sync-main) cmd_sync_main "$@" ;;
     refresh-main) cmd_refresh_main "$@" ;;
     open-pr) cmd_open_pr "$@" ;;
+    queue) need_tools; repo_root; ensure_repo; python3 "$ROOT/scripts/public-ci-queue.py" "$@" ;;
     -h|--help|help|"") usage ;;
     *) die "unknown command '$cmd' (try: scripts/ci-sandbox.sh --help)" ;;
   esac

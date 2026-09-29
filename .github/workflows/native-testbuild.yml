@@ -1,18 +1,9 @@
-# Private native test builds for pull requests that can change the installed app.
-#
-# This is `docs/RELEASE-CONTRACT.md` §2's pull-request lane and nothing else: it
-# builds the four contracted desktop targets from APP-2's real Tauri application
-# and retains the installers as private Actions artifacts. It has no code path
-# that creates, updates, or touches a GitHub Release — that is APP-7's tag lane,
-# in its own workflow.
-#
-# `verify.yml` stays the fast admission and merge-queue gate. This workflow is
-# separate because a twenty-minute four-platform compile has no business sitting
-# in the path that decides whether a change may land.
+# Public-only native verification. Installers are verified on the runner but
+# never uploaded from CI. Release publication stays in the release workflows.
 name: native test build
 
 on:
-  pull_request:
+  push:
     paths:
       - 'src/**'
       - 'src-tauri/**'
@@ -33,6 +24,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event.repository.private == false
     name: ${{ matrix.leg }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -213,17 +205,7 @@ jobs:
 
           ls -l "$out"
 
-      # §4: named for the commit, because the version of an unreleased tree is not
-      # meaningful and a tester reporting a bug quotes the artifact name.
-      # §7: seven days — the 90-day Actions default is wrong for unsigned private
-      # installers, which should not accumulate.
-      - name: Upload the private test build
-        uses: actions/upload-artifact@v6
-        with:
-          name: simplemark-testbuild-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.tree.outputs.short_sha }}
-          path: .artifacts/testbuild
-          if-no-files-found: error
-          retention-days: 7
+      # Unsigned CI installers must not be published as public artifacts.
 
       # §10 permits `if: always()` on a diagnostic upload; it is the build output
       # of a leg that may have just failed, and never becomes a shipped artifact.
@@ -250,6 +232,7 @@ jobs:
   # system already guarantees one process. Each was found by a person, hours
   # later. `cargo check` finds all three in minutes.
   ios-check:
+    if: github.event.repository.private == false
     name: ios-arm64 (check)
     runs-on: macos-26
     timeout-minutes: 30

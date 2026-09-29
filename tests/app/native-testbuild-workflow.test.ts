@@ -61,13 +61,13 @@ function steps(source: string): string[] {
 const uploads = steps(workflow).filter((step) => step.includes('actions/upload-artifact'));
 
 describe('native test-build workflow', () => {
-  it('triggers on pull requests and manual dispatch, and nothing else (§2)', () => {
+  it('triggers on public mirror pushes and manual dispatch', () => {
     const block = workflow.split(/^on:\s*$/m)[1]?.split(/^\S/m)[0] ?? '';
     const triggers = block
       .split('\n')
       .filter((line) => /^ {2}\S/.test(line))
       .map((line) => line.trim().replace(/:.*$/, ''));
-    expect(triggers.sort()).toEqual(['pull_request', 'workflow_dispatch']);
+    expect(triggers.sort()).toEqual(['push', 'workflow_dispatch']);
   });
 
   it('never touches a GitHub Release (§2)', () => {
@@ -102,9 +102,9 @@ describe('native test-build workflow', () => {
     expect(workflow).toContain('--target "${{ matrix.os }}"');
   });
 
-  it('names the test build for the commit, not the version (§4)', () => {
-    expect(uploads.some((step) => /name: simplemark-testbuild-\$\{\{ matrix\.os \}\}-\$\{\{ matrix\.arch \}\}-/.test(step))).toBe(true);
-    expect(workflow).toMatch(/SHORT_SHA|short-sha|short_sha/);
+  it('runs native verification only on public repositories', () => {
+    expect(workflow).toMatch(/build:\n    if: github.event.repository.private == false/);
+    expect(workflow).toMatch(/ios-check:\n    if: github.event.repository.private == false/);
   });
 
   it('retains every uploaded artifact for seven days, not the 90-day default (§7)', () => {
@@ -139,12 +139,8 @@ describe('native test-build workflow', () => {
     expect(workflow).toMatch(/fail-fast:\s*false/);
   });
 
-  it('uploads the installer unconditionally and only the diagnostic log on failure (§10)', () => {
-    const installer = uploads.filter((step) => step.includes('simplemark-testbuild-'));
-    expect(installer).toHaveLength(1);
-    expect(installer[0]).not.toContain('if:');
-    for (const step of uploads) {
-      if (step.includes('always()')) expect(step).toContain('build-log');
-    }
+  it('uploads diagnostic logs without publishing unsigned installers', () => {
+    expect(uploads.some((step) => step.includes('simplemark-testbuild-'))).toBe(false);
+    for (const step of uploads) expect(step).toContain('build-log');
   });
 });

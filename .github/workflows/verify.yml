@@ -1,4 +1,4 @@
-# The SimpleMark gate.
+# Public-only SimpleMark gate. Private CI is prohibited.
 #
 # Runs `scripts/simplemark_ci.sh` — the same script contributors run locally, so
 # "green on my machine" and "green in CI" mean the same thing. Pull requests run
@@ -30,7 +30,7 @@ jobs:
   # styles-bar file gets its own test-level-parallel job below because Playwright
   # cannot split one file when fullyParallel is false.
   browser:
-    if: github.event_name == 'merge_group'
+    if: github.event.repository.private == false && github.event_name != 'pull_request'
     name: browser (${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -72,7 +72,7 @@ jobs:
           if-no-files-found: warn
 
   styles:
-    if: github.event_name == 'merge_group'
+    if: github.event.repository.private == false && github.event_name != 'pull_request'
     name: browser (styles-bar)
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -106,7 +106,7 @@ jobs:
 
   gate:
     needs: [browser, styles]
-    if: ${{ always() }}
+    if: ${{ always() && github.event.repository.private == false }}
     runs-on: ubuntu-latest
     # The merge-group browser suite runs in the shard matrix above. Ten minutes
     # leaves room for hosted-runner variance in this aggregate gate while failing
@@ -146,13 +146,16 @@ jobs:
       # portion here while the browser job above proves the exact SHA in parallel.
       - name: Install Chromium for the UI gate
         if: github.event_name != 'pull_request' && steps.lock.outputs.present == 'true'
-        run: npm ci && if [ "$GITHUB_EVENT_NAME" != "merge_group" ]; then npx playwright install --with-deps chromium; fi
+        run: npm ci
 
       - name: Verify browser shard matrix
-        if: github.event_name == 'merge_group' && (needs.browser.result != 'success' || needs.styles.result != 'success')
+        if: github.event_name != 'pull_request' && (needs.browser.result != 'success' || needs.styles.result != 'success')
         run: |
           echo "The merge-group browser suite did not pass: shards=${{ needs.browser.result }}, styles=${{ needs.styles.result }}" >&2
           exit 1
+
+      - name: Validate public merge-queue proof handling
+        run: python3 scripts/test-public-ci-queue.py
 
       - name: Run the SimpleMark ${{ github.event_name == 'pull_request' && 'admission gate' || 'merge-group gate' }}
         env:
@@ -162,7 +165,7 @@ jobs:
           # admission path installs normally inside the shared canonical script;
           # merge groups delegate the browser suite to the shard matrix.
           SIMPLEMARK_CI_SKIP_INSTALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
-          SIMPLEMARK_CI_SKIP_UI: ${{ github.event_name == 'merge_group' && '1' || '0' }}
+          SIMPLEMARK_CI_SKIP_UI: ${{ github.event_name != 'pull_request' && '1' || '0' }}
           CI_RESULT_REPORT: .artifacts/ci-result.json
         run: bash scripts/simplemark_ci.sh
 

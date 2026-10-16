@@ -140,7 +140,7 @@ same ones the native shell loads.
 All CI runs on the existing **public** `StevenRidder/simplemark-ci` sandbox.
 Never enable private `verify.yml` or `native-testbuild.yml`, add private CI jobs,
 or change the required check back to the private Actions `gate`.
-Private release workflows are a separate publication path.
+Release and promotion execution also runs on public standard runners in `6th-Element-Labs/projectplanner-ci`; the private release workflows are retired and guarded against runner allocation. Canonical source, release authority, and unsigned draft assets remain in `6th-Element-Labs/simplemark`.
 
 Canonical `main` requires `simplemark-ci/full-suite`, posted only after an executed
 full public workflow passes for the exact canonical SHA. Matching refs, skipped

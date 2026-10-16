@@ -1,5 +1,7 @@
 # The SimpleMark release contract
 
+
+> Execution policy, 2026-10-17: releases and promotion execute on standard public runners in `6th-Element-Labs/projectplanner-ci`. Private release workflows are retired. Canonical drafts, exact-SHA verification, platform trust gates, and explicit publication authority are preserved. See [CI-SANDBOX.md](CI-SANDBOX.md).
 > Owner policy update, 2026-09-30: all CI executes in the existing public
 > `StevenRidder/simplemark-ci` sandbox. This supersedes this document's private
 > pull-request test-build execution and private CI installer-upload requirements.

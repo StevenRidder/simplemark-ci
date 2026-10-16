@@ -1,3 +1,4 @@
+# Execution moved to 6th-Element-Labs/projectplanner-ci. Private runners are forbidden.
 # The emergency release lane.
 #
 # `release.yml` is the normal path: a `v*` tag on a commit that reached `main`
@@ -55,6 +56,7 @@ jobs:
   # `SimpleMark-0.0.0` reports the wrong version in every About window forever,
   # and no emergency is served by that. It is never skippable here.
   version:
+    if: github.repository == '6th-Element-Labs/projectplanner-ci' && !github.event.repository.private
     name: version
     runs-on: ubuntu-22.04
     outputs:
@@ -94,7 +96,7 @@ jobs:
     needs: version
     # Skipped only when the dispatcher explicitly turned it off. That choice is
     # carried into the release body below, so it cannot be quietly forgotten.
-    if: ${{ inputs.run_gate }}
+    if: github.repository == '6th-Element-Labs/projectplanner-ci' && !github.event.repository.private && (inputs.run_gate)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -124,7 +126,7 @@ jobs:
     # `always()` here is not a fallback: the gate job is legitimately `skipped`
     # when run_gate is false, and a skipped dependency would otherwise skip this
     # too. A gate that actually *failed* still stops the build.
-    if: ${{ always() && needs.version.result == 'success' && needs.gate.result != 'failure' && needs.gate.result != 'cancelled' }}
+    if: github.repository == '6th-Element-Labs/projectplanner-ci' && !github.event.repository.private && (always() && needs.version.result == 'success' && needs.gate.result != 'failure' && needs.gate.result != 'cancelled')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     defaults:
@@ -237,7 +239,7 @@ jobs:
   draft:
     name: draft release
     needs: [version, gate, build]
-    if: ${{ always() && needs.build.result == 'success' }}
+    if: github.repository == '6th-Element-Labs/projectplanner-ci' && !github.event.repository.private && (always() && needs.build.result == 'success')
     runs-on: ubuntu-22.04
     permissions:
       contents: write

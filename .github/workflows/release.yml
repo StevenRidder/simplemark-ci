@@ -1,3 +1,4 @@
+# Execution moved to 6th-Element-Labs/projectplanner-ci. Private runners are forbidden.
 # The tagged release lane.
 #
 # `docs/RELEASE-CONTRACT.md` §2's second trigger and nothing else: an explicit
@@ -31,6 +32,7 @@ jobs:
   # §5: the version check runs BEFORE the matrix. Four platforms should not
   # spend twenty minutes compiling to discover a typo in a version string.
   version:
+    if: github.repository == '6th-Element-Labs/projectplanner-ci' && !github.event.repository.private
     name: version
     runs-on: ubuntu-22.04
     outputs:
@@ -55,6 +57,7 @@ jobs:
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
   build:
+    if: github.repository == '6th-Element-Labs/projectplanner-ci' && !github.event.repository.private
     name: ${{ matrix.leg }}
     needs: version
     runs-on: ${{ matrix.runner }}
@@ -249,6 +252,7 @@ jobs:
           retention-days: 30
 
   draft:
+    if: github.repository == '6th-Element-Labs/projectplanner-ci' && !github.event.repository.private
     name: draft release
     # §10: every leg green. `fail-fast: false` exists to improve diagnosis, never
     # to publish a partial release — a release missing a platform is worse than

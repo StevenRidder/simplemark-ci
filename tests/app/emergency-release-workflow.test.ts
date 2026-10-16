@@ -43,7 +43,8 @@ describe('the bypass is available', () => {
 
   it('lets the gate be skipped', () => {
     expect(workflow).toContain('run_gate');
-    expect(workflow).toContain('if: ${{ inputs.run_gate }}');
+    expect(workflow).toContain('&& (inputs.run_gate)');
+    expect(workflow).toContain("github.repository == '6th-Element-Labs/projectplanner-ci'");
   });
 
   it('still builds all four contracted platforms', () => {

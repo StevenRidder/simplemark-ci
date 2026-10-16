@@ -1,3 +1,4 @@
+# Execution moved to 6th-Element-Labs/projectplanner-ci. Private runners are forbidden.
 # The only path from draft to published.
 #
 # `docs/RELEASE-TRUST.md`: "APP-7 must invoke this gate for every platform before
@@ -30,6 +31,7 @@ concurrency:
 
 jobs:
   promote:
+    if: github.repository == '6th-Element-Labs/projectplanner-ci' && !github.event.repository.private
     name: promote ${{ inputs.tag }}
     runs-on: ubuntu-22.04
     permissions:

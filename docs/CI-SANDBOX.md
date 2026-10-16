@@ -59,3 +59,42 @@ before changing protection; matching repository refs alone cannot create proof.
 
 If CI fails, inspect the public run and fix the canonical source. Do not turn
 private Actions back on, remove the required status, or manufacture a green check.
+
+## Free deployment and release execution
+
+CI stays in `StevenRidder/simplemark-ci`. The existing trusted public control
+repository, `6th-Element-Labs/projectplanner-ci`, executes release builds and
+promotion using standard hosted runners. A dedicated release App is installed only on canonical SimpleMark, with
+Contents and Commit Statuses write permission. Its key is scoped to the
+master-restricted public release environments. The ActionEngine CI App stays
+read-only and separate. No private runner relays a tag or dispatch. Enable
+`SIMPLEMARK_RELEASE_ENABLED=on` in the public control repository only after
+that release App is configured.
+
+The public delivery router discovers canonical `v*` tags every five minutes.
+Ordinary releases require the exact `simplemark-ci/full-suite` success and main
+ancestry. Builds preserve all four native targets and installer verification.
+Unsigned installers move between jobs only through temporary private draft
+assets, which are removed at the end of the run. Public Actions artifacts contain
+diagnostic logs only. A complete product release is created as a private draft
+only after every platform succeeds. Publication remains a separate manual action
+that requires all platform trust gates and signing credentials.
+
+Manual commands (all run in the public control repository):
+
+```bash
+gh workflow run simplemark-release.yml --repo 6th-Element-Labs/projectplanner-ci --ref master -f source_ref=main -f validation_only=true
+gh workflow run simplemark-release.yml --repo 6th-Element-Labs/projectplanner-ci --ref master -f source_ref=v0.1.0 -f tag=v0.1.0 -f validation_only=false
+gh workflow run simplemark-release-promote.yml --repo 6th-Element-Labs/projectplanner-ci --ref master -f tag=v0.1.0
+```
+
+For an explicitly authorized emergency draft, use the same public release
+workflow with `emergency=true`, an exact `source_ref`, a version `tag`, and a
+nonempty `reason`. `run_gate=true` is the default; an explicit `false` is recorded
+in the release notes. Emergency builds still require all installers, version
+agreement, and the separate publication trust gates.
+
+Never enable private `release.yml`, `emergency-release.yml`, or
+`release-promote.yml`, or raise the enterprise Actions budget. The organization
+and enterprise hard limits remain $0. A failed public deployment or release is
+retried explicitly; the router does not loop a failed operation.

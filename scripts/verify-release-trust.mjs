@@ -85,12 +85,17 @@ function validatePlatformTrust(evidence, target) {
 
 function signingRequirements(target) {
   if (target === 'macos') {
+    const api = ['APPLE_API_ISSUER', 'APPLE_API_KEY', 'APPLE_API_KEY_P8'];
+    const appleId = ['APPLE_ID', 'APPLE_PASSWORD'];
+    // Either complete Apple notarization method is valid. Prefer API diagnostics
+    // when API credentials were supplied and the legacy method is incomplete.
+    const useApi = api.some((name) => process.env[name]?.trim())
+      && requiredEnvironment(appleId).length > 0;
     return [
       'APPLE_CERTIFICATE',
       'APPLE_CERTIFICATE_PASSWORD',
       'APPLE_SIGNING_IDENTITY',
-      'APPLE_ID',
-      'APPLE_PASSWORD',
+      ...(useApi ? api : appleId),
       'APPLE_TEAM_ID',
       'KEYCHAIN_PASSWORD',
     ];

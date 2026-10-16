@@ -42,8 +42,11 @@ secrets:
 | `APPLE_CERTIFICATE` | Base64-encoded Developer ID Application `.p12` certificate |
 | `APPLE_CERTIFICATE_PASSWORD` | Password for that exported certificate |
 | `APPLE_SIGNING_IDENTITY` | The Developer ID Application signing identity |
-| `APPLE_ID` | Apple account email used for notarization |
-| `APPLE_PASSWORD` | Apple app-specific password |
+| `APPLE_ID` | Apple account email, when using app-specific-password notarization |
+| `APPLE_PASSWORD` | Apple app-specific password, with `APPLE_ID` |
+| `APPLE_API_ISSUER` | App Store Connect issuer, for API notarization instead of the Apple ID pair |
+| `APPLE_API_KEY` | App Store Connect API key ID |
+| `APPLE_API_KEY_P8` | App Store Connect private key; written only to a temporary runner file |
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
 | `KEYCHAIN_PASSWORD` | Ephemeral CI keychain password |
 
@@ -51,6 +54,20 @@ The job imports the certificate into a temporary keychain, signs the `.app` and
 DMG, notarizes, staples the notarization ticket, and records the result against
 the exact DMG SHA-256. Ad-hoc signing is useful for test builds but does **not**
 clear the public-release gate.
+
+Notarization requires either the complete `APPLE_ID`/`APPLE_PASSWORD` pair or all
+three `APPLE_API_*` values. The public Mac builder uses the API route and passes
+the temporary key file as `APPLE_API_KEY_PATH` to Tauri and Apple's notary tool.
+The promotion gate accepts that same API credential set without requiring an
+unrelated Apple ID password. Partial credential sets still fail closed.
+
+The public promotion handoff requires a separate smoke JSON for every first-lane
+installer: `platform-smoke-macos-arm64.json`, `platform-smoke-macos-x64.json`,
+`platform-smoke-windows-msi.json`, `platform-smoke-windows-nsis.json`, and
+`platform-smoke-linux.json`. Use the collector's `--out` option for those names.
+Each record must identify the release tag's exact commit and the corresponding
+final installer's name and SHA-256. A record for another architecture, format,
+or older build does not satisfy this handoff.
 
 ### Windows public release
 

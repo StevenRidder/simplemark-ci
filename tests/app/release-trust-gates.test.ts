@@ -38,7 +38,7 @@ function evidence(target: string) {
 function run(target: string, environment: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, [script, '--target', target, '--mode', 'public-release', '--evidence', evidence(target)], {
     encoding: 'utf8',
-    env: { ...process.env, ...environment },
+    env: { ...process.env, APPLE_API_ISSUER: '', APPLE_API_KEY: '', APPLE_API_KEY_P8: '', ...environment },
   });
 }
 
@@ -65,6 +65,37 @@ describe('release trust gates', () => {
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('required signing environment is absent');
+  });
+
+  it('accepts complete App Store Connect API notarization credentials without an Apple ID password', () => {
+    const result = run('macos', {
+      APPLE_CERTIFICATE: 'present', APPLE_CERTIFICATE_PASSWORD: 'present',
+      APPLE_SIGNING_IDENTITY: 'present', APPLE_TEAM_ID: 'present', KEYCHAIN_PASSWORD: 'present',
+      APPLE_API_ISSUER: 'present', APPLE_API_KEY: 'present', APPLE_API_KEY_P8: 'present',
+      APPLE_ID: '', APPLE_PASSWORD: '',
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('macos public-release gate passed');
+  });
+
+  it('rejects a partial API notarization credential set', () => {
+    const result = run('macos', {
+      APPLE_CERTIFICATE: 'present', APPLE_CERTIFICATE_PASSWORD: 'present',
+      APPLE_SIGNING_IDENTITY: 'present', APPLE_TEAM_ID: 'present', KEYCHAIN_PASSWORD: 'present',
+      APPLE_API_ISSUER: 'present', APPLE_API_KEY: 'present', APPLE_API_KEY_P8: '',
+      APPLE_ID: '', APPLE_PASSWORD: '',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('APPLE_API_KEY_P8');
+  });
+
+  it('still accepts a complete Apple ID pair when an unused API credential is partial', () => {
+    const result = run('macos', {
+      APPLE_CERTIFICATE: 'present', APPLE_CERTIFICATE_PASSWORD: 'present',
+      APPLE_SIGNING_IDENTITY: 'present', APPLE_TEAM_ID: 'present', KEYCHAIN_PASSWORD: 'present',
+      APPLE_ID: 'present', APPLE_PASSWORD: 'present', APPLE_API_KEY: 'unused',
+    });
+    expect(result.status).toBe(0);
   });
 
   it('rejects macOS evidence that claims a signature but not notarization and stapling', () => {
